@@ -5,7 +5,6 @@ on:
     tags:
       - 'v*'
 
-# Permessi espliciti per creare Release
 permissions:
   contents: write
 
@@ -33,14 +32,33 @@ jobs:
         with:
           workspaces: src-tauri
 
+      # Scarica l'ultima build di mpv per Windows (zhongfly/mpv-winbuild)
+      # usando le GitHub API per trovare sempre l'URL corretto automaticamente
       - name: Download mpv (bundled sidecar)
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path src-tauri/binaries | Out-Null
-          $url = "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/20240901/mpv-x86_64-20240901-git-21a5e05.7z"
-          Invoke-WebRequest -Uri $url -OutFile mpv.7z
+
+          # Prendi l'URL dell'asset x86_64 dall'ultima release
+          $release = Invoke-RestMethod -Uri "https://api.github.com/repos/zhongfly/mpv-winbuild/releases/latest" `
+            -Headers @{ "User-Agent" = "nuvio-desktop-ci" }
+
+          $asset = $release.assets | Where-Object {
+            $_.name -match "^mpv-x86_64-\d{8}-git-[a-f0-9]+\.7z$"
+          } | Select-Object -First 1
+
+          if (-not $asset) {
+            Write-Error "Nessun asset mpv-x86_64 trovato nella release"
+            exit 1
+          }
+
+          Write-Host "Scarico: $($asset.browser_download_url)"
+          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile mpv.7z
+
           7z e mpv.7z mpv.exe -o"src-tauri/binaries/" -y
           Rename-Item "src-tauri/binaries/mpv.exe" "mpv-x86_64-pc-windows-msvc.exe"
+
+          Write-Host "OK: $(Get-Item 'src-tauri/binaries/mpv-x86_64-pc-windows-msvc.exe')"
 
       - name: Install Node dependencies
         run: npm install
