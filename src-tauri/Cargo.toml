@@ -5,22 +5,25 @@ description = "Nuvio Desktop – Windows client"
 authors = []
 edition = "2021"
 
+# Richiesto da tauri-build per non generare warning
+[package.metadata]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri            = { version = "2", features = [] }
+tauri              = { version = "2", features = [] }
 tauri-plugin-store = "2"
 tauri-plugin-shell = "2"
-serde            = { version = "1", features = ["derive"] }
-serde_json       = "1"
-tokio            = { version = "1", features = ["full"] }
-reqwest          = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
-anyhow           = "1"
+serde              = { version = "1", features = ["derive"] }
+serde_json         = "1"
+tokio              = { version = "1", features = ["full"] }
+reqwest            = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+anyhow             = "1"
 
 [profile.release]
-panic        = "abort"
+panic         = "abort"
 codegen-units = 1
-lto          = true
-opt-level    = "s"
-strip        = true
+lto           = true
+opt-level     = "s"
+strip         = true
