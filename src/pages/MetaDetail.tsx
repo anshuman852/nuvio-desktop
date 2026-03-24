@@ -17,7 +17,7 @@ export default function MetaDetail() {
   const [meta, setMeta] = useState<MetaItem | null>(null);
   const [loading, setLoading] = useState(true);
   const [showPicker, setShowPicker] = useState(false);
-  const [selectedVideo, setSelectedVideo] = useState<Video | null>(null);
+  const [_selectedVideo, setSelectedVideo] = useState<Video | null>(null);
   const [selectedSeason, setSelectedSeason] = useState(1);
 
   useEffect(() => {

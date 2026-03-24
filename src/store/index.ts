@@ -1,14 +1,11 @@
-/**
- * Zustand Store — stato globale dell'app
- */
-import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import type {
   Addon, MetaItem, Stream, PlayerState,
-  NuvioUser, NuvioContinueWatching, ContentType
-} from "../types";
-import { fetchManifest } from "../api/stremio";
-import { setAuthToken } from "../api/nuvio";
+  NuvioUser, NuvioContinueWatching
+} from '../types';
+import { fetchManifest } from '../api/stremio';
+import { setAuthToken } from '../api/nuvio';
 
 // ─── Addon Store ──────────────────────────────────────────────────────────────
 
@@ -55,7 +52,7 @@ export const useAddonStore = create<AddonStore>()(
           ),
         })),
     }),
-    { name: "nuvio-addons" }
+    { name: 'nuvio-addons' }
   )
 );
 
@@ -76,9 +73,8 @@ export const useAuthStore = create<AuthStore>()(
       },
     }),
     {
-      name: "nuvio-auth",
+      name: 'nuvio-auth',
       onRehydrateStorage: () => (state) => {
-        // Ripristina il token all'avvio
         if (state?.user?.token) setAuthToken(state.user.token);
       },
     }
@@ -144,11 +140,11 @@ interface SearchStore {
 }
 
 export const useSearchStore = create<SearchStore>()((set) => ({
-  query: "",
+  query: '',
   results: [],
   loading: false,
   setQuery: (query) => set({ query }),
   setResults: (results) => set({ results }),
   setLoading: (loading) => set({ loading }),
-  clear: () => set({ query: "", results: [], loading: false }),
+  clear: () => set({ query: '', results: [], loading: false }),
 }));

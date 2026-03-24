@@ -6,7 +6,7 @@ export interface Addon {
   name: string;
   description?: string;
   logo?: string;
-  transportUrl: string;  // URL base dell'addon (es. https://...)
+  transportUrl: string;
   manifest: AddonManifest;
   enabled: boolean;
 }
@@ -37,7 +37,7 @@ export interface ExtraDefinition {
   options?: string[];
 }
 
-export type ContentType = "movie" | "series" | "channel" | "tv";
+export type ContentType = 'movie' | 'series' | 'channel' | 'tv';
 
 // ─── Content Meta ────────────────────────────────────────────────────────────
 
@@ -53,6 +53,7 @@ export interface MetaItem {
   runtime?: string;
   genres?: string[];
   imdbRating?: string;
+  releaseInfo?: string;
   cast?: string[];
   director?: string[];
   videos?: Video[];
@@ -78,7 +79,7 @@ export interface MetaLink {
 
 export interface Trailer {
   source: string;
-  type: "Trailer" | "Clip";
+  type: 'Trailer' | 'Clip';
 }
 
 // ─── Streams ─────────────────────────────────────────────────────────────────
@@ -86,19 +87,24 @@ export interface Trailer {
 export interface Stream {
   name?: string;
   description?: string;
-  url?: string;          // HTTP(S) direct link
-  infoHash?: string;     // Torrent info hash
-  fileIdx?: number;      // File index nel torrent
-  ytId?: string;         // YouTube ID
-  externalUrl?: string;  // Apri browser esterno
+  url?: string;
+  infoHash?: string;
+  fileIdx?: number;
+  ytId?: string;
+  externalUrl?: string;
   behaviorHints?: {
     bingeGroup?: string;
     notWebReady?: boolean;
     filename?: string;
   };
-  // Campi extra Nuvio/custom
   addonId?: string;
   addonName?: string;
+}
+
+/** Stream con i campi addon sempre valorizzati (post-fetch) */
+export interface EnrichedStream extends Stream {
+  addonId: string;
+  addonName: string;
 }
 
 // ─── Nuvio Specific ──────────────────────────────────────────────────────────
@@ -117,8 +123,8 @@ export interface NuvioContinueWatching {
   videoId?: string;
   season?: number;
   episode?: number;
-  progress: number;     // 0-1
-  duration: number;     // secondi
+  progress: number;
+  duration: number;
   updatedAt: string;
 }
 
@@ -131,9 +137,9 @@ export interface PlayerState {
   meta?: MetaItem;
   stream?: Stream;
   paused: boolean;
-  position: number;    // secondi
-  duration: number;    // secondi
-  volume: number;      // 0-100
+  position: number;
+  duration: number;
+  volume: number;
 }
 
 // ─── App State ───────────────────────────────────────────────────────────────

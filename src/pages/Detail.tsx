@@ -142,11 +142,11 @@ export default function Detail() {
     { addon: string; streams: Stream[] }[]
   >([]);
   const [streamsLoading, setStreamsLoading] = useState(false);
-  const [streamsTarget, setStreamsTarget] = useState<string | null>(null);
+  // streamsTarget rimosso
 
   const [selectedVideo, setSelectedVideo] = useState<Video | null>(null);
   const [descExpanded, setDescExpanded] = useState(false);
-  const [launching, setLaunching] = useState(false);
+  // launching rimosso
   const [error, setError] = useState<string | null>(null);
 
   const decodedId = decodeURIComponent(id ?? '');
@@ -156,7 +156,6 @@ export default function Detail() {
     if (!type || !decodedId || addons.length === 0) return;
 
     setMetaLoading(true);
-    const addonWithMeta = addons.find((a) => a.resources.includes('meta'));
 
     (async () => {
       let found: MetaItem | null = null;
