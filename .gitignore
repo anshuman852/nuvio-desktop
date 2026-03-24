@@ -20,3 +20,4 @@ Thumbs.db
 # Tauri keys (NON committare mai questi!)
 src-tauri/*.key
 src-tauri/*.pem
+src-tauri/binaries/*.exe
