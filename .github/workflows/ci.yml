@@ -29,6 +29,14 @@ jobs:
       - name: Typecheck frontend
         run: npx tsc --noEmit
 
+      # tauri-build verifica che i file in "resources" esistano a compile time.
+      # In CI creiamo un file placeholder per far passare il check.
+      - name: Create mpv placeholder for CI check
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path src-tauri/binaries | Out-Null
+          [System.IO.File]::WriteAllBytes("src-tauri/binaries/mpv-x86_64-pc-windows-msvc.exe", @())
+
       - name: Check Rust
         working-directory: src-tauri
         run: cargo check
