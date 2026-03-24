@@ -1,0 +1,22 @@
+# Node
+node_modules/
+dist/
+.env
+.env.local
+
+# Rust / Tauri
+src-tauri/target/
+src-tauri/gen/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/settings.json
+.idea/
+*.iml
+
+# Tauri keys (NON committare mai questi!)
+src-tauri/*.key
+src-tauri/*.pem

@@ -1,0 +1,58 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'          # Si attiva su ogni tag tipo v0.1.0, v1.2.3, ecc.
+
+jobs:
+  build-windows:
+    name: Build Windows (.exe)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Setup Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'Nuvio Desktop ${{ github.ref_name }}'
+          releaseBody: |
+            ## Nuvio Desktop ${{ github.ref_name }}
+
+            Client Windows per l'ecosistema Stremio/Nuvio, con player mpv integrato.
+
+            ### Installazione
+            1. Scarica `NuvioDesktop_x64-setup.exe` qui sotto
+            2. Esegui il file e segui il wizard
+            3. Assicurati di avere **mpv** installato e nel PATH → [mpv.io](https://mpv.io/installation/)
+
+            ### Requisiti
+            - Windows 10/11 (64-bit)
+            - [mpv](https://mpv.io/installation/) nel PATH di sistema
+          releaseDraft: false
+          prerelease: false
+          includeUpdaterJson: true
