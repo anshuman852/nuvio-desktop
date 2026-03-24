@@ -17,7 +17,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -25,7 +24,7 @@ jobs:
         with:
           workspaces: src-tauri
 
-      - run: npm ci
+      - run: npm install
 
       - name: Typecheck frontend
         run: npx tsc --noEmit

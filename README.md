@@ -1,9 +1,9 @@
 # Nuvio Desktop
 
-[![Release](https://img.shields.io/github/v/release/TUO-USERNAME/nuvio-desktop?style=for-the-badge&color=7c3aed)](https://github.com/TUO-USERNAME/nuvio-desktop/releases/latest)
-[![License](https://img.shields.io/github/license/TUO-USERNAME/nuvio-desktop?style=for-the-badge)](LICENSE)
-[![CI](https://img.shields.io/github/actions/workflow/status/TUO-USERNAME/nuvio-desktop/ci.yml?style=for-the-badge&label=build)](https://github.com/TUO-USERNAME/nuvio-desktop/actions)
-[![Windows](https://img.shields.io/badge/platform-Windows-0078d7?style=for-the-badge&logo=windows)](https://github.com/TUO-USERNAME/nuvio-desktop/releases/latest)
+[![Release](https://img.shields.io/github/v/release/Davako94/nuvio-desktop?style=for-the-badge&color=7c3aed)](https://github.com/Davako94/nuvio-desktop/releases/latest)
+[![License](https://img.shields.io/github/license/Davako94/nuvio-desktop?style=for-the-badge)](LICENSE)
+[![CI](https://img.shields.io/github/actions/workflow/status/Davako94/nuvio-desktop/ci.yml?style=for-the-badge&label=build)](https://github.com/Davako94/nuvio-desktop/actions)
+[![Windows](https://img.shields.io/badge/platform-Windows-0078d7?style=for-the-badge&logo=windows)](https://github.com/Davako94/nuvio-desktop/releases/latest)
 
 Client Windows per l'ecosistema **Stremio addon** con player **mpv** integrato.  
 Porta l'esperienza di [NuvioTV](https://github.com/NuvioMedia/NuvioTV) sul desktop Windows.
@@ -12,7 +12,7 @@ Porta l'esperienza di [NuvioTV](https://github.com/NuvioMedia/NuvioTV) sul deskt
 
 ## Download
 
-➡️ **[Scarica l'ultima versione (.exe)](https://github.com/TUO-USERNAME/nuvio-desktop/releases/latest)**
+➡️ **[Scarica l'ultima versione (.exe)](https://github.com/Davako94/nuvio-desktop/releases/latest)**
 
 > Richiede **Windows 10 / 11** (64-bit) e [mpv](https://mpv.io/installation/) installato nel PATH.
 
@@ -34,7 +34,7 @@ Porta l'esperienza di [NuvioTV](https://github.com/NuvioMedia/NuvioTV) sul deskt
 
 ### Utenti finali
 
-1. Vai alla pagina [**Releases**](https://github.com/TUO-USERNAME/nuvio-desktop/releases/latest)
+1. Vai alla pagina [**Releases**](https://github.com/Davako94/nuvio-desktop/releases/latest)
 2. Scarica `NuvioDesktop_x64-setup.exe`
 3. Installa mpv → [mpv.io](https://mpv.io/installation/) e aggiungilo al PATH  
    *(oppure specifica il percorso completo in Impostazioni)*
@@ -49,7 +49,7 @@ Porta l'esperienza di [NuvioTV](https://github.com/NuvioMedia/NuvioTV) sul deskt
 | Microsoft C++ Build Tools | - |
 
 ```bash
-git clone https://github.com/TUO-USERNAME/nuvio-desktop.git
+git clone https://github.com/Davako94/nuvio-desktop.git
 cd nuvio-desktop
 npm install
 npm run tauri dev
