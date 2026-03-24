@@ -4,29 +4,15 @@ import { useAppStore } from '../lib/store';
 import { fetchMeta, fetchAllStreams, launchMpv } from '../lib/addon-client';
 import { MetaItem, Stream, Video } from '../lib/types';
 import {
-  Play,
-  ArrowLeft,
-  Star,
-  Clock,
-  Film,
-  ChevronDown,
-  ChevronUp,
-  Loader2,
-  AlertCircle,
+  Play, ArrowLeft, Star, Clock, Film,
+  ChevronDown, ChevronUp, Loader2, AlertCircle,
 } from 'lucide-react';
 import clsx from 'clsx';
 
 // ─── StreamCard ───────────────────────────────────────────────────────────────
 
-function StreamCard({
-  stream,
-  onPlay,
-}: {
-  stream: Stream;
-  onPlay: (stream: Stream) => void;
-}) {
+function StreamCard({ stream, onPlay }: { stream: Stream; onPlay: (s: Stream) => void }) {
   const hasUrl = Boolean(stream.url);
-
   return (
     <button
       onClick={() => hasUrl && onPlay(stream)}
@@ -41,19 +27,12 @@ function StreamCard({
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium text-white truncate">{stream.name}</p>
-          {stream.title && (
-            <p className="text-xs text-white/50 mt-0.5 truncate">{stream.title}</p>
-          )}
-          {stream.description && (
-            <p className="text-xs text-white/40 mt-0.5 truncate">{stream.description}</p>
-          )}
+          {stream.title && <p className="text-xs text-white/50 mt-0.5 truncate">{stream.title}</p>}
+          {stream.description && <p className="text-xs text-white/40 mt-0.5 truncate">{stream.description}</p>}
         </div>
-        {hasUrl && (
-          <Play size={16} className="text-violet-400 flex-shrink-0 mt-0.5" />
-        )}
-        {!hasUrl && stream.infoHash && (
-          <span className="text-xs text-yellow-500/70 flex-shrink-0">torrent</span>
-        )}
+        {hasUrl
+          ? <Play size={16} className="text-violet-400 flex-shrink-0 mt-0.5" />
+          : stream.infoHash && <span className="text-xs text-yellow-500/70 flex-shrink-0">torrent</span>}
       </div>
     </button>
   );
@@ -61,21 +40,13 @@ function StreamCard({
 
 // ─── EpisodeList ──────────────────────────────────────────────────────────────
 
-function EpisodeList({
-  videos,
-  onSelect,
-}: {
-  videos: Video[];
-  onSelect: (video: Video) => void;
-}) {
+function EpisodeList({ videos, onSelect }: { videos: Video[]; onSelect: (v: Video) => void }) {
   const seasons = [...new Set(videos.map((v) => v.season ?? 0))].sort((a, b) => a - b);
   const [activeSeason, setActiveSeason] = useState(seasons[0] ?? 0);
-
   const episodes = videos.filter((v) => (v.season ?? 0) === activeSeason);
 
   return (
     <div>
-      {/* Season tabs */}
       {seasons.length > 1 && (
         <div className="flex gap-2 mb-4 overflow-x-auto pb-1 scrollbar-hide">
           {seasons.map((s) => (
@@ -84,9 +55,7 @@ function EpisodeList({
               onClick={() => setActiveSeason(s)}
               className={clsx(
                 'flex-shrink-0 px-4 py-1.5 rounded-full text-sm font-medium transition-colors',
-                activeSeason === s
-                  ? 'bg-violet-600 text-white'
-                  : 'bg-white/10 text-white/60 hover:text-white'
+                activeSeason === s ? 'bg-violet-600 text-white' : 'bg-white/10 text-white/60 hover:text-white'
               )}
             >
               {s === 0 ? 'Speciali' : `Stagione ${s}`}
@@ -94,7 +63,6 @@ function EpisodeList({
           ))}
         </div>
       )}
-
       <div className="space-y-1">
         {episodes.map((ep) => (
           <button
@@ -103,11 +71,7 @@ function EpisodeList({
             className="w-full text-left px-4 py-3 rounded-lg bg-white/5 hover:bg-violet-600/20 border border-white/5 hover:border-violet-500 transition-all flex items-center gap-3"
           >
             {ep.thumbnail && (
-              <img
-                src={ep.thumbnail}
-                alt=""
-                className="w-20 h-12 rounded object-cover flex-shrink-0"
-              />
+              <img src={ep.thumbnail} alt="" className="w-20 h-12 rounded object-cover flex-shrink-0" />
             )}
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-white">
@@ -116,9 +80,7 @@ function EpisodeList({
                   : ''}
                 {ep.title}
               </p>
-              {ep.overview && (
-                <p className="text-xs text-white/40 mt-0.5 line-clamp-1">{ep.overview}</p>
-              )}
+              {ep.overview && <p className="text-xs text-white/40 mt-0.5 line-clamp-1">{ep.overview}</p>}
             </div>
             <Play size={16} className="text-white/40 flex-shrink-0" />
           </button>
@@ -137,24 +99,16 @@ export default function Detail() {
 
   const [meta, setMeta] = useState<MetaItem | null>(null);
   const [metaLoading, setMetaLoading] = useState(true);
-
-  const [streamGroups, setStreamGroups] = useState<
-    { addon: string; streams: Stream[] }[]
-  >([]);
+  const [streamGroups, setStreamGroups] = useState<{ addon: string; streams: Stream[] }[]>([]);
   const [streamsLoading, setStreamsLoading] = useState(false);
-  // streamsTarget rimosso
-
   const [selectedVideo, setSelectedVideo] = useState<Video | null>(null);
   const [descExpanded, setDescExpanded] = useState(false);
-  // launching rimosso
   const [error, setError] = useState<string | null>(null);
 
   const decodedId = decodeURIComponent(id ?? '');
 
-  // Fetch meta dal primo addon che supporta 'meta'
   useEffect(() => {
     if (!type || !decodedId || addons.length === 0) return;
-
     setMetaLoading(true);
 
     (async () => {
@@ -165,20 +119,14 @@ export default function Detail() {
       }
       setMeta(found);
       setMetaLoading(false);
-
-      // Per i film, carica gli stream subito
-      if (found?.type === 'movie') {
-        loadStreams(decodedId);
-      }
+      if (found?.type === 'movie') loadStreams(decodedId);
     })();
   }, [type, decodedId, addons]);
 
   async function loadStreams(videoId: string) {
     setStreamsLoading(true);
-    setStreamsTarget(videoId);
     setStreamGroups([]);
     setError(null);
-
     try {
       const groups = await fetchAllStreams(addons, type!, videoId);
       setStreamGroups(groups);
@@ -196,35 +144,21 @@ export default function Detail() {
 
   async function handlePlay(stream: Stream) {
     if (!stream.url) return;
-    setLaunching(true);
     try {
       const title = meta
-        ? selectedVideo
-          ? `${meta.name} – ${selectedVideo.title}`
-          : meta.name
+        ? selectedVideo ? `${meta.name} – ${selectedVideo.title}` : meta.name
         : undefined;
-
       await launchMpv(stream.url, title);
-
       if (meta) {
-        addToHistory({
-          id: decodedId,
-          type: type!,
-          name: meta.name,
-          poster: meta.poster,
-          videoId: selectedVideo?.id,
-        });
+        addToHistory({ id: decodedId, type: type!, name: meta.name, poster: meta.poster, videoId: selectedVideo?.id });
       }
     } catch (e: any) {
       setError(e.message ?? 'Impossibile avviare mpv');
-    } finally {
-      setLaunching(false);
     }
   }
 
   const isSeries = meta?.type === 'series';
 
-  // ── Loading ─────────────────────────────────────────────────────────────────
   if (metaLoading) {
     return (
       <div className="flex items-center justify-center h-full gap-3 text-white/40">
@@ -236,67 +170,46 @@ export default function Detail() {
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      {/* ── Hero ──────────────────────────────────────────────────────────── */}
+      {/* Hero */}
       <div className="relative flex-shrink-0 h-72">
-        {meta?.background ? (
+        {(meta?.background || meta?.poster) && (
           <img
-            src={meta.background}
+            src={meta.background ?? meta.poster}
             alt=""
-            className="absolute inset-0 w-full h-full object-cover"
+            className={clsx('absolute inset-0 w-full h-full object-cover', !meta.background && 'object-top blur-sm scale-105')}
           />
-        ) : meta?.poster ? (
-          <img
-            src={meta.poster}
-            alt=""
-            className="absolute inset-0 w-full h-full object-cover object-top blur-sm scale-105"
-          />
-        ) : null}
-        {/* Gradiente */}
+        )}
         <div className="absolute inset-0 bg-gradient-to-t from-[#0f0f13] via-[#0f0f13]/60 to-transparent" />
         <div className="absolute inset-0 bg-gradient-to-r from-[#0f0f13]/80 to-transparent" />
 
-        {/* Back button */}
         <button
           onClick={() => navigate(-1)}
           className="absolute top-4 left-4 flex items-center gap-1.5 text-white/70 hover:text-white transition-colors"
         >
-          <ArrowLeft size={18} />
-          <span className="text-sm">Indietro</span>
+          <ArrowLeft size={18} /><span className="text-sm">Indietro</span>
         </button>
 
-        {/* Info */}
         <div className="absolute bottom-6 left-6 flex gap-4 items-end">
           {meta?.poster && (
-            <img
-              src={meta.poster}
-              alt={meta?.name}
-              className="w-28 rounded-lg shadow-2xl border border-white/10 flex-shrink-0"
-            />
+            <img src={meta.poster} alt={meta.name} className="w-28 rounded-lg shadow-2xl border border-white/10 flex-shrink-0" />
           )}
           <div>
-            <h1 className="text-2xl font-bold text-white drop-shadow-lg">
-              {meta?.name ?? decodedId}
-            </h1>
+            <h1 className="text-2xl font-bold text-white drop-shadow-lg">{meta?.name ?? decodedId}</h1>
             <div className="flex items-center gap-3 mt-1.5 flex-wrap">
-              {meta?.releaseInfo && (
-                <span className="text-sm text-white/60">{meta.releaseInfo}</span>
-              )}
+              {meta?.releaseInfo && <span className="text-sm text-white/60">{meta.releaseInfo}</span>}
               {meta?.imdbRating && (
                 <span className="flex items-center gap-1 text-sm text-yellow-400">
-                  <Star size={12} className="fill-yellow-400" />
-                  {meta.imdbRating}
+                  <Star size={12} className="fill-yellow-400" />{meta.imdbRating}
                 </span>
               )}
               {meta?.runtime && (
                 <span className="flex items-center gap-1 text-sm text-white/60">
-                  <Clock size={12} />
-                  {meta.runtime}
+                  <Clock size={12} />{meta.runtime}
                 </span>
               )}
               {meta?.genres && meta.genres.length > 0 && (
                 <span className="flex items-center gap-1 text-sm text-white/60">
-                  <Film size={12} />
-                  {meta.genres.slice(0, 3).join(', ')}
+                  <Film size={12} />{meta.genres.slice(0, 3).join(', ')}
                 </span>
               )}
             </div>
@@ -304,9 +217,8 @@ export default function Detail() {
         </div>
       </div>
 
-      {/* ── Contenuto ─────────────────────────────────────────────────────── */}
+      {/* Contenuto */}
       <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
-        {/* Descrizione */}
         {meta?.description && (
           <div>
             <p className={clsx('text-sm text-white/70 leading-relaxed', !descExpanded && 'line-clamp-3')}>
@@ -323,37 +235,27 @@ export default function Detail() {
           </div>
         )}
 
-        {/* Error */}
         {error && (
           <div className="flex items-center gap-2 text-red-400 text-sm bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3">
-            <AlertCircle size={16} />
-            {error}
+            <AlertCircle size={16} />{error}
           </div>
         )}
 
-        {/* Episodi (serie) */}
         {isSeries && meta?.videos && meta.videos.length > 0 && (
           <div>
-            <h2 className="text-sm font-semibold text-white/90 uppercase tracking-wider mb-3">
-              Episodi
-            </h2>
+            <h2 className="text-sm font-semibold text-white/90 uppercase tracking-wider mb-3">Episodi</h2>
             <EpisodeList videos={meta.videos} onSelect={handleEpisodeSelect} />
           </div>
         )}
 
-        {/* Stream */}
         {(streamsLoading || streamGroups.length > 0) && (
           <div>
             <h2 className="text-sm font-semibold text-white/90 uppercase tracking-wider mb-3">
-              {isSeries && selectedVideo
-                ? `Stream · ${selectedVideo.title}`
-                : 'Stream disponibili'}
+              {isSeries && selectedVideo ? `Stream · ${selectedVideo.title}` : 'Stream disponibili'}
             </h2>
-
             {streamsLoading ? (
               <div className="flex items-center gap-2 text-white/40 text-sm">
-                <Loader2 size={16} className="animate-spin" />
-                Ricerca stream...
+                <Loader2 size={16} className="animate-spin" />Ricerca stream...
               </div>
             ) : (
               <div className="space-y-4">
@@ -362,11 +264,7 @@ export default function Detail() {
                     <p className="text-xs text-white/30 mb-1.5 truncate">{group.addon}</p>
                     <div className="space-y-1.5">
                       {group.streams.map((stream, i) => (
-                        <StreamCard
-                          key={i}
-                          stream={stream}
-                          onPlay={handlePlay}
-                        />
+                        <StreamCard key={i} stream={stream} onPlay={handlePlay} />
                       ))}
                     </div>
                   </div>
@@ -376,7 +274,6 @@ export default function Detail() {
           </div>
         )}
 
-        {/* Film: bottone play rapido se c'è un solo stream */}
         {!isSeries && !streamsLoading && streamGroups.length === 0 && !error && (
           <div className="text-center py-8 text-white/30 text-sm">
             Nessuno stream trovato tra gli addon installati.
