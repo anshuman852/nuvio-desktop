@@ -84,6 +84,14 @@ interface AppStore {
     autoplay: boolean;
     skipIntro: boolean;
     hardwareDecode: boolean;
+    // RPDB & TMDB
+    rpdbKey: string;
+    tmdbLanguage: string;
+    // Streaming services visibili
+    visibleStreamingServices: string[];
+    // Personalizzazione UI
+    accentColor: string;
+    uiDensity: 'comfortable' | 'compact';
   };
   updateSettings: (patch: Partial<AppStore['settings']>) => void;
 }
@@ -186,6 +194,11 @@ export const useAppStore = create<AppStore>()(
         autoplay: true,
         skipIntro: false,
         hardwareDecode: true,
+        rpdbKey: '',
+        tmdbLanguage: 'it-IT',
+        visibleStreamingServices: ['netflix','disney','apple','paramount','amazon','hbo','crunchyroll','raiplay'],
+        accentColor: '#7c3aed',
+        uiDensity: 'comfortable',
       },
 
       updateSettings: (patch) =>

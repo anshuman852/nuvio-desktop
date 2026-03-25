@@ -7,7 +7,7 @@ import { getSimklPin, pollSimklToken, getSimklProfile } from '../api/simkl';
 import {
   Save, Play, Trash2, LogIn, LogOut, User, Users,
   Plus, Pencil, Check, X, RefreshCw, ExternalLink,
-  Tv, Film, BookOpen, Star,
+  Tv, Film, BookOpen, Star, Monitor,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -617,14 +617,50 @@ function MALSection() {
 
 // ─── Settings principale ──────────────────────────────────────────────────────
 
-type Tab = 'profili' | 'account' | 'player' | 'preferenze' | 'dati';
+
+// ─── RPDB Field ───────────────────────────────────────────────────────────────
+
+function RPDBField() {
+  const { settings, updateSettings } = useAppStore();
+  const [key, setKey] = useState(settings.rpdbKey ?? '');
+  const [status, setStatus] = useState<'idle' | 'testing' | 'ok' | 'err'>('idle');
+
+  async function testKey() {
+    if (!key.trim()) return;
+    setStatus('testing');
+    const valid = await validateRPDBKey(key.trim());
+    setStatus(valid ? 'ok' : 'err');
+    if (valid) updateSettings({ rpdbKey: key.trim() });
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex gap-2">
+        <input value={key} onChange={(e) => setKey(e.target.value)}
+          placeholder="La tua RPDB API key"
+          className="flex-1 px-4 py-2.5 rounded-lg bg-white/5 border border-white/10 focus:border-violet-500 focus:outline-none text-sm text-white placeholder:text-white/30 transition-colors" />
+        <button onClick={testKey} disabled={!key.trim() || status === 'testing'}
+          className="px-4 py-2.5 bg-white/10 hover:bg-white/15 text-sm text-white rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2">
+          {status === 'testing' ? <RefreshCw size={14} className="animate-spin" /> : <Check size={14} />}
+          {status === 'testing' ? 'Test...' : 'Salva'}
+        </button>
+      </div>
+      {status === 'ok' && <p className="text-xs text-green-400">✓ Chiave valida e salvata</p>}
+      {status === 'err' && <p className="text-xs text-red-400">✗ Chiave non valida</p>}
+      {settings.rpdbKey && status === 'idle' && <p className="text-xs text-white/30">✓ Chiave configurata</p>}
+    </div>
+  );
+}
+
+type Tab = 'profili' | 'account' | 'player' | 'preferenze' | 'streaming' | 'dati';
 
 const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
-  { id: 'profili', label: 'Profili', icon: <Users size={15} /> },
-  { id: 'account', label: 'Account', icon: <User size={15} /> },
-  { id: 'player', label: 'Player', icon: <Play size={15} /> },
-  { id: 'preferenze', label: 'Preferenze', icon: <Star size={15} /> },
-  { id: 'dati', label: 'Dati', icon: <Trash2 size={15} /> },
+  { id: 'profili',    label: 'Profili',    icon: <Users size={15} /> },
+  { id: 'account',   label: 'Account',    icon: <User size={15} /> },
+  { id: 'player',    label: 'Player',     icon: <Play size={15} /> },
+  { id: 'preferenze',label: 'Preferenze', icon: <Star size={15} /> },
+  { id: 'streaming', label: 'Streaming',  icon: <Tv size={15} /> },
+  { id: 'dati',      label: 'Dati',       icon: <Trash2 size={15} /> },
 ];
 
 export default function Settings() {
@@ -840,7 +876,7 @@ export default function Settings() {
           )}
 
           {/* Pulsante salva (sempre visibile eccetto dati) */}
-          {tab !== 'dati' && tab !== 'account' && tab !== 'profili' && (
+          {tab !== 'dati' && tab !== 'account' && tab !== 'profili' && tab !== 'streaming' && (
             <button onClick={handleSave}
               className="flex items-center gap-2 px-6 py-2.5 bg-violet-600 hover:bg-violet-500 text-white rounded-lg font-medium text-sm transition-colors">
               <Save size={15} />

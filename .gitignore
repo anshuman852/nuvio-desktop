@@ -20,4 +20,10 @@ Thumbs.db
 # Tauri keys (NON committare mai questi!)
 src-tauri/*.key
 src-tauri/*.pem
+
+# mpv sidecar - scaricato automaticamente dalla CI
 src-tauri/binaries/*.exe
+-e 
+# Env files con chiavi API
+.env.local
+.env.*.local

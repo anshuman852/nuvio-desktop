@@ -32,33 +32,20 @@ jobs:
         with:
           workspaces: src-tauri
 
-      # Scarica l'ultima build di mpv per Windows (zhongfly/mpv-winbuild)
-      # usando le GitHub API per trovare sempre l'URL corretto automaticamente
       - name: Download mpv (bundled sidecar)
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path src-tauri/binaries | Out-Null
-
-          # Prendi l'URL dell'asset x86_64 dall'ultima release
           $release = Invoke-RestMethod -Uri "https://api.github.com/repos/zhongfly/mpv-winbuild/releases/latest" `
             -Headers @{ "User-Agent" = "nuvio-desktop-ci" }
-
           $asset = $release.assets | Where-Object {
             $_.name -match "^mpv-x86_64-\d{8}-git-[a-f0-9]+\.7z$"
           } | Select-Object -First 1
-
-          if (-not $asset) {
-            Write-Error "Nessun asset mpv-x86_64 trovato nella release"
-            exit 1
-          }
-
+          if (-not $asset) { Write-Error "mpv asset not found"; exit 1 }
           Write-Host "Scarico: $($asset.browser_download_url)"
           Invoke-WebRequest -Uri $asset.browser_download_url -OutFile mpv.7z
-
           7z e mpv.7z mpv.exe -o"src-tauri/binaries/" -y
           Rename-Item "src-tauri/binaries/mpv.exe" "mpv-x86_64-pc-windows-msvc.exe"
-
-          Write-Host "OK: $(Get-Item 'src-tauri/binaries/mpv-x86_64-pc-windows-msvc.exe')"
 
       - name: Install Node dependencies
         run: npm install
@@ -67,6 +54,12 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Chiavi API iniettate come variabili d'ambiente Vite (non finiscono nel repo)
+          VITE_TRAKT_CLIENT_ID: ${{ secrets.VITE_TRAKT_CLIENT_ID }}
+          VITE_TRAKT_CLIENT_SECRET: ${{ secrets.VITE_TRAKT_CLIENT_SECRET }}
+          VITE_MAL_CLIENT_ID: ${{ secrets.VITE_MAL_CLIENT_ID }}
+          VITE_SIMKL_CLIENT_ID: ${{ secrets.VITE_SIMKL_CLIENT_ID }}
+          VITE_TMDB_TOKEN: ${{ secrets.VITE_TMDB_TOKEN }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'Nuvio Desktop ${{ github.ref_name }}'
@@ -76,8 +69,8 @@ jobs:
             Client Windows per l'ecosistema Stremio/Nuvio — **mpv incluso, nessuna dipendenza esterna**.
 
             ### Installazione
-            1. Scarica `NuvioDesktop_0.1.0_x64-setup.exe` qui sotto
-            2. Esegui il wizard — nient'altro da installare ✅
+            1. Scarica `NuvioDesktop_x64-setup.exe` qui sotto
+            2. Esegui il wizard ✅
 
             ### Requisiti
             - Windows 10/11 (64-bit)
