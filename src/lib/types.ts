@@ -1,4 +1,4 @@
-// ─── Addon / Stremio manifest ─────────────────────────────────────────────────
+// ─── Addon ────────────────────────────────────────────────────────────────────
 
 export interface AddonCatalog {
   type: string;
@@ -8,7 +8,6 @@ export interface AddonCatalog {
 }
 
 export interface Addon {
-  /** URL base dell'addon (senza /manifest.json) */
   url: string;
   id: string;
   name: string;
@@ -20,7 +19,7 @@ export interface Addon {
   logo?: string;
 }
 
-// ─── Catalogo / Metadata ──────────────────────────────────────────────────────
+// ─── Meta ─────────────────────────────────────────────────────────────────────
 
 export interface MetaItem {
   id: string;
@@ -35,8 +34,9 @@ export interface MetaItem {
   genres?: string[];
   imdbRating?: string;
   runtime?: string;
-  /** Solo per le serie */
   videos?: Video[];
+  cast?: string[];
+  director?: string[];
 }
 
 export interface Video {
@@ -52,33 +52,96 @@ export interface Video {
 // ─── Stream ───────────────────────────────────────────────────────────────────
 
 export interface Stream {
-  /** Nome del provider (es. "Torrentio", "OpenSubs") */
-  name: string;
+  name?: string;
   title?: string;
-  /** HTTP/HTTPS diretto → playback immediato via mpv */
   url?: string;
-  /** Torrent info hash */
   infoHash?: string;
   fileIdx?: number;
+  ytId?: string;
+  description?: string;
   behaviorHints?: {
     notWebReady?: boolean;
     bingeGroup?: string;
     filename?: string;
   };
-  /** Qualità/tag mostrati nell'UI */
-  description?: string;
 }
 
-// ─── Cronologia ───────────────────────────────────────────────────────────────
+// ─── History ──────────────────────────────────────────────────────────────────
 
 export interface HistoryEntry {
   id: string;
   type: string;
   name: string;
   poster?: string;
-  /** Video ID corrente (per le serie) */
   videoId?: string;
-  /** Secondi di avanzamento (future feature via IPC) */
-  progress?: number;
-  watchedAt: number; // timestamp ms
+  progress?: number;        // 0-1
+  watchedAt: number;
+}
+
+// ─── Profile ──────────────────────────────────────────────────────────────────
+
+export interface Profile {
+  id: string;
+  name: string;
+  avatar?: string;          // emoji o URL
+  color: string;            // colore accent es. "#7c3aed"
+  isKids: boolean;
+  createdAt: number;
+}
+
+// ─── Nuvio ────────────────────────────────────────────────────────────────────
+
+export interface NuvioUser {
+  id: string;
+  email: string;
+  token: string;
+  name?: string;
+  avatar?: string;
+}
+
+export interface NuvioContinueWatching {
+  id: string;
+  type: string;
+  name: string;
+  poster?: string;
+  videoId?: string;
+  season?: number;
+  episode?: number;
+  progress: number;
+  duration: number;
+  updatedAt: string;
+}
+
+export type ContentType = 'movie' | 'series' | 'channel' | 'tv';
+
+// ─── Trakt ────────────────────────────────────────────────────────────────────
+
+export interface TraktAuth {
+  username: string;
+  name: string;
+  avatar?: string;
+  token: string;
+  refreshToken: string;
+  expiresAt: number;
+}
+
+// ─── Simkl ────────────────────────────────────────────────────────────────────
+
+export interface SimklAuth {
+  id: number;
+  username: string;
+  name: string;
+  avatar?: string;
+  token: string;
+}
+
+// ─── MAL ──────────────────────────────────────────────────────────────────────
+
+export interface MALAuth {
+  id: number;
+  name: string;
+  picture?: string;
+  token: string;
+  refreshToken: string;
+  expiresAt: number;
 }
