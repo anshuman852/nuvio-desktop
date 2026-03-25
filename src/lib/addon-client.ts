@@ -144,3 +144,9 @@ export async function launchMpv(url: string, title?: string): Promise<void> {
 export async function mpvStop(): Promise<void> {
   await invoke('mpv_stop');
 }
+
+
+export async function mpvCommand(cmd: string, args: unknown[] = []): Promise<void> {
+  const { invoke } = await import('@tauri-apps/api/core');
+  await invoke('mpv_command', { cmd, args });
+}
