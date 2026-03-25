@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { validateRPDBKey } from '../api/rpdb';
 import { useAppStore, useActiveProfile } from '../lib/store';
 import { mpvCommand } from '../lib/addon-client';
 import { login as nuvioLogin, logout as nuvioLogout, setAuthToken } from '../api/nuvio';

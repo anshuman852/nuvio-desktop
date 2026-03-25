@@ -103,3 +103,7 @@ export function tmdbToMeta(item: any): {
     genres: [],
   };
 }
+
+
+// Deve essere qui (non solo in config.ts) perché Streaming.tsx la importa da tmdb
+export const hasTMDBToken = () => Boolean(CONFIG.tmdb.token);
