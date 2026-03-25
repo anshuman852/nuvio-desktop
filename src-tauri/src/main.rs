@@ -6,13 +6,9 @@ mod mpv;
 use std::sync::Mutex;
 use tauri::State;
 
-// ─── Stato globale ────────────────────────────────────────────────────────────
-
 pub struct AppState {
     pub mpv: Mutex<mpv::MpvManager>,
 }
-
-// ─── Comandi: Addon / Stremio protocol ───────────────────────────────────────
 
 #[tauri::command]
 async fn fetch_manifest(url: String) -> Result<serde_json::Value, String> {
@@ -53,8 +49,6 @@ async fn fetch_streams(
         .map_err(|e| e.to_string())
 }
 
-// ─── Comandi: mpv ────────────────────────────────────────────────────────────
-
 #[tauri::command]
 fn launch_mpv(
     url: String,
@@ -69,8 +63,6 @@ fn launch_mpv(
         .map_err(|e| e.to_string())
 }
 
-/// Invia un comando generico all'IPC di mpv.
-/// es. { cmd: "seek", args: [30, "relative"] }
 #[tauri::command]
 fn mpv_command(
     cmd: String,
@@ -90,15 +82,12 @@ fn mpv_stop(state: State<AppState>) {
     state.mpv.lock().unwrap().stop();
 }
 
-// ─── Main ────────────────────────────────────────────────────────────────────
-
 fn main() {
     tauri::Builder::default()
         .manage(AppState {
             mpv: Mutex::new(mpv::MpvManager::new()),
         })
         .plugin(tauri_plugin_store::Builder::new().build())
-        .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![
             fetch_manifest,
             fetch_catalog,
