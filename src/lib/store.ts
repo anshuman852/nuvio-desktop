@@ -92,6 +92,8 @@ interface AppStore {
     // Personalizzazione UI
     accentColor: string;
     uiDensity: 'comfortable' | 'compact';
+    // TMDB token utente
+    tmdbToken: string;
   };
   updateSettings: (patch: Partial<AppStore['settings']>) => void;
 }
@@ -199,6 +201,7 @@ export const useAppStore = create<AppStore>()(
         visibleStreamingServices: ['netflix','disney','apple','paramount','amazon','hbo','crunchyroll','raiplay'],
         accentColor: '#7c3aed',
         uiDensity: 'comfortable',
+        tmdbToken: '',
       },
 
       updateSettings: (patch) =>
@@ -232,6 +235,7 @@ export const useAppStore = create<AppStore>()(
               visibleStreamingServices: ['netflix','disney','apple','paramount','amazon','hbo','crunchyroll','raiplay'],
               accentColor: '#7c3aed',
               uiDensity: 'comfortable',
+              tmdbToken: '',
               ...(state.settings ?? {}),
             },
           };

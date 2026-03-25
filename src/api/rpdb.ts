@@ -1,34 +1,32 @@
 /**
  * Rating Poster DB (RPDB)
- * Sovrascrive le copertine con versioni che mostrano il rating.
- * La chiave è inserita dall'utente nelle impostazioni.
  * Docs: https://ratingposterdb.com/api/
+ *
+ * Free tier key format: "t0-XXXXX" o semplicemente la key grezza
+ * URL poster: https://ratingposterdb.com/{key}/poster/img/{imdbId}.jpg
+ * URL alternativo free: https://ratingposterdb.com/{key}/imdb/poster-{imdbId}.jpg
  */
 
-const BASE = 'https://api.ratingposterdb.com';
+const BASE = 'https://ratingposterdb.com';
 
-/**
- * Restituisce l'URL del poster RPDB per un dato IMDb ID.
- * Se la chiave non c'è o la richiesta fallisce, ritorna il poster originale.
- */
 export function getRPDBPoster(
   imdbId: string | undefined,
   rpdbKey: string | undefined,
   fallback: string | undefined
 ): string | undefined {
   if (!imdbId || !rpdbKey) return fallback;
-  // RPDB fornisce poster direttamente tramite URL con key + imdb id
-  return `${BASE}/${rpdbKey}/poster/img/${imdbId}.jpg`;
+  const cleanId = imdbId.startsWith('tt') ? imdbId : `tt${imdbId}`;
+  return `${BASE}/${rpdbKey}/imdb/poster-${cleanId}.jpg`;
 }
 
-/**
- * Verifica che una chiave RPDB sia valida.
- */
 export async function validateRPDBKey(key: string): Promise<boolean> {
+  if (!key.trim()) return false;
   try {
-    // Test con un IMDb ID noto (The Dark Knight)
-    const res = await fetch(`${BASE}/${key}/poster/img/tt0468569.jpg`);
-    return res.ok;
+    // Testa con The Dark Knight - usa il formato corretto
+    const url = `${BASE}/${key.trim()}/imdb/poster-tt0468569.jpg`;
+    const res = await fetch(url, { method: 'HEAD' });
+    // 200 = valida, 401/403 = non valida, 404 = key format ok ma film non trovato (accettiamo)
+    return res.ok || res.status === 404;
   } catch {
     return false;
   }

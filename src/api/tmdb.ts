@@ -3,8 +3,21 @@ import { CONFIG } from '../lib/config';
 const BASE = 'https://api.themoviedb.org/3';
 const IMG = 'https://image.tmdb.org/t/p';
 
+// Token: prima usa quello dell'utente (dallo store), poi quello di build
+function getToken(): string {
+  try {
+    const stored = localStorage.getItem('nuvio-desktop-v2');
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      const userToken = parsed?.state?.settings?.tmdbToken;
+      if (userToken) return userToken;
+    }
+  } catch { /* ignore */ }
+  return CONFIG.tmdb.token;
+}
+
 const h = () => ({
-  Authorization: `Bearer ${CONFIG.tmdb.token}`,
+  Authorization: `Bearer ${getToken()}`,
   'Content-Type': 'application/json',
 });
 
@@ -106,4 +119,4 @@ export function tmdbToMeta(item: any): {
 
 
 // Deve essere qui (non solo in config.ts) perché Streaming.tsx la importa da tmdb
-export const hasTMDBToken = () => Boolean(CONFIG.tmdb.token);
+export const hasTMDBToken = () => Boolean(getToken());

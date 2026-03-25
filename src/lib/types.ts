@@ -74,22 +74,30 @@ export interface HistoryEntry {
   name: string;
   poster?: string;
   videoId?: string;
-  progress?: number;        // 0-1
+  progress?: number;
   watchedAt: number;
 }
 
 // ─── Profile ──────────────────────────────────────────────────────────────────
 
+export type ProfileAvatar =
+  | { type: 'emoji'; value: string }
+  | { type: 'netflix'; value: string }  // nome dell'avatar Netflix predefinito
+  | { type: 'color'; value: string };   // colore solido
+
 export interface Profile {
   id: string;
   name: string;
-  avatar?: string;          // emoji o URL
-  color: string;            // colore accent es. "#7c3aed"
+  /** Emoji, nome avatar Netflix, o URL immagine */
+  avatar?: string;
+  avatarType?: 'emoji' | 'netflix' | 'image';
+  color: string;
   isKids: boolean;
+  pin?: string;          // PIN a 4 cifre (hash o plain per ora)
   createdAt: number;
 }
 
-// ─── Nuvio ────────────────────────────────────────────────────────────────────
+// ─── Auth ─────────────────────────────────────────────────────────────────────
 
 export interface NuvioUser {
   id: string;
@@ -114,8 +122,6 @@ export interface NuvioContinueWatching {
 
 export type ContentType = 'movie' | 'series' | 'channel' | 'tv';
 
-// ─── Trakt ────────────────────────────────────────────────────────────────────
-
 export interface TraktAuth {
   username: string;
   name: string;
@@ -125,8 +131,6 @@ export interface TraktAuth {
   expiresAt: number;
 }
 
-// ─── Simkl ────────────────────────────────────────────────────────────────────
-
 export interface SimklAuth {
   id: number;
   username: string;
@@ -134,8 +138,6 @@ export interface SimklAuth {
   avatar?: string;
   token: string;
 }
-
-// ─── MAL ──────────────────────────────────────────────────────────────────────
 
 export interface MALAuth {
   id: number;
