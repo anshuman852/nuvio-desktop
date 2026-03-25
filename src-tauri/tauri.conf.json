@@ -1,6 +1,6 @@
 {
   "productName": "NuvioDesktop",
-  "version": "0.1.0",
+  "version": "0.1.8",
   "identifier": "space.nuvioapp.desktop",
   "build": {
     "frontendDist": "../dist",
@@ -39,8 +39,5 @@
     "resources": {
       "binaries/mpv-x86_64-pc-windows-msvc.exe": "mpv.exe"
     }
-  },
-  "plugins": {
-    "store": {}
   }
 }
