@@ -218,10 +218,14 @@ export const useAppStore = create<AppStore>()(
           state = { ...state, history: { [DEFAULT_PROFILE.id]: state.history } };
         }
 
-        // v2→v3: aggiunge nuovi campi settings se mancanti
+        // v2→v3: aggiunge nuovi campi settings se mancanti + assicura addons default
         if (version < 3) {
           state = {
             ...state,
+            // Se addons è vuoto o mancante, ripristina Cinemeta
+            addons: (state.addons && state.addons.length > 0)
+              ? state.addons
+              : DEFAULT_ADDONS,
             settings: {
               mpvPath: 'mpv',
               language: 'it',

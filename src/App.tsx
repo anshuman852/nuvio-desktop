@@ -1,6 +1,6 @@
 import { BrowserRouter, Routes, Route, NavLink, useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
-import { Home, Package, Settings, Search as SearchIcon, X, Menu, Tv } from 'lucide-react';
+import { Home, Package, Settings, Search as SearchIcon, X, Menu, Tv, Library } from 'lucide-react';
 import clsx from 'clsx';
 import { useAppStore, useActiveProfile } from './lib/store';
 
@@ -10,6 +10,8 @@ import AddonsPage from './pages/Addons';
 import SettingsPage from './pages/Settings';
 import SearchPage from './pages/Search';
 import StreamingPage from './pages/Streaming';
+import LibraryPage from './pages/Library';
+import PersonDetailPage from './pages/PersonDetail';
 
 // Applica il colore accent come CSS variable globale
 function AccentColorApplier() {
@@ -27,6 +29,7 @@ function AccentColorApplier() {
 const NAV = [
   { to: '/',          icon: Home,    label: 'Home',         exact: true },
   { to: '/streaming', icon: Tv,      label: 'Streaming',    exact: false },
+  { to: '/library',   icon: Library, label: 'Libreria',     exact: false },
   { to: '/addons',    icon: Package, label: 'Addon',        exact: false },
   { to: '/settings',  icon: Settings, label: 'Impostazioni', exact: false },
 ];
@@ -131,6 +134,8 @@ function Layout() {
             <Route path="/search"               element={<SearchPage />} />
             <Route path="/streaming"            element={<StreamingPage />} />
             <Route path="/streaming/:serviceId" element={<StreamingPage />} />
+            <Route path="/library" element={<LibraryPage />} />
+            <Route path="/person/:personId" element={<PersonDetailPage />} />
           </Routes>
         </main>
       </div>
