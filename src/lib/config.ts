@@ -1,28 +1,18 @@
-/**
- * Configurazione centralizzata — le chiavi vengono da variabili d'ambiente Vite.
- * In sviluppo: da .env.local
- * In produzione: iniettate da GitHub Actions secrets
- * NESSUNA chiave è hardcoded nel codice sorgente.
- */
-
-// Accesso type-safe a import.meta.env senza richiedere vite/client types
-const env = (typeof import.meta !== 'undefined' && (import.meta as any).env)
-  ? (import.meta as any).env
-  : {};
+/// <reference types="vite/client" />
 
 export const CONFIG = {
   trakt: {
-    clientId:     (env.VITE_TRAKT_CLIENT_ID     as string) ?? '',
-    clientSecret: (env.VITE_TRAKT_CLIENT_SECRET as string) ?? '',
+    clientId:     import.meta.env.VITE_TRAKT_CLIENT_ID     ?? '',
+    clientSecret: import.meta.env.VITE_TRAKT_CLIENT_SECRET ?? '',
   },
   mal: {
-    clientId: (env.VITE_MAL_CLIENT_ID as string) ?? '',
+    clientId: import.meta.env.VITE_MAL_CLIENT_ID ?? '',
   },
   simkl: {
-    clientId: (env.VITE_SIMKL_CLIENT_ID as string) ?? '',
+    clientId: import.meta.env.VITE_SIMKL_CLIENT_ID ?? '',
   },
   tmdb: {
-    token: (env.VITE_TMDB_TOKEN as string) ?? '',
+    token: import.meta.env.VITE_TMDB_TOKEN ?? '',
   },
 } as const;
 
