@@ -5,19 +5,24 @@
  * NESSUNA chiave è hardcoded nel codice sorgente.
  */
 
+// Accesso type-safe a import.meta.env senza richiedere vite/client types
+const env = (typeof import.meta !== 'undefined' && (import.meta as any).env)
+  ? (import.meta as any).env
+  : {};
+
 export const CONFIG = {
   trakt: {
-    clientId:     import.meta.env.VITE_TRAKT_CLIENT_ID     ?? '',
-    clientSecret: import.meta.env.VITE_TRAKT_CLIENT_SECRET ?? '',
+    clientId:     (env.VITE_TRAKT_CLIENT_ID     as string) ?? '',
+    clientSecret: (env.VITE_TRAKT_CLIENT_SECRET as string) ?? '',
   },
   mal: {
-    clientId: import.meta.env.VITE_MAL_CLIENT_ID ?? '',
+    clientId: (env.VITE_MAL_CLIENT_ID as string) ?? '',
   },
   simkl: {
-    clientId: import.meta.env.VITE_SIMKL_CLIENT_ID ?? '',
+    clientId: (env.VITE_SIMKL_CLIENT_ID as string) ?? '',
   },
   tmdb: {
-    token: import.meta.env.VITE_TMDB_TOKEN ?? '',
+    token: (env.VITE_TMDB_TOKEN as string) ?? '',
   },
 } as const;
 
