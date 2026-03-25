@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { validateRPDBKey } from '../api/rpdb';
+import { STREAMING_SERVICES } from '../api/tmdb';
 import { useAppStore, useActiveProfile } from '../lib/store';
 import { mpvCommand } from '../lib/addon-client';
 import { login as nuvioLogin, logout as nuvioLogout, setAuthToken } from '../api/nuvio';
@@ -845,6 +846,74 @@ export default function Settings() {
                   </select>
                 </Field>
               </Section>
+            </>
+          )}
+
+          {/* ── PREFERENZE EXTRA ─────────────────────────────────────────── */}
+          {tab === 'preferenze' && (
+            <>
+              <Section title="RPDB — Rating Poster DB">
+                <p className="text-xs text-white/40">
+                  Sostituisce le copertine con versioni che mostrano il rating.
+                  Ottieni la chiave su{' '}
+                  <a href="https://ratingposterdb.com" target="_blank" rel="noopener noreferrer" className="text-violet-400 hover:underline">ratingposterdb.com</a>.
+                </p>
+                <RPDBField />
+              </Section>
+              <Section title="TMDB — Lingua contenuti">
+                <Field label="Lingua">
+                  <select value={local.tmdbLanguage ?? 'it-IT'} onChange={(e) => setLocal((p) => ({ ...p, tmdbLanguage: e.target.value }))} className={selectCls}>
+                    <option value="it-IT">Italiano</option>
+                    <option value="en-US">English</option>
+                    <option value="es-ES">Español</option>
+                    <option value="de-DE">Deutsch</option>
+                    <option value="ja-JP">日本語</option>
+                  </select>
+                </Field>
+              </Section>
+              <Section title="Colore accent">
+                <div className="flex gap-2 flex-wrap">
+                  {['#7c3aed','#2563eb','#16a34a','#dc2626','#d97706','#0891b2','#be185d'].map((c) => (
+                    <button key={c} onClick={() => setLocal((p) => ({ ...p, accentColor: c }))}
+                      className={clsx('w-8 h-8 rounded-full transition-all', (local.accentColor ?? '#7c3aed') === c ? 'ring-2 ring-white scale-110' : 'hover:scale-105')}
+                      style={{ backgroundColor: c }} />
+                  ))}
+                </div>
+              </Section>
+            </>
+          )}
+
+          {/* ── STREAMING ─────────────────────────────────────────────────── */}
+          {tab === 'streaming' && (
+            <>
+              <h1 className="text-lg font-bold text-white">Servizi Streaming</h1>
+              <Section title="Servizi visibili">
+                <p className="text-xs text-white/40 mb-3">Seleziona i servizi da mostrare nella sezione Streaming.</p>
+                <div className="space-y-2">
+                  {STREAMING_SERVICES.map((s) => {
+                    const visible: string[] = local.visibleStreamingServices ?? STREAMING_SERVICES.map((x) => x.id);
+                    const isOn = visible.includes(s.id);
+                    return (
+                      <div key={s.id} className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10">
+                        <div className="flex items-center gap-3">
+                          <span className="text-2xl">{s.logo}</span>
+                          <span className="text-sm text-white font-medium">{s.name}</span>
+                        </div>
+                        <button onClick={() => {
+                          const cur: string[] = local.visibleStreamingServices ?? STREAMING_SERVICES.map((x) => x.id);
+                          setLocal((p) => ({ ...p, visibleStreamingServices: isOn ? cur.filter((id) => id !== s.id) : [...cur, s.id] }));
+                        }}
+                          className={clsx('relative w-11 h-6 rounded-full transition-colors duration-200', isOn ? 'bg-violet-600' : 'bg-white/20')}>
+                          <span className={clsx('absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200', isOn ? 'translate-x-5' : 'translate-x-0')} />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </Section>
+              <button onClick={handleSave} className="flex items-center gap-2 px-6 py-2.5 bg-violet-600 hover:bg-violet-500 text-white rounded-lg font-medium text-sm transition-colors">
+                <Save size={15} />{saved ? '\u2713 Salvato' : 'Salva impostazioni'}
+              </button>
             </>
           )}
 

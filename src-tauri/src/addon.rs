@@ -14,13 +14,15 @@ fn normalize(url: &str) -> String {
     url.trim_end_matches('/').to_string()
 }
 
-/// GET /manifest.json
-pub async fn fetch_manifest(base_url: &str) -> Result<serde_json::Value> {
-    let url = format!("{}/manifest.json", normalize(base_url));
+/// GET manifest — accetta l'URL completo (con o senza /manifest.json)
+pub async fn fetch_manifest(manifest_url: &str) -> Result<serde_json::Value> {
+    // Normalizza: rimuove slash finale, assicura che finisca con /manifest.json
+    let base = normalize(manifest_url).replace("/manifest.json", "");
+    let url = format!("{}/manifest.json", base);
     Ok(client().get(&url).send().await?.error_for_status()?.json().await?)
 }
 
-/// GET /catalog/{type}/{id}.json  (opzionale: /{extra})
+/// GET /catalog/{type}/{id}.json
 pub async fn fetch_catalog(
     base_url: &str,
     type_: &str,
@@ -31,13 +33,9 @@ pub async fn fetch_catalog(
         .filter(|s| !s.is_empty())
         .map(|s| format!("/{}", s))
         .unwrap_or_default();
-
     let url = format!(
         "{}/catalog/{}/{}{}.json",
-        normalize(base_url),
-        type_,
-        id,
-        extra_segment
+        normalize(base_url), type_, id, extra_segment
     );
     Ok(client().get(&url).send().await?.error_for_status()?.json().await?)
 }

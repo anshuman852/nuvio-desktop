@@ -208,16 +208,38 @@ export const useAppStore = create<AppStore>()(
       name: 'nuvio-desktop-v2',
       storage,
       migrate: (persisted: any, version) => {
-        // migrazione da v1 (history era array, ora è Record)
-        if (version < 2 && Array.isArray(persisted.history)) {
-          return {
-            ...persisted,
-            history: { [DEFAULT_PROFILE.id]: persisted.history },
+        let state = { ...persisted };
+
+        // v1→v2: history era array, ora è Record per profilo
+        if (version < 2 && Array.isArray(state.history)) {
+          state = { ...state, history: { [DEFAULT_PROFILE.id]: state.history } };
+        }
+
+        // v2→v3: aggiunge nuovi campi settings se mancanti
+        if (version < 3) {
+          state = {
+            ...state,
+            settings: {
+              mpvPath: 'mpv',
+              language: 'it',
+              subtitleLanguage: 'it',
+              defaultQuality: 'best',
+              autoplay: true,
+              skipIntro: false,
+              hardwareDecode: true,
+              rpdbKey: '',
+              tmdbLanguage: 'it-IT',
+              visibleStreamingServices: ['netflix','disney','apple','paramount','amazon','hbo','crunchyroll','raiplay'],
+              accentColor: '#7c3aed',
+              uiDensity: 'comfortable',
+              ...(state.settings ?? {}),
+            },
           };
         }
-        return persisted;
+
+        return state;
       },
-      version: 2,
+      version: 3,
     }
   )
 );
