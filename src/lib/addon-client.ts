@@ -68,17 +68,14 @@ export async function fetchCatalog(
   id: string,
   extra?: string
 ): Promise<MetaItem[]> {
-  try {
-    const result = await invoke<any>('fetch_catalog', {
-      addonUrl,
-      type_: type,
-      id,
-      extra: extra ?? null,
-    });
-    return (result.metas ?? []) as MetaItem[];
-  } catch {
-    return [];
-  }
+  // Propaga l'errore invece di nasconderlo — Home.tsx gestisce il catch
+  const result = await invoke<any>('fetch_catalog', {
+    addonUrl,
+    type_: type,
+    id,
+    extra: extra ?? null,
+  });
+  return (result.metas ?? []) as MetaItem[];
 }
 
 // ─── Meta ─────────────────────────────────────────────────────────────────────

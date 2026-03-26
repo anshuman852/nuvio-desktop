@@ -116,12 +116,16 @@ export default function Detail() {
   const history = useActiveHistory();
 
   const decodedId = decodeURIComponent(id ?? '');
+  // Se l'ID è tmdb:XXX, usa TMDB direttamente per il meta
+  const isTmdbId = decodedId.startsWith('tmdb:');
+  const tmdbNumId = isTmdbId ? decodedId.replace('tmdb:', '') : null;
 
   const [meta, setMeta] = useState<MetaItem | null>(null);
   const [tmdbData, setTmdbData] = useState<any>(null);
   const [cast, setCast] = useState<Person[]>([]);
   const [crew, setCrew] = useState<Person[]>([]);
   const [metaLoading, setMetaLoading] = useState(true);
+  const [metaError, setMetaError] = useState(false);
   const [streamGroups, setStreamGroups] = useState<StreamGroup[]>([]);
   const [streamsLoading, setStreamsLoading] = useState(false);
   const [streamError, setStreamError] = useState<string | null>(null);
@@ -135,15 +139,47 @@ export default function Detail() {
     setMetaLoading(true);
 
     (async () => {
-      // Fetch meta da addon
       let found: MetaItem | null = null;
-      const results = await Promise.allSettled(addons.map((a) => fetchMeta(a.url, type, decodedId)));
-      for (const r of results) {
-        if (r.status === 'fulfilled' && r.value) { found = r.value; break; }
+
+      if (isTmdbId && tmdbNumId) {
+        // ID TMDB: usa TMDB API direttamente
+        try {
+          const tmdbType = type === 'series' ? 'tv' : 'movie';
+          const data = await getTMDBDetails(tmdbType, parseInt(tmdbNumId));
+          if (data) {
+            found = {
+              id: decodedId,
+              type: type ?? 'movie',
+              name: data.title ?? data.name ?? '',
+              poster: data.poster_path ? tmdbImg(data.poster_path, 'w300') : undefined,
+              background: data.backdrop_path ? tmdbImg(data.backdrop_path, 'w780') : undefined,
+              description: data.overview,
+              releaseInfo: (data.release_date ?? data.first_air_date ?? '').slice(0, 4),
+              imdbRating: data.vote_average ? String(data.vote_average.toFixed(1)) : undefined,
+              runtime: data.runtime ? `${data.runtime} min` : undefined,
+              genres: data.genres?.map((g: any) => g.name),
+            };
+            // Per play usa external_ids.imdb_id se disponibile
+            const imdbId = data.external_ids?.imdb_id;
+            if (imdbId) {
+              found.id = imdbId; // usa l'IMDb ID per lo stream
+            }
+          }
+        } catch { /* fallback agli addon */ }
       }
+
+      if (!found) {
+        // Fetch meta da addon Stremio
+        const results = await Promise.allSettled(addons.map((a) => fetchMeta(a.url, type!, decodedId)));
+        for (const r of results) {
+          if (r.status === 'fulfilled' && r.value) { found = r.value; break; }
+        }
+      }
+
       setMeta(found);
       setMetaLoading(false);
-      if (found?.type === 'movie') loadStreams(decodedId);
+      if (!found) setMetaError(true);
+      if (found?.type === 'movie') loadStreams(found.id);
 
       // Fetch dati TMDB per cast (se disponibile token)
       const tmdbToken = settings.tmdbToken;

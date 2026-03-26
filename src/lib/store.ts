@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import {
@@ -9,7 +10,7 @@ const storage = createJSONStorage(() => localStorage);
 
 // ─── Default addons ───────────────────────────────────────────────────────────
 
-const DEFAULT_ADDONS: Addon[] = [
+export const DEFAULT_ADDONS: Addon[] = [
   {
     url: 'https://v3-cinemeta.strem.io',
     id: 'com.linvo.cinemeta',
@@ -28,74 +29,67 @@ const DEFAULT_ADDONS: Addon[] = [
 
 // ─── Default profile ──────────────────────────────────────────────────────────
 
-const DEFAULT_PROFILE: Profile = {
+export const DEFAULT_PROFILE: Profile = {
   id: 'default',
   name: 'Principale',
-  avatar: '🎬',
+  avatar: 'red',
+  avatarType: 'netflix',
   color: '#7c3aed',
   isKids: false,
   createdAt: Date.now(),
 };
 
+const DEFAULT_SETTINGS = {
+  mpvPath: 'mpv',
+  language: 'it',
+  subtitleLanguage: 'it',
+  defaultQuality: 'best',
+  autoplay: true,
+  skipIntro: false,
+  hardwareDecode: true,
+  rpdbKey: '',
+  tmdbLanguage: 'it-IT',
+  tmdbToken: '',
+  visibleStreamingServices: ['netflix','disney','apple','paramount','amazon','hbo','crunchyroll','raiplay'],
+  accentColor: '#7c3aed',
+  uiDensity: 'comfortable' as const,
+};
+
 // ─── Store types ──────────────────────────────────────────────────────────────
 
 interface AppStore {
-  // Profili (Netflix-style)
   profiles: Profile[];
   activeProfileId: string;
-  addProfile: (profile: Omit<Profile, 'id' | 'createdAt'>) => void;
+  profileSelected: boolean;  // true dopo che l'utente ha scelto il profilo
+  addProfile: (p: Omit<Profile, 'id' | 'createdAt'>) => void;
   updateProfile: (id: string, patch: Partial<Profile>) => void;
   removeProfile: (id: string) => void;
   setActiveProfile: (id: string) => void;
+  setProfileSelected: (v: boolean) => void;
 
-  // Addon
   addons: Addon[];
   addAddon: (addon: Addon) => void;
   removeAddon: (id: string) => void;
   reorderAddon: (id: string, direction: 'up' | 'down') => void;
 
-  // History (per profilo)
   history: Record<string, HistoryEntry[]>;
   addToHistory: (entry: Omit<HistoryEntry, 'watchedAt'>) => void;
   clearHistory: () => void;
 
-  // Auth: Nuvio
   nuvioUser: NuvioUser | null;
   setNuvioUser: (user: NuvioUser | null) => void;
 
-  // Auth: Trakt
   traktAuth: TraktAuth | null;
   setTraktAuth: (auth: TraktAuth | null) => void;
 
-  // Auth: Simkl
   simklAuth: SimklAuth | null;
   setSimklAuth: (auth: SimklAuth | null) => void;
 
-  // Auth: MAL
   malAuth: MALAuth | null;
   setMALAuth: (auth: MALAuth | null) => void;
 
-  // Settings
-  settings: {
-    mpvPath: string;
-    language: string;
-    subtitleLanguage: string;
-    defaultQuality: string;
-    autoplay: boolean;
-    skipIntro: boolean;
-    hardwareDecode: boolean;
-    // RPDB & TMDB
-    rpdbKey: string;
-    tmdbLanguage: string;
-    // Streaming services visibili
-    visibleStreamingServices: string[];
-    // Personalizzazione UI
-    accentColor: string;
-    uiDensity: 'comfortable' | 'compact';
-    // TMDB token utente
-    tmdbToken: string;
-  };
-  updateSettings: (patch: Partial<AppStore['settings']>) => void;
+  settings: typeof DEFAULT_SETTINGS;
+  updateSettings: (patch: Partial<typeof DEFAULT_SETTINGS>) => void;
 }
 
 // ─── Store ────────────────────────────────────────────────────────────────────
@@ -103,160 +97,136 @@ interface AppStore {
 export const useAppStore = create<AppStore>()(
   persist(
     (set, get) => ({
-      // ── Profili ────────────────────────────────────────────────────────────
       profiles: [DEFAULT_PROFILE],
       activeProfileId: DEFAULT_PROFILE.id,
+      profileSelected: false,
 
-      addProfile: (data) => {
-        const profile: Profile = {
-          ...data,
-          id: crypto.randomUUID(),
-          createdAt: Date.now(),
-        };
-        set((s) => ({ profiles: [...s.profiles, profile] }));
-      },
-
-      updateProfile: (id, patch) =>
-        set((s) => ({
-          profiles: s.profiles.map((p) => p.id === id ? { ...p, ...patch } : p),
-        })),
-
-      removeProfile: (id) =>
-        set((s) => ({
-          profiles: s.profiles.filter((p) => p.id !== id),
-          activeProfileId: s.activeProfileId === id ? DEFAULT_PROFILE.id : s.activeProfileId,
-        })),
-
+      addProfile: (data) => set((s) => ({
+        profiles: [...s.profiles, { ...data, id: crypto.randomUUID(), createdAt: Date.now() }],
+      })),
+      updateProfile: (id, patch) => set((s) => ({
+        profiles: s.profiles.map((p) => p.id === id ? { ...p, ...patch } : p),
+      })),
+      removeProfile: (id) => set((s) => ({
+        profiles: s.profiles.filter((p) => p.id !== id && p.id !== DEFAULT_PROFILE.id),
+        activeProfileId: s.activeProfileId === id ? DEFAULT_PROFILE.id : s.activeProfileId,
+      })),
       setActiveProfile: (id) => set({ activeProfileId: id }),
+      setProfileSelected: (v) => set({ profileSelected: v }),
 
-      // ── Addon ──────────────────────────────────────────────────────────────
+      // Garantisce sempre almeno Cinemeta
       addons: DEFAULT_ADDONS,
 
-      addAddon: (addon) =>
-        set((s) => ({
-          addons: [...s.addons.filter((a) => a.id !== addon.id), addon],
-        })),
+      addAddon: (addon) => set((s) => ({
+        addons: [...s.addons.filter((a) => a.id !== addon.id), addon],
+      })),
+      removeAddon: (id) => set((s) => ({
+        addons: s.addons.filter((a) => a.id !== id),
+      })),
+      reorderAddon: (id, direction) => set((s) => {
+        const idx = s.addons.findIndex((a) => a.id === id);
+        if (idx === -1) return s;
+        const arr = [...s.addons];
+        const target = direction === 'up' ? idx - 1 : idx + 1;
+        if (target < 0 || target >= arr.length) return s;
+        [arr[idx], arr[target]] = [arr[target], arr[idx]];
+        return { addons: arr };
+      }),
 
-      removeAddon: (id) =>
-        set((s) => ({ addons: s.addons.filter((a) => a.id !== id) })),
-
-      reorderAddon: (id, direction) =>
-        set((s) => {
-          const idx = s.addons.findIndex((a) => a.id === id);
-          if (idx === -1) return s;
-          const arr = [...s.addons];
-          const target = direction === 'up' ? idx - 1 : idx + 1;
-          if (target < 0 || target >= arr.length) return s;
-          [arr[idx], arr[target]] = [arr[target], arr[idx]];
-          return { addons: arr };
-        }),
-
-      // ── History per profilo ────────────────────────────────────────────────
       history: {},
+      addToHistory: (entry) => set((s) => {
+        const pid = s.activeProfileId;
+        const prev = s.history[pid] ?? [];
+        return {
+          history: {
+            ...s.history,
+            [pid]: [
+              { ...entry, watchedAt: Date.now() },
+              ...prev.filter((h) => h.id !== entry.id),
+            ].slice(0, 200),
+          },
+        };
+      }),
+      clearHistory: () => set((s) => ({
+        history: { ...s.history, [s.activeProfileId]: [] },
+      })),
 
-      addToHistory: (entry) =>
-        set((s) => {
-          const pid = s.activeProfileId;
-          const prev = s.history[pid] ?? [];
-          return {
-            history: {
-              ...s.history,
-              [pid]: [
-                { ...entry, watchedAt: Date.now() },
-                ...prev.filter((h) => h.id !== entry.id),
-              ].slice(0, 200),
-            },
-          };
-        }),
-
-      clearHistory: () =>
-        set((s) => ({
-          history: { ...s.history, [s.activeProfileId]: [] },
-        })),
-
-      // ── Auth ───────────────────────────────────────────────────────────────
       nuvioUser: null,
       setNuvioUser: (user) => set({ nuvioUser: user }),
-
       traktAuth: null,
       setTraktAuth: (auth) => set({ traktAuth: auth }),
-
       simklAuth: null,
       setSimklAuth: (auth) => set({ simklAuth: auth }),
-
       malAuth: null,
       setMALAuth: (auth) => set({ malAuth: auth }),
 
-      // ── Settings ───────────────────────────────────────────────────────────
-      settings: {
-        mpvPath: 'mpv',
-        language: 'it',
-        subtitleLanguage: 'it',
-        defaultQuality: 'best',
-        autoplay: true,
-        skipIntro: false,
-        hardwareDecode: true,
-        rpdbKey: '',
-        tmdbLanguage: 'it-IT',
-        visibleStreamingServices: ['netflix','disney','apple','paramount','amazon','hbo','crunchyroll','raiplay'],
-        accentColor: '#7c3aed',
-        uiDensity: 'comfortable',
-        tmdbToken: '',
-      },
-
-      updateSettings: (patch) =>
-        set((s) => ({ settings: { ...s.settings, ...patch } })),
+      settings: DEFAULT_SETTINGS,
+      updateSettings: (patch) => set((s) => ({
+        settings: { ...s.settings, ...patch },
+      })),
     }),
     {
-      name: 'nuvio-desktop-v2',
+      // Nome fisso - NON cambiare mai più
+      name: 'nuvio-app',
       storage,
-      migrate: (persisted: any, version) => {
-        let state = { ...persisted };
+      version: 1,
+      migrate: (persisted: any) => {
+        // Migrazione universale da qualsiasi versione precedente
+        const old = persisted ?? {};
 
-        // v1→v2: history era array, ora è Record per profilo
-        if (version < 2 && Array.isArray(state.history)) {
-          state = { ...state, history: { [DEFAULT_PROFILE.id]: state.history } };
+        // Recupera addons da vecchi nomi store se presenti
+        let addons = old.addons;
+        if (!addons || addons.length === 0) {
+          // Prova a leggere da vecchi store names
+          try {
+            const oldNames = ['nuvio-desktop-v2', 'nuvio-desktop', 'nuvio-desktop-v3'];
+            for (const name of oldNames) {
+              const raw = localStorage.getItem(name);
+              if (raw) {
+                const parsed = JSON.parse(raw);
+                const a = parsed?.state?.addons;
+                if (a && a.length > 0) { addons = a; break; }
+              }
+            }
+          } catch { /* ignore */ }
+        }
+        if (!addons || addons.length === 0) addons = DEFAULT_ADDONS;
+
+        // Recupera history
+        let history = old.history ?? {};
+        if (Array.isArray(history)) {
+          history = { [DEFAULT_PROFILE.id]: history };
         }
 
-        // v2→v3: aggiunge nuovi campi settings se mancanti + assicura addons default
-        if (version < 3) {
-          state = {
-            ...state,
-            // Se addons è vuoto o mancante, ripristina Cinemeta
-            addons: (state.addons && state.addons.length > 0)
-              ? state.addons
-              : DEFAULT_ADDONS,
-            settings: {
-              mpvPath: 'mpv',
-              language: 'it',
-              subtitleLanguage: 'it',
-              defaultQuality: 'best',
-              autoplay: true,
-              skipIntro: false,
-              hardwareDecode: true,
-              rpdbKey: '',
-              tmdbLanguage: 'it-IT',
-              visibleStreamingServices: ['netflix','disney','apple','paramount','amazon','hbo','crunchyroll','raiplay'],
-              accentColor: '#7c3aed',
-              uiDensity: 'comfortable',
-              tmdbToken: '',
-              ...(state.settings ?? {}),
-            },
-          };
-        }
+        // Recupera settings con spread dei nuovi campi
+        const settings = { ...DEFAULT_SETTINGS, ...(old.settings ?? {}) };
 
-        return state;
+        // Recupera profili
+        const profiles = old.profiles?.length ? old.profiles : [DEFAULT_PROFILE];
+
+        return {
+          ...old,
+          addons,
+          history,
+          settings,
+          profiles,
+          activeProfileId: old.activeProfileId ?? DEFAULT_PROFILE.id,
+          profileSelected: false, // sempre false dopo update → mostra selezione
+          nuvioUser: old.nuvioUser ?? null,
+          traktAuth: old.traktAuth ?? null,
+          simklAuth: old.simklAuth ?? null,
+          malAuth: old.malAuth ?? null,
+        };
       },
-      version: 3,
     }
   )
 );
 
-// ─── Selettori helper ─────────────────────────────────────────────────────────
+// ─── Selettori ────────────────────────────────────────────────────────────────
 
 export const useActiveProfile = () => {
   const { profiles, activeProfileId } = useAppStore();
-  return profiles.find((p) => p.id === activeProfileId) ?? profiles[0];
+  return profiles.find((p) => p.id === activeProfileId) ?? profiles[0] ?? DEFAULT_PROFILE;
 };
 
 export const useActiveHistory = () => {
