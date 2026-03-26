@@ -6,5 +6,6 @@
   "permissions": [
     "core:default",
     "store:default"
+    "shell:allow-open"
   ]
 }

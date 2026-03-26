@@ -1,5 +1,6 @@
 /// <reference types="vite/client" />
 import { useState, useEffect, useRef } from 'react';
+import { open } from '@tauri-apps/plugin-shell';
 import { useAppStore, useActiveProfile } from '../lib/store';
 import { mpvCommand } from '../lib/addon-client';
 import { login as nuvioLogin, logout as nuvioLogout, setAuthToken } from '../api/nuvio';
@@ -512,7 +513,15 @@ function TraktSection() {
 
   if (userCode) return (
     <div className="space-y-3 p-4 rounded-xl bg-white/5 border border-white/10">
-      <p className="text-sm text-white/80">1. Apri <a href={verifyUrl!} target="_blank" rel="noopener noreferrer" className="text-[color:var(--accent,#7c3aed)] hover:underline inline-flex items-center gap-1">{verifyUrl} <ExternalLink size={11} /></a></p>
+      <p className="text-sm text-white/80">1. Apri 
+        <a
+          href="#"
+          onClick={(e) => { e.preventDefault(); open(verifyUrl!); }}
+          className="text-[color:var(--accent,#7c3aed)] hover:underline inline-flex items-center gap-1 mx-1"
+        >
+          {verifyUrl} <ExternalLink size={11} />
+        </a>
+      </p>
       <p className="text-sm text-white/80">2. Inserisci il codice:</p>
       <div className="text-2xl font-mono font-bold tracking-widest text-center py-3 rounded-lg" style={{ color: 'var(--accent, #7c3aed)', backgroundColor: 'var(--accent-bg, rgba(124,58,237,0.2))' }}>{userCode}</div>
       <div className="flex items-center gap-2 text-xs text-white/40 justify-center"><RefreshCw size={12} className="animate-spin" /> In attesa...</div>
@@ -577,7 +586,16 @@ function SimklSection() {
 
   if (pin) return (
     <div className="space-y-3 p-4 rounded-xl bg-white/5 border border-white/10">
-      <p className="text-sm text-white/80">Apri <a href="https://simkl.com/pin" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline inline-flex items-center gap-1">simkl.com/pin <ExternalLink size={11} /></a> e inserisci:</p>
+      <p className="text-sm text-white/80">Apri 
+        <a
+          href="#"
+          onClick={(e) => { e.preventDefault(); open('https://simkl.com/pin'); }}
+          className="text-blue-400 hover:underline inline-flex items-center gap-1 mx-1"
+        >
+          simkl.com/pin <ExternalLink size={11} />
+        </a>
+        e inserisci:
+      </p>
       <div className="text-2xl font-mono font-bold text-blue-400 tracking-widest text-center py-3 bg-blue-500/10 rounded-lg">{pin}</div>
       <div className="flex items-center gap-2 text-xs text-white/40 justify-center"><RefreshCw size={12} className="animate-spin" /> In attesa...</div>
     </div>
@@ -607,7 +625,8 @@ function MALSection() {
     const { getMALAuthUrl } = await import('../api/mal');
     const { url, codeVerifier: cv } = getMALAuthUrl();
     setCodeVerifier(cv); setAuthUrl(url); setStep('waiting');
-    window.open(url, '_blank');
+    // open in system browser
+    open(url);
   }
 
   async function exchangeCode() {
@@ -641,7 +660,11 @@ function MALSection() {
   if (step === 'waiting') return (
     <div className="space-y-3">
       <p className="text-xs text-white/60">Autorizza l'app su MAL, poi copia il codice dall'URL di redirect.</p>
-      <a href={authUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs text-blue-400 hover:underline">
+      <a
+        href="#"
+        onClick={(e) => { e.preventDefault(); open(authUrl); }}
+        className="flex items-center gap-1.5 text-xs text-blue-400 hover:underline"
+      >
         <ExternalLink size={11} /> Apri autorizzazione MAL
       </a>
       <div className="flex gap-2">

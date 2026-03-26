@@ -5,11 +5,13 @@
  */
 import { useEffect, useRef } from "react";
 import { usePlayer } from "../hooks/usePlayer";
+import { useNuvioSync } from '../hooks/useNuvioSync';
 
 export default function PlayerBar() {
-  const { isOpen, title, paused, position, duration, volume,
+  const { isOpen, title, paused, position, duration, volume, currentItem,
           pause, resume, stop, seek, setVolume, syncState } = usePlayer();
-  const syncInterval = useRef<ReturnType<typeof setInterval>>();
+
+  useNuvioSync(position, duration, !paused && isOpen, currentItem);
 
   // Poll stato mpv ogni 2 secondi
   useEffect(() => {

@@ -1,4 +1,5 @@
 import { NavLink } from "react-router-dom";
+import nuvioLogo from "../assets/logo.png";
 
 const NAV_ITEMS = [
   { to: "/", icon: HomeIcon, label: "Home" },
@@ -16,8 +17,8 @@ export default function Sidebar() {
                       bg-nuvio-surface border-r border-nuvio-border flex flex-col py-4 overflow-hidden">
       {/* Logo */}
       <div className="px-4 mb-8 flex items-center gap-3">
-        <div className="w-8 h-8 rounded-lg bg-nuvio-accent flex items-center justify-center flex-shrink-0">
-          <span className="text-white font-bold text-sm">N</span>
+        <div className="w-8 h-8 rounded-lg bg-nuvio-accent flex items-center justify-center flex-shrink-0 overflow-hidden">
+          <img src={nuvioLogo} alt="Nuvio" className="w-full h-full object-contain" />
         </div>
         <span className="font-semibold text-nuvio-text opacity-0 group-hover:opacity-100
                          transition-opacity duration-200 whitespace-nowrap">

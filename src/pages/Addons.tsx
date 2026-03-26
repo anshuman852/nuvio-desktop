@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { open } from '@tauri-apps/plugin-shell';
 import { useAppStore } from '../lib/store';
 import { installAddon, normalizeAddonUrl } from '../lib/addon-client';
 import { Addon } from '../lib/types';
@@ -78,7 +79,6 @@ export default function Addons() {
   const [loading, setLoading] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; msg: string } | null>(null);
 
-  // Mostra preview dell'URL normalizzato mentre si digita
   const normalizedPreview = url.trim() ? normalizeAddonUrl(url.trim()) : '';
   const showPreview = url.trim() && normalizedPreview !== url.trim();
 
@@ -178,8 +178,11 @@ export default function Addons() {
                       Installa
                     </button>
                   )}
-                  <a href={p.url} target="_blank" rel="noopener noreferrer"
-                    className="text-white/30 hover:text-white/60 transition-colors ml-auto">
+                  <a
+                    href="#"
+                    onClick={(e) => { e.preventDefault(); open(p.url); }}
+                    className="text-white/30 hover:text-white/60 transition-colors ml-auto"
+                  >
                     <ExternalLink size={12} />
                   </a>
                 </div>

@@ -6,7 +6,7 @@ import { getTMDBDetails, tmdbImg } from '../api/tmdb';
 import { MetaItem, Stream, Video } from '../lib/types';
 import {
   Play, ArrowLeft, Star, Clock, Film, ChevronDown, ChevronUp,
-  Loader2, AlertCircle, Tv, Users, ExternalLink,
+  Loader2, AlertCircle, Tv, Users, ExternalLink, X,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -15,7 +15,7 @@ import clsx from 'clsx';
 interface Person {
   id: number;
   name: string;
-  role: string;           // personaggio o ruolo (es. "Director")
+  role: string;
   photo?: string;
   department?: string;
 }
@@ -40,7 +40,7 @@ function PersonCard({ person }: { person: Person }) {
 // ─── StreamCard ───────────────────────────────────────────────────────────────
 
 function StreamCard({ stream, onPlay }: { stream: Stream; onPlay: () => void }) {
-  const hasUrl = Boolean(stream.url);
+  const hasUrl = Boolean(stream.url) || Boolean(stream.infoHash);
   return (
     <button onClick={() => hasUrl && onPlay()} disabled={!hasUrl}
       className={clsx('w-full text-left px-4 py-3 rounded-lg border transition-all duration-150 group',
@@ -116,7 +116,6 @@ export default function Detail() {
   const history = useActiveHistory();
 
   const decodedId = decodeURIComponent(id ?? '');
-  // Se l'ID è tmdb:XXX, usa TMDB direttamente per il meta
   const isTmdbId = decodedId.startsWith('tmdb:');
   const tmdbNumId = isTmdbId ? decodedId.replace('tmdb:', '') : null;
 
@@ -133,6 +132,8 @@ export default function Detail() {
   const [descExpanded, setDescExpanded] = useState(false);
   const [playError, setPlayError] = useState<string | null>(null);
   const [castExpanded, setCastExpanded] = useState(false);
+  const [trailerKey, setTrailerKey] = useState<string | null>(null);
+  const [showTrailer, setShowTrailer] = useState(false);
 
   useEffect(() => {
     if (!type || !decodedId) return;
@@ -181,11 +182,10 @@ export default function Detail() {
       if (!found) setMetaError(true);
       if (found?.type === 'movie') loadStreams(found.id);
 
-      // Fetch dati TMDB per cast (se disponibile token)
+      // Fetch dati TMDB per cast, trailer, ecc.
       const tmdbToken = settings.tmdbToken;
       if (tmdbToken) {
         try {
-          // Estrai ID TMDB dall'ID stremio o cerca per titolo
           const tmdbType = type === 'series' ? 'tv' : 'movie';
           let tmdbId: number | null = null;
 
@@ -218,6 +218,12 @@ export default function Detail() {
                 photo: c.profile_path ? tmdbImg(c.profile_path, 'w300') : undefined,
                 department: c.department,
               })));
+
+              // Trailer
+              const trailer = data.videos?.results?.find(
+                (v: any) => v.type === 'Trailer' && v.site === 'YouTube'
+              );
+              if (trailer) setTrailerKey(trailer.key);
             }
           }
         } catch { /* TMDB non disponibile, ignora */ }
@@ -230,7 +236,7 @@ export default function Detail() {
     try {
       const groups = await fetchAllStreams(addons, type!, videoId);
       setStreamGroups(groups);
-      if (groups.length === 0) setStreamError('Nessun stream trovato. Installa Torrentio o altri addon stream.');
+      if (groups.length === 0) setStreamError('Nessuno stream trovato. Installa Torrentio o altri addon stream.');
     } catch (e: any) {
       setStreamError(e.message ?? 'Errore nel caricamento degli stream');
     } finally { setStreamsLoading(false); }
@@ -239,12 +245,17 @@ export default function Detail() {
   function handleEpisodeSelect(video: Video) { setSelectedVideo(video); loadStreams(video.id); }
 
   async function handlePlay(stream: Stream) {
-    if (!stream.url) return;
+    if (!stream.url && !stream.infoHash) return;
     setPlayError(null);
+    let playUrl = stream.url;
+    if (!playUrl && stream.infoHash) {
+      playUrl = `magnet:?xt=urn:btih:${stream.infoHash}`;
+      if (stream.fileIdx !== undefined) playUrl += `&file=${stream.fileIdx}`;
+    }
+    if (!playUrl) return;
+    const title = meta ? (selectedVideo ? `${meta.name} – ${selectedVideo.title}` : meta.name) : undefined;
     try {
-      const title = meta ? (selectedVideo ? `${meta.name} – ${selectedVideo.title}` : meta.name) : undefined;
-      await launchMpv(stream.url, title);
-      // Non usiamo addToHistory direttamente qui - gestito altrove
+      await launchMpv(playUrl, title);
     } catch (e: any) {
       setPlayError(e.message ?? 'Impossibile avviare mpv.');
     }
@@ -332,6 +343,36 @@ export default function Detail() {
                 </button>
               )}
             </div>
+          )}
+
+          {/* Pulsante Trailer */}
+          {trailerKey && (
+            <>
+              <button
+                onClick={() => setShowTrailer(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-sm font-medium transition-colors"
+              >
+                <Play size={14} /> Trailer
+              </button>
+              {showTrailer && (
+                <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4" onClick={() => setShowTrailer(false)}>
+                  <div className="relative w-full max-w-3xl aspect-video" onClick={e => e.stopPropagation()}>
+                    <button
+                      onClick={() => setShowTrailer(false)}
+                      className="absolute -top-8 right-0 text-white/60 hover:text-white text-2xl"
+                    >
+                      <X size={20} />
+                    </button>
+                    <iframe
+                      className="w-full h-full rounded-lg"
+                      src={`https://www.youtube.com/embed/${trailerKey}?autoplay=1`}
+                      title="Trailer"
+                      allowFullScreen
+                    />
+                  </div>
+                </div>
+              )}
+            </>
           )}
 
           {/* Errore play */}
