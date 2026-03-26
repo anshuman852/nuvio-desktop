@@ -1,6 +1,6 @@
 {
-  "productName": "NuvioDesktop",
-  "version": "0.4.0",
+  "productName": "Nuvio",
+  "version": "0.5.3",
   "identifier": "space.nuvioapp.desktop",
   "build": {
     "frontendDist": "../dist",
@@ -11,7 +11,7 @@
   "app": {
     "windows": [
       {
-        "title": "Nuvio Desktop",
+        "title": "Nuvio",
         "width": 1280,
         "height": 800,
         "minWidth": 900,
