@@ -1,51 +1,32 @@
+/// <reference types="vite/client" />
+/**
+ * Addon client — usa fetch() del browser direttamente.
+ * Gli addon Stremio hanno CORS: Access-Control-Allow-Origin: *
+ * quindi non serve passare per Rust. mpv viene ancora lanciato via invoke.
+ */
 import { invoke } from '@tauri-apps/api/core';
 import { Addon, MetaItem, Stream } from './types';
 
 // ─── URL normalization ────────────────────────────────────────────────────────
 
-/**
- * Converte qualsiasi formato URL addon in un URL base HTTPS.
- * Gestisce: stremio://, https://, http://, URL con /manifest.json
- */
 export function normalizeAddonUrl(rawUrl: string): string {
   let url = rawUrl.trim();
-
-  // stremio://host/path → https://host/path
-  if (url.startsWith('stremio://')) {
-    url = 'https://' + url.slice('stremio://'.length);
-  }
-
-  // http → https
-  if (url.startsWith('http://')) {
-    url = 'https://' + url.slice('http://'.length);
-  }
-
-  // Rimuovi /manifest.json finale e slash trailing
-  url = url.replace(/\/manifest\.json$/, '').replace(/\/$/, '');
-
-  return url;
+  if (url.startsWith('stremio://')) url = 'https://' + url.slice('stremio://'.length);
+  if (url.startsWith('http://')) url = 'https://' + url.slice('http://'.length);
+  return url.replace(/\/manifest\.json$/, '').replace(/\/$/, '');
 }
 
 // ─── Addon install ────────────────────────────────────────────────────────────
 
 export async function installAddon(rawUrl: string): Promise<Addon> {
   const baseUrl = normalizeAddonUrl(rawUrl);
-  const manifestUrl = `${baseUrl}/manifest.json`;
+  const res = await fetch(`${baseUrl}/manifest.json`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+  const manifest = await res.json();
 
-  const manifest = await invoke<any>('fetch_manifest', { url: manifestUrl });
-
-  // Normalizza resources: può essere string[] o {name, types, idPrefixes}[]
   const resources: string[] = Array.isArray(manifest.resources)
-    ? manifest.resources.map((r: any) => (typeof r === 'string' ? r : r.name))
+    ? manifest.resources.map((r: any) => typeof r === 'string' ? r : r.name)
     : [];
-
-  // Normalizza catalogs
-  const catalogs = (manifest.catalogs ?? []).map((c: any) => ({
-    type: c.type,
-    id: c.id,
-    name: c.name ?? c.id,
-    extra: c.extra ?? [],
-  }));
 
   return {
     url: baseUrl,
@@ -54,7 +35,9 @@ export async function installAddon(rawUrl: string): Promise<Addon> {
     version: manifest.version ?? '0.0.0',
     description: manifest.description ?? '',
     types: manifest.types ?? [],
-    catalogs,
+    catalogs: (manifest.catalogs ?? []).map((c: any) => ({
+      type: c.type, id: c.id, name: c.name ?? c.id, extra: c.extra ?? [],
+    })),
     resources,
     logo: manifest.logo,
   };
@@ -68,14 +51,13 @@ export async function fetchCatalog(
   id: string,
   extra?: string
 ): Promise<MetaItem[]> {
-  // Propaga l'errore invece di nasconderlo — Home.tsx gestisce il catch
-  const result = await invoke<any>('fetch_catalog', {
-    addonUrl,
-    type_: type,
-    id,
-    extra: extra ?? null,
-  });
-  return (result.metas ?? []) as MetaItem[];
+  const base = normalizeAddonUrl(addonUrl);
+  const extraSeg = extra ? `/${extra}` : '';
+  const url = `${base}/catalog/${type}/${id}${extraSeg}.json`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Catalog fetch failed: ${res.status} ${url}`);
+  const data = await res.json();
+  return (data.metas ?? []) as MetaItem[];
 }
 
 // ─── Meta ─────────────────────────────────────────────────────────────────────
@@ -86,8 +68,11 @@ export async function fetchMeta(
   id: string
 ): Promise<MetaItem | null> {
   try {
-    const result = await invoke<any>('fetch_meta', { addonUrl, type_: type, id });
-    return (result.meta ?? null) as MetaItem | null;
+    const base = normalizeAddonUrl(addonUrl);
+    const res = await fetch(`${base}/meta/${type}/${id}.json`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return (data.meta ?? null) as MetaItem | null;
   } catch {
     return null;
   }
@@ -101,10 +86,6 @@ export interface StreamGroup {
   streams: Stream[];
 }
 
-/**
- * Aggrega gli stream da tutti gli addon che supportano la risorsa "stream".
- * Ritorna i gruppi anche se alcuni addon falliscono.
- */
 export async function fetchAllStreams(
   addons: Addon[],
   type: string,
@@ -116,13 +97,15 @@ export async function fetchAllStreams(
 
   const results = await Promise.allSettled(
     eligible.map(async (addon) => {
-      const result = await invoke<any>('fetch_streams', {
+      const base = normalizeAddonUrl(addon.url);
+      const res = await fetch(`${base}/stream/${type}/${id}.json`);
+      if (!res.ok) return { addonName: addon.name, addonUrl: addon.url, streams: [] };
+      const data = await res.json();
+      return {
+        addonName: addon.name,
         addonUrl: addon.url,
-        type_: type,
-        id,
-      });
-      const streams = (result.streams ?? []) as Stream[];
-      return { addonName: addon.name, addonUrl: addon.url, streams };
+        streams: (data.streams ?? []) as Stream[],
+      };
     })
   );
 
@@ -132,18 +115,16 @@ export async function fetchAllStreams(
     .filter((r) => r.streams.length > 0);
 }
 
-// ─── mpv ──────────────────────────────────────────────────────────────────────
+// ─── mpv (unico che usa Rust) ─────────────────────────────────────────────────
 
 export async function launchMpv(url: string, title?: string): Promise<void> {
   await invoke('launch_mpv', { url, title: title ?? null });
 }
 
-export async function mpvStop(): Promise<void> {
-  await invoke('mpv_stop');
+export async function mpvCommand(cmd: string, args: unknown[] = []): Promise<void> {
+  await invoke('mpv_command', { cmd, args });
 }
 
-
-export async function mpvCommand(cmd: string, args: unknown[] = []): Promise<void> {
-  const { invoke } = await import('@tauri-apps/api/core');
-  await invoke('mpv_command', { cmd, args });
+export async function mpvStop(): Promise<void> {
+  await invoke('mpv_stop');
 }
