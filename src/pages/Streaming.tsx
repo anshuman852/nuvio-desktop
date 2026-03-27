@@ -58,7 +58,11 @@ function ServiceDetail({ service }: { service: StreamingService }) {
           <ArrowLeft size={16} />Tutti i servizi
         </button>
         <div className="flex items-center gap-4">
-          <span className="text-4xl">{service.logo}</span>
+          <img
+  src={service.logo}
+  alt={service.name}
+  className="h-10 w-auto object-contain"
+/>
           <div>
             <h1 className="text-2xl font-bold text-white">{service.name}</h1>
             <p className="text-sm text-white/50">{items.length > 0 ? `${items.length}+ contenuti` : 'Catalogo'}</p>
@@ -137,7 +141,11 @@ export default function Streaming() {
             style={{ background: `linear-gradient(135deg, ${s.color}33, ${s.color}11)` }}>
             <div className={clsx('absolute inset-0 bg-gradient-to-br opacity-60', s.gradient)} />
             <div className="relative z-10 text-center">
-              <div className="text-4xl mb-2">{s.logo}</div>
+              <img
+  src={s.logo}
+  alt={s.name}
+  className="h-10 w-auto mx-auto mb-2 object-contain"
+/>
               <p className="text-sm font-bold text-white drop-shadow">{s.name}</p>
             </div>
             <div className="absolute inset-0 bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity" />
