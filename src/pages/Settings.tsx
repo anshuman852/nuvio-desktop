@@ -404,7 +404,7 @@ export default function Settings() {
   function save() { updateSettings(local); setSaved(true); setTimeout(() => setSaved(false), 2000); }
 
   async function testMpv() {
-    try { await launchMpv('--version'); setMpvStatus('ok'); } catch { setMpvStatus('ok'); /* mpv trovato, non in esecuzione = ok */ }
+    try { await launchPlayer('--version', undefined, ''); setMpvStatus('ok'); } catch { setMpvStatus('ok'); /* mpv trovato, non in esecuzione = ok */ }
   }
 
   return (
