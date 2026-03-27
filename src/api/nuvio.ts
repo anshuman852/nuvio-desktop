@@ -116,3 +116,45 @@ export async function getWatchedItems(userId: string): Promise<string[]> {
   if (!res.ok) return [];
   return ((await res.json()) ?? []).map((r: any) => r.content_id);
 }
+
+// ─── Mark as watched (Nuvio/Supabase) ────────────────────────────────────────
+
+export async function markNuvioWatched(
+  userId: string,
+  item: { id: string; type: string; name: string; poster?: string }
+): Promise<void> {
+  if (!_userToken || !userId) return;
+  await fetch(`${SUPABASE_URL}/rest/v1/watched_items`, {
+    method: 'POST',
+    headers: { ...sbH(true), Prefer: 'resolution=merge-duplicates' },
+    body: JSON.stringify({
+      user_id: userId,
+      content_id: item.id,
+      content_type: item.type,
+      name: item.name,
+      poster: item.poster,
+      watched_at: new Date().toISOString(),
+    }),
+  });
+}
+
+export async function removeNuvioWatched(userId: string, contentId: string): Promise<void> {
+  if (!_userToken || !userId) return;
+  await fetch(`${SUPABASE_URL}/rest/v1/watched_items?user_id=eq.${userId}&content_id=eq.${contentId}`, {
+    method: 'DELETE',
+    headers: sbH(true),
+  });
+}
+
+export async function getAllWatchedItems(userId: string): Promise<{ id: string; type: string; name: string; poster?: string; watchedAt: string }[]> {
+  if (!_userToken || !userId) return [];
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/watched_items?select=content_id,content_type,name,poster,watched_at&user_id=eq.${userId}&order=watched_at.desc`,
+    { headers: sbH(true) }
+  );
+  if (!res.ok) return [];
+  return ((await res.json()) ?? []).map((r: any) => ({
+    id: r.content_id, type: r.content_type,
+    name: r.name, poster: r.poster, watchedAt: r.watched_at,
+  }));
+}
