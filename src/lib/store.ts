@@ -50,6 +50,7 @@ interface Store {
   addAddon: (a: Addon) => void;
   removeAddon: (id: string) => void;
   reorderAddon: (id: string, dir: 'up' | 'down') => void;
+  updateAddon: (id: string, patch: Partial<Addon>) => void;
 
   // Watch history (per profilo)
   watchHistory: Record<string, WatchEntry[]>;
@@ -98,6 +99,9 @@ export const useStore = create<Store>()(
         addons: [...s.addons.filter((x) => x.id !== a.id), a],
       })),
       removeAddon: (id) => set((s) => ({ addons: s.addons.filter((a) => a.id !== id) })),
+      updateAddon: (id, patch) => set((s) => ({
+        addons: s.addons.map((a) => a.id === id ? { ...a, ...patch } : a),
+      })),
       reorderAddon: (id, dir) => set((s) => {
         const i = s.addons.findIndex((a) => a.id === id);
         if (i === -1) return s;

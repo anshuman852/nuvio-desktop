@@ -14,43 +14,47 @@ import clsx from 'clsx';
 // ─── Stream Card ──────────────────────────────────────────────────────────────
 
 function StreamCard({ stream, onPlay }: { stream: Stream; onPlay: () => void }) {
-  const hasDirectUrl = Boolean(stream.url);
+  const playableUrl = stream.url && (stream.url.startsWith('http') || stream.url.startsWith('https')) ? stream.url : null;
   const hasTorrent = Boolean(stream.infoHash);
-
-  const quality = stream.title?.match(/\b(4K|2160p|1080p|720p|480p|HDR|HEVC|x265|x264)\b/gi)?.join(' ') ?? '';
-  const size = stream.behaviorHints?.videoSize
-    ? `${(stream.behaviorHints.videoSize / 1e9).toFixed(1)}GB`
-    : '';
+  const canPlay = Boolean(playableUrl);
+  const quality = (stream.name ?? '' + ' ' + (stream.title ?? '')).match(/\b(4K|2160p|1080p|720p|480p|HDR|HEVC|x265|x264|BluRay|WEB-DL)\b/gi)?.join(' ') ?? '';
+  const size = stream.behaviorHints?.videoSize ? `${(stream.behaviorHints.videoSize / 1e9).toFixed(1)} GB` : '';
 
   return (
     <button
-      onClick={() => hasDirectUrl && onPlay()}
+      type="button"
+      onClick={canPlay ? onPlay : undefined}
       className={clsx(
         'w-full text-left px-4 py-3 rounded-xl border transition-all duration-150',
-        hasDirectUrl
+        canPlay
           ? 'border-white/10 bg-white/5 hover:bg-[color:var(--accent-bg)] hover:border-[color:var(--accent)] cursor-pointer active:scale-[0.99]'
-          : 'border-white/10 bg-white/5 opacity-70 cursor-default'
+          : 'border-white/5 bg-white/[0.03] opacity-60 cursor-default'
       )}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <p className="text-sm font-semibold text-white truncate">{stream.name ?? 'Stream'}</p>
-            {quality && <span className="text-xs px-1.5 py-0.5 rounded bg-white/10 text-white/60 flex-shrink-0">{quality}</span>}
-            {size && <span className="text-xs text-white/40 flex-shrink-0">{size}</span>}
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="text-sm font-semibold text-white">{stream.name ?? 'Stream'}</p>
+            {quality && <span className="text-xs px-1.5 py-0.5 rounded-md bg-white/10 text-white/70">{quality}</span>}
+            {size && <span className="text-xs text-white/40">{size}</span>}
           </div>
           {stream.title && <p className="text-xs text-white/50 mt-0.5 line-clamp-2">{stream.title}</p>}
           {stream.description && <p className="text-xs text-white/40 mt-0.5 line-clamp-1">{stream.description}</p>}
+          {hasTorrent && !canPlay && <p className="text-xs text-yellow-500/60 mt-1">🧲 torrent puro · serve Debrid o resolver</p>}
         </div>
-        <div className="flex-shrink-0 mt-0.5">
-          {hasDirectUrl && <Play size={16} style={{ color: 'var(--accent)' }} className="fill-[color:var(--accent)]" />}
-          {!hasDirectUrl && hasTorrent && <span className="text-xs text-yellow-500/70 font-mono">torrent</span>}
-          {!hasDirectUrl && !hasTorrent && stream.externalUrl && <ExternalLink size={14} className="text-blue-400" />}
+        <div className="flex-shrink-0 mt-1">
+          {canPlay && (
+            <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{backgroundColor:'var(--accent-bg)'}}>
+              <Play size={14} style={{color:'var(--accent)'}} className="ml-0.5 fill-[color:var(--accent)]" />
+            </div>
+          )}
+          {!canPlay && hasTorrent && <Magnet size={14} className="text-yellow-500/50 mt-1" />}
         </div>
       </div>
     </button>
   );
 }
+
 
 // ─── Episode List ─────────────────────────────────────────────────────────────
 
