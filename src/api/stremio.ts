@@ -95,10 +95,12 @@ export async function fetchAllStreams(addons: Addon[], type: string, id: string)
 // ─── Player (invoke Rust) ─────────────────────────────────────────────────────
 
 export async function launchPlayer(url: string, title?: string, playerPath?: string): Promise<void> {
-  // Se playerPath è custom (non 'mpv'), lancia con invoke custom_player
-  if (playerPath && playerPath !== 'mpv' && playerPath !== '') {
-    await invoke('launch_custom_player', { playerPath, url, title: title ?? null });
+  const custom = playerPath?.trim();
+  if (custom && custom !== 'mpv') {
+    // Player esterno specificato dall'utente
+    await invoke('launch_custom_player', { playerPath: custom, url, title: title ?? null });
   } else {
+    // mpv di default (bundled)
     await invoke('launch_mpv', { url, title: title ?? null });
   }
 }

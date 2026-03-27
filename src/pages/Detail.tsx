@@ -14,21 +14,20 @@ import clsx from 'clsx';
 // ─── Stream Card ──────────────────────────────────────────────────────────────
 
 function StreamCard({ stream, onPlay }: { stream: Stream; onPlay: () => void }) {
-  const playableUrl = stream.url && (stream.url.startsWith('http') || stream.url.startsWith('https')) ? stream.url : null;
+  const canPlay = Boolean(stream.url);
   const hasTorrent = Boolean(stream.infoHash);
-  const canPlay = Boolean(playableUrl);
   const quality = (stream.name ?? '' + ' ' + (stream.title ?? '')).match(/\b(4K|2160p|1080p|720p|480p|HDR|HEVC|x265|x264|BluRay|WEB-DL)\b/gi)?.join(' ') ?? '';
   const size = stream.behaviorHints?.videoSize ? `${(stream.behaviorHints.videoSize / 1e9).toFixed(1)} GB` : '';
 
   return (
     <button
       type="button"
-      onClick={canPlay ? onPlay : undefined}
+      onClick={() => onPlay()}
       className={clsx(
         'w-full text-left px-4 py-3 rounded-xl border transition-all duration-150',
         canPlay
           ? 'border-white/10 bg-white/5 hover:bg-[color:var(--accent-bg)] hover:border-[color:var(--accent)] cursor-pointer active:scale-[0.99]'
-          : 'border-white/5 bg-white/[0.03] opacity-60 cursor-default'
+          : 'border-white/5 bg-white/[0.03] opacity-50 cursor-pointer hover:bg-white/5'
       )}
     >
       <div className="flex items-start justify-between gap-3">
@@ -251,7 +250,10 @@ export default function Detail() {
   // ── Play ──────────────────────────────────────────────────────────────────
 
   async function handlePlay(stream: Stream) {
-    if (!stream.url) return;
+    if (!stream.url) {
+      setPlayError('Questo stream non ha un URL diretto. Installa Torrentio con Real-Debrid/AllDebrid per stream riproducibili.');
+      return;
+    }
     setPlayError(null);
     setLaunching(true);
     try {

@@ -9,6 +9,7 @@ import {
 import { getSimklHistory } from '../api/simkl';
 import { getMALAnimeList } from '../api/mal';
 import { getAllWatchedItems, markNuvioWatched, removeNuvioWatched } from '../api/nuvio';
+import { hasTMDBKey, tmdbImg } from '../api/tmdb';
 import {
   Film, Tv, BookOpen, List, Search, X, Filter, Loader2,
   Eye, EyeOff, Star, CheckCircle2, Circle, Heart, HeartOff,
@@ -100,10 +101,14 @@ function ItemCard({ item, onToggleWatched, onToggleWatchlist, onRate }: {
                 {item.type === 'movie' ? '🎬' : item.type === 'anime' ? '🍥' : '📺'}
               </div>}
 
-          {/* Watched overlay */}
+          {/* Watched overlay - sottile bordo e overlay scuro invece del pallino */}
           {item.watched && (
-            <div className="absolute top-1.5 left-1.5 w-6 h-6 rounded-full flex items-center justify-center bg-[color:var(--accent)] shadow">
-              <CheckCircle2 size={13} className="text-white fill-white" />
+            <div className="absolute inset-0 bg-black/20 pointer-events-none" />
+          )}
+          {item.watched && (
+            <div className="absolute bottom-1.5 right-1.5 bg-black/70 backdrop-blur-sm px-1.5 py-0.5 rounded-full flex items-center gap-1">
+              <CheckCircle2 size={10} style={{color:'var(--accent)'}} className="fill-[color:var(--accent)]" />
+              <span className="text-xs font-medium" style={{color:'var(--accent)'}}>Visto</span>
             </div>
           )}
 
@@ -155,6 +160,7 @@ export default function Library() {
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<'recent' | 'alpha' | 'rating'>('recent');
   const [showOnlyWatched, setShowOnlyWatched] = useState(false);
+  const [sourceFilter, setSourceFilter] = useState<'all' | 'trakt' | 'nuvio' | 'simkl' | 'mal'>('all');
 
   const [data, setData] = useState<Record<Tab, LibItem[]>>({
     film: [], serie: [], anime: [], watchlist: [],
@@ -379,6 +385,38 @@ export default function Library() {
 
     setData({ film, serie, anime, watchlist });
     setLoading(false);
+
+    // Fetch poster mancanti da TMDB in background
+    if (hasTMDBKey()) {
+      const fetchPoster = async (item: LibItem) => {
+        if (item.poster || !item.imdbId) return;
+        try {
+          const { getDetails, tmdbImg: tImg } = await import('../api/tmdb');
+          // Cerca per IMDb ID tramite find endpoint
+          const res = await fetch(`https://api.themoviedb.org/3/find/${item.imdbId}?api_key=${(await import('../lib/store')).useStore.getState().settings.tmdbApiKey}&external_source=imdb_id`);
+          if (!res.ok) return;
+          const d = await res.json();
+          const result = (d.movie_results ?? d.tv_results ?? [])[0];
+          if (result?.poster_path) {
+            const poster = tImg(result.poster_path, 'w342');
+            setData(prev => ({
+              film: prev.film.map(x => x.id === item.id ? { ...x, poster } : x),
+              serie: prev.serie.map(x => x.id === item.id ? { ...x, poster } : x),
+              anime: prev.anime.map(x => x.id === item.id ? { ...x, poster } : x),
+              watchlist: prev.watchlist.map(x => x.id === item.id ? { ...x, poster } : x),
+            }));
+          }
+        } catch { /* non critico */ }
+      };
+
+      // Fetch i primi 30 senza poster (batch limitato per non sovraccaricare)
+      const withoutPoster = [...film, ...serie].filter(i => !i.poster && i.imdbId).slice(0, 30);
+      // Batch di 5 alla volta
+      for (let i = 0; i < withoutPoster.length; i += 5) {
+        await Promise.allSettled(withoutPoster.slice(i, i + 5).map(fetchPoster));
+        await new Promise(r => setTimeout(r, 200)); // delay tra batch
+      }
+    }
   }, [traktAuth?.token, simklAuth?.token, malAuth?.token, nuvioUser?.token]);
 
   useEffect(() => { load(); }, [load]);
@@ -457,6 +495,7 @@ export default function Library() {
   const filtered = baseItems
     .filter(i => !search || i.name.toLowerCase().includes(search.toLowerCase()))
     .filter(i => !showOnlyWatched || i.watched)
+    .filter(i => sourceFilter === 'all' || i.source === sourceFilter)
     .sort((a, b) => {
       if (sort === 'alpha') return a.name.localeCompare(b.name);
       if (sort === 'rating') return (b.rating ?? 0) - (a.rating ?? 0);
@@ -551,6 +590,20 @@ export default function Library() {
                 <option value="alpha">A-Z</option>
                 <option value="rating">Voto</option>
               </select>
+
+              {/* Filtro fonte */}
+              {['all','trakt','nuvio','simkl','mal'].map(s => {
+                const labels: Record<string, string> = { all: 'Tutti', trakt: '🔴 Trakt', nuvio: '☁️ Nuvio', simkl: '🔵 Simkl', mal: '🎌 MAL' };
+                const sources = new Set(baseItems.map(i => i.source));
+                if (s !== 'all' && !sources.has(s)) return null;
+                return (
+                  <button key={s} onClick={() => setSourceFilter(s as any)}
+                    className={clsx('flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs border transition-colors',
+                      sourceFilter === s ? 'border-[color:var(--accent)] bg-[color:var(--accent-bg)] text-[color:var(--accent)]' : 'border-white/10 text-white/50 hover:text-white hover:border-white/20')}>
+                    {labels[s]}
+                  </button>
+                );
+              })}
 
               <button onClick={() => setShowOnlyWatched(v => !v)}
                 className={clsx('flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs border transition-colors',
