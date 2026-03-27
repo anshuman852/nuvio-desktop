@@ -1,9 +1,8 @@
 use anyhow::{anyhow, Result};
 use std::io::Write;
+use std::path::PathBuf;
 use std::process::{Child, Command};
 
-/// Named pipe usata per IPC con mpv su Windows.
-/// Su Linux/macOS si userebbe un socket Unix (es. /tmp/mpvsocket).
 #[cfg(target_os = "windows")]
 const IPC_PATH: &str = r"\\.\pipe\nuvio-mpv";
 
@@ -19,23 +18,36 @@ impl MpvManager {
         Self { process: None }
     }
 
-    /// Avvia mpv con un dato URL e titolo opzionale.
-    /// Uccide eventuale istanza precedente.
+    /// Risolve il path di mpv: prima cerca il binario bundled (sidecar),
+    /// poi cade back sul PATH di sistema se l'utente lo ha installato.
+    fn mpv_path() -> PathBuf {
+        // Tauri mette i sidecar nella stessa cartella dell'eseguibile
+        if let Ok(exe) = std::env::current_exe() {
+            let bundled = exe
+                .parent()
+                .unwrap_or_else(|| std::path::Path::new("."))
+                .join("mpv.exe");
+
+            if bundled.exists() {
+                return bundled;
+            }
+        }
+        // Fallback: cerca nel PATH
+        PathBuf::from("mpv")
+    }
+
     pub fn launch(&mut self, url: &str, title: Option<&str>) -> Result<()> {
         self.kill_existing();
 
-        let mut cmd = Command::new("mpv");
+        let mpv = Self::mpv_path();
 
+        let mut cmd = Command::new(&mpv);
         cmd.arg(url)
-            // IPC server per controllo remoto
             .arg(format!("--input-ipc-server={}", IPC_PATH))
-            // UI / esperienza
             .arg("--force-window=yes")
             .arg("--keep-open=yes")
             .arg("--osc=yes")
-            // Hardware decoding automatico
             .arg("--hwdec=auto")
-            // Nasconde la console su Windows
             .arg("--no-terminal");
 
         if let Some(t) = title {
@@ -44,7 +56,8 @@ impl MpvManager {
 
         let child = cmd.spawn().map_err(|e| {
             anyhow!(
-                "Impossibile avviare mpv: {}. Assicurati che mpv sia installato e nel PATH.",
+                "Impossibile avviare mpv ({}): {}",
+                mpv.display(),
                 e
             )
         })?;
@@ -53,8 +66,6 @@ impl MpvManager {
         Ok(())
     }
 
-    /// Invia un comando JSON all'IPC di mpv (named pipe su Windows).
-    /// Esempio: send_command("seek", &[json!(30), json!("relative")])
     pub fn send_command(&self, cmd: &str, args: &[serde_json::Value]) -> Result<()> {
         use std::fs::OpenOptions;
 
@@ -75,11 +86,8 @@ impl MpvManager {
         Ok(())
     }
 
-    /// Ferma la riproduzione e chiude mpv.
     pub fn stop(&mut self) {
-        // Prima tenta via IPC (chiusura pulita)
         let _ = self.send_command("quit", &[]);
-        // Poi forza il kill se ancora in vita
         self.kill_existing();
     }
 
