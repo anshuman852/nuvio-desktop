@@ -1,14 +1,14 @@
 /// <reference types="vite/client" />
 
 import { useStore } from '../lib/store';
-import netflixLogo from '/logos/netflix.svg';
-import disneyLogo from '/logos/disney.svg';
-import appleLogo from '/logos/apple.svg';
-import paramountLogo from '/logos/paramount.svg';
-import amazonLogo from '/logos/amazon.svg';
-import maxLogo from '/logos/max.svg';
-import crunchyrollLogo from '/logos/crunchyroll.svg';
-import raiplayLogo from '/logos/raiplay.svg';
+import netflixLogo from '../assets/logos/netflix.svg';
+import disneyLogo from '../assets/logos/disney.svg';
+import appleLogo from '../assets/logos/apple.svg';
+import paramountLogo from '../assets/logos/paramount.svg';
+import amazonLogo from '../assets/logos/amazon.svg';
+import maxLogo from '../assets/logos/max.svg';
+import crunchyrollLogo from '../assets/logos/crunchyroll.svg';
+import raiplayLogo from '../assets/logos/raiplay.svg';
 
 const BASE = 'https://api.themoviedb.org/3';
 export const IMG_BASE = 'https://image.tmdb.org/t/p';
