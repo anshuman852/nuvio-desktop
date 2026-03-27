@@ -1,103 +1,27 @@
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+[package]
+name = "nuvio-desktop"
+version = "0.1.0"
+description = "Nuvio Desktop – Windows client"
+authors = []
+edition = "2021"
 
-mod addon;
-mod mpv;
+[package.metadata]
 
-use std::sync::Mutex;
-use tauri::State;
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
 
-pub struct AppState {
-    pub mpv: Mutex<mpv::MpvManager>,
-}
+[dependencies]
+tauri              = { version = "2", features = [] }
+tauri-plugin-store = "2"
+serde              = { version = "1", features = ["derive"] }
+serde_json         = "1"
+tokio              = { version = "1", features = ["full"] }
+reqwest            = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+anyhow             = "1"
 
-#[tauri::command]
-async fn fetch_manifest(url: String) -> Result<serde_json::Value, String> {
-    addon::fetch_manifest(&url).await.map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-async fn fetch_catalog(
-    addon_url: String,
-    type_: String,
-    id: String,
-    extra: Option<String>,
-) -> Result<serde_json::Value, String> {
-    addon::fetch_catalog(&addon_url, &type_, &id, extra.as_deref())
-        .await
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-async fn fetch_meta(
-    addon_url: String,
-    type_: String,
-    id: String,
-) -> Result<serde_json::Value, String> {
-    addon::fetch_meta(&addon_url, &type_, &id)
-        .await
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-async fn fetch_streams(
-    addon_url: String,
-    type_: String,
-    id: String,
-) -> Result<serde_json::Value, String> {
-    addon::fetch_streams(&addon_url, &type_, &id)
-        .await
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn launch_mpv(
-    url: String,
-    title: Option<String>,
-    state: State<AppState>,
-) -> Result<(), String> {
-    state
-        .mpv
-        .lock()
-        .unwrap()
-        .launch(&url, title.as_deref())
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn mpv_command(
-    cmd: String,
-    args: Vec<serde_json::Value>,
-    state: State<AppState>,
-) -> Result<(), String> {
-    state
-        .mpv
-        .lock()
-        .unwrap()
-        .send_command(&cmd, &args)
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn mpv_stop(state: State<AppState>) {
-    state.mpv.lock().unwrap().stop();
-}
-
-fn main() {
-    tauri::Builder::default()
-        .manage(AppState {
-            mpv: Mutex::new(mpv::MpvManager::new()),
-        })
-        .plugin(tauri_plugin_store::Builder::new().build())
-        .plugin(tauri_plugin_shell::init())   // <-- add this line
-        .invoke_handler(tauri::generate_handler![
-            fetch_manifest,
-            fetch_catalog,
-            fetch_meta,
-            fetch_streams,
-            launch_mpv,
-            mpv_command,
-            mpv_stop,
-        ])
-        .run(tauri::generate_context!())
-        .expect("error while running nuvio-desktop");
-}
+[profile.release]
+panic         = "abort"
+codegen-units = 1
+lto           = true
+opt-level     = "s"
+strip         = true
