@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 import { useState, useEffect, useRef } from 'react';
 import { useStore } from '../lib/store';
-import { launchMpv } from '../api/stremio';
+import { launchPlayer, openExternal } from '../api/stremio';
 import { validateTMDBKey, STREAMING_SERVICES } from '../api/tmdb';
 import { nuvioLogin, nuvioLogout, setAuthToken } from '../api/nuvio';
 import { getTraktDeviceCode, pollTraktToken, getTraktProfile } from '../api/trakt';
@@ -279,7 +279,7 @@ function MALAuth() {
     const { getMALAuthUrl } = await import('../api/mal');
     const { url, codeVerifier: cv } = getMALAuthUrl();
     setCodeVerifier(cv); setAuthUrl(url); setStep('waiting');
-    window.open(url, '_blank');
+    openExternal(url);
   }
 
   async function exchange() {
@@ -440,14 +440,11 @@ export default function Settings() {
             <>
               <h1 className="text-lg font-bold text-white">Account & Sync</h1>
               <Section title="Nuvio Cloud"><NuvioAuth /></Section>
-              <Section title="Supabase (sync avanzato)">
-                <p className="text-xs text-white/40 mb-3">Inserisci le credenziali Supabase del tuo account Nuvio per sincronizzazione avanzata.</p>
-                <Field label="Supabase URL">
-                  <input value={local.supabaseUrl} onChange={e => setLocal(p => ({ ...p, supabaseUrl: e.target.value }))} placeholder="https://xxx.supabase.co" className={ic} />
-                </Field>
-                <Field label="Supabase Anon Key">
-                  <input type="password" value={local.supabaseKey} onChange={e => setLocal(p => ({ ...p, supabaseKey: e.target.value }))} placeholder="eyJ..." className={ic} />
-                </Field>
+              <Section title="Sync Nuvio Cloud">
+                <div className="flex items-center gap-2 text-xs text-white/40 bg-white/5 border border-white/10 rounded-xl px-4 py-3">
+                  <Database size={13} />
+                  <span>Il sync con Nuvio (CW, libreria, addon) avviene automaticamente dopo il login. Configurato via env secrets nella build.</span>
+                </div>
               </Section>
               <Section title="Trakt.tv"><TraktAuth /></Section>
               <Section title="Simkl"><SimklAuth /></Section>
@@ -476,6 +473,32 @@ export default function Settings() {
                 <Toggle value={local.hardwareDecode} onChange={v => setLocal(p => ({ ...p, hardwareDecode: v }))} label="Decodifica hardware (GPU)" desc="Usa la GPU per decodificare video — consigliato" />
                 <Toggle value={local.autoplay} onChange={v => setLocal(p => ({ ...p, autoplay: v }))} label="Autoplay episodio successivo" />
               </Section>
+              <Section title="Player esterno (opzionale)">
+                <p className="text-xs text-white/40 mb-2">Lascia vuoto per usare mpv (incluso). Oppure specifica il percorso di VLC, MPC-HC, ecc.</p>
+                <Field label="Percorso player esterno">
+                  <input value={local.customPlayerPath ?? ''} onChange={e => setLocal(p => ({ ...p, customPlayerPath: e.target.value }))}
+                    placeholder="es. C:\Program Files\VideoLAN\VLC\vlc.exe" className={ic} />
+                </Field>
+                <div className="flex gap-2">
+                  {['mpv (default)', 'VLC', 'MPC-HC', 'IINA', 'Potplayer'].map(p => (
+                    <button key={p} onClick={() => {
+                      const paths: Record<string, string> = {
+                        'mpv (default)': '',
+                        'VLC': 'C:\\Program Files\\VideoLAN\\VLC\\vlc.exe',
+                        'MPC-HC': 'C:\\Program Files\\MPC-HC\\mpc-hc64.exe',
+                        'IINA': '/Applications/IINA.app/Contents/MacOS/iina-cli',
+                        'Potplayer': 'C:\\Program Files\\DAUM\\PotPlayer\\PotPlayerMini64.exe',
+                      };
+                      setLocal(prev => ({ ...prev, customPlayerPath: paths[p] }));
+                    }}
+                      className={clsx('text-xs px-2 py-1 rounded-lg border transition-colors',
+                        (local.customPlayerPath ?? '') === (p === 'mpv (default)' ? '' : `C:\\...`) ? 'border-[color:var(--accent)] text-[color:var(--accent)]' : 'border-white/10 text-white/50 hover:text-white hover:border-white/20')}>
+                      {p}
+                    </button>
+                  ))}
+                </div>
+              </Section>
+
               <button onClick={save} className="flex items-center gap-2 px-6 py-2.5 text-white rounded-xl font-medium text-sm" style={{ backgroundColor: 'var(--accent)' }}>
                 <Save size={15} />{saved ? '✓ Salvato' : 'Salva'}
               </button>

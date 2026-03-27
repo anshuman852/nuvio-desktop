@@ -161,9 +161,9 @@ export interface AppSettings {
   visibleServices: string[];
   // UI
   accentColor: string;
-  // Supabase (per sync Nuvio)
-  supabaseUrl: string;
-  supabaseKey: string;
+  // Player esterno custom
+  customPlayerPath: string;
+  customPlayerArgs: string;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -177,8 +177,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   tmdbLanguage: 'it-IT',
   visibleServices: ['netflix', 'disney', 'apple', 'paramount', 'amazon', 'hbo', 'crunchyroll', 'raiplay'],
   accentColor: '#7c3aed',
-  supabaseUrl: '',
-  supabaseKey: '',
+  customPlayerPath: '',
+  customPlayerArgs: '',
 };
 
 // ─── TMDB ─────────────────────────────────────────────────────────────────────

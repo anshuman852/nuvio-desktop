@@ -1,114 +1,118 @@
 /// <reference types="vite/client" />
 /**
- * Client API Nuvio + Supabase sync.
- * Nuvio usa Supabase come backend.
+ * Nuvio API — usa Supabase direttamente.
+ * La anon key è pubblica by design (Row Level Security protegge i dati utente).
+ * URL e key vengono dagli env secrets GitHub (VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY).
  */
 import { NuvioUser } from '../lib/types';
 
-const NUVIO_API = 'https://api.nuvioapp.space';
+const SUPABASE_URL  = import.meta.env.VITE_SUPABASE_URL      ?? '';
+const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY ?? '';
 
-let authToken: string | null = null;
+let _userToken: string | null = null;
 
-export function setAuthToken(token: string | null) {
-  authToken = token;
-}
+export function setAuthToken(t: string | null) { _userToken = t; }
 
-function headers() {
+function sbH(useUser = false): Record<string, string> {
   return {
     'Content-Type': 'application/json',
-    ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+    apikey: SUPABASE_ANON,
+    Authorization: `Bearer ${useUser && _userToken ? _userToken : SUPABASE_ANON}`,
   };
-}
-
-async function api(path: string, opts: RequestInit = {}): Promise<any> {
-  const res = await fetch(`${NUVIO_API}${path}`, {
-    ...opts,
-    headers: { ...headers(), ...(opts.headers ?? {}) },
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ message: res.statusText }));
-    throw new Error(err.message ?? `HTTP ${res.status}`);
-  }
-  return res.json();
 }
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
 export async function nuvioLogin(email: string, password: string): Promise<NuvioUser> {
-  const data = await api('/auth/login', {
+  const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
     method: 'POST',
+    headers: sbH(),
     body: JSON.stringify({ email, password }),
   });
-  return { ...data.user, token: data.token };
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error_description ?? data.msg ?? 'Login fallito');
+  _userToken = data.access_token;
+
+  // Prova a caricare profilo
+  let name = data.user.email.split('@')[0];
+  let avatar: string | undefined;
+  try {
+    const pr = await fetch(`${SUPABASE_URL}/rest/v1/profiles?select=username,full_name,avatar_url&id=eq.${data.user.id}`, { headers: sbH(true) });
+    const p = (await pr.json())?.[0];
+    if (p) { name = p.username ?? p.full_name ?? name; avatar = p.avatar_url; }
+  } catch { /* non bloccante */ }
+
+  return { id: data.user.id, email: data.user.email, token: data.access_token, name, avatar };
 }
 
 export async function nuvioLogout(): Promise<void> {
-  try { await api('/auth/logout', { method: 'POST' }); } catch { /* ignore */ }
+  if (!_userToken) return;
+  try { await fetch(`${SUPABASE_URL}/auth/v1/logout`, { method: 'POST', headers: sbH(true) }); } catch { /* ignore */ }
+  _userToken = null;
 }
 
 // ─── Continue Watching ────────────────────────────────────────────────────────
 
 export interface NuvioCW {
-  id: string;
-  type: string;
-  name: string;
-  poster?: string;
-  videoId?: string;
-  season?: number;
-  episode?: number;
-  progress: number;
-  duration: number;
-  updatedAt: string;
+  id: string; type: string; name: string; poster?: string;
+  videoId?: string; season?: number; episode?: number;
+  progress: number; duration: number; updatedAt: string;
 }
 
-export async function getContinueWatching(): Promise<NuvioCW[]> {
-  const data = await api('/continue-watching');
-  return data.items ?? [];
+export async function getContinueWatching(userId: string): Promise<NuvioCW[]> {
+  if (!_userToken || !userId) return [];
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/continue_watching?select=*&user_id=eq.${userId}&order=updated_at.desc&limit=50`,
+    { headers: sbH(true) }
+  );
+  if (!res.ok) return [];
+  return ((await res.json()) ?? []).map((r: any): NuvioCW => ({
+    id: r.content_id, type: r.content_type, name: r.name ?? '',
+    poster: r.poster, videoId: r.video_id, season: r.season, episode: r.episode,
+    progress: r.progress_pct ?? 0, duration: r.duration ?? 0, updatedAt: r.updated_at,
+  }));
 }
 
-export async function updateProgress(
-  id: string,
-  type: string,
-  videoId: string,
-  position: number,
-  duration: number,
-  meta?: { name?: string; poster?: string; season?: number; episode?: number }
-): Promise<void> {
-  await api('/continue-watching/update', {
+export async function upsertCW(userId: string, item: {
+  id: string; type: string; name: string; poster?: string;
+  videoId?: string; season?: number; episode?: number;
+  progress: number; duration: number;
+}): Promise<void> {
+  if (!_userToken || !userId) return;
+  await fetch(`${SUPABASE_URL}/rest/v1/continue_watching`, {
     method: 'POST',
+    headers: { ...sbH(true), Prefer: 'resolution=merge-duplicates' },
     body: JSON.stringify({
-      id, type, videoId, position, duration,
-      progress: duration > 0 ? position / duration : 0,
-      ...meta,
+      user_id: userId, content_id: item.id, content_type: item.type,
+      name: item.name, poster: item.poster, video_id: item.videoId,
+      season: item.season, episode: item.episode,
+      progress_pct: item.progress, duration: item.duration,
+      updated_at: new Date().toISOString(),
     }),
   });
 }
 
-// ─── Supabase sync ────────────────────────────────────────────────────────────
+// ─── Addons sync ──────────────────────────────────────────────────────────────
 
-export function createSupabaseClient(url: string, key: string) {
-  if (!url || !key) return null;
-  return {
-    from: (table: string) => ({
-      select: async (cols = '*') => {
-        const res = await fetch(`${url}/rest/v1/${table}?select=${cols}`, {
-          headers: { apikey: key, Authorization: `Bearer ${key}` },
-        });
-        return res.json();
-      },
-      upsert: async (data: any) => {
-        const res = await fetch(`${url}/rest/v1/${table}`, {
-          method: 'POST',
-          headers: {
-            apikey: key,
-            Authorization: `Bearer ${key}`,
-            'Content-Type': 'application/json',
-            Prefer: 'resolution=merge-duplicates',
-          },
-          body: JSON.stringify(data),
-        });
-        return res.json();
-      },
-    }),
-  };
+export async function getNuvioAddons(userId: string): Promise<any[]> {
+  if (!_userToken || !userId) return [];
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/user_addons?select=addon_data&user_id=eq.${userId}`, { headers: sbH(true) });
+  if (!res.ok) return [];
+  return ((await res.json()) ?? []).map((r: any) => r.addon_data).filter(Boolean);
+}
+
+export async function syncAddons(userId: string, addons: any[]): Promise<void> {
+  if (!_userToken || !userId || !addons.length) return;
+  await fetch(`${SUPABASE_URL}/rest/v1/user_addons`, {
+    method: 'POST',
+    headers: { ...sbH(true), Prefer: 'resolution=merge-duplicates' },
+    body: JSON.stringify(addons.map(a => ({ user_id: userId, addon_id: a.id, addon_data: a, updated_at: new Date().toISOString() }))),
+  });
+}
+
+export async function getWatchedItems(userId: string): Promise<string[]> {
+  if (!_userToken || !userId) return [];
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/watched_items?select=content_id&user_id=eq.${userId}`, { headers: sbH(true) });
+  if (!res.ok) return [];
+  return ((await res.json()) ?? []).map((r: any) => r.content_id);
 }

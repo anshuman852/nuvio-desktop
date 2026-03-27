@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useStore } from '../lib/store';
-import { fetchMeta, fetchAllStreams, launchMpv } from '../api/stremio';
+import { fetchMeta, fetchAllStreams, launchPlayer, openExternal } from '../api/stremio';
 import { getDetails, tmdbImg, hasTMDBKey } from '../api/tmdb';
 import { MetaItem, Stream, StreamGroup, Video } from '../lib/types';
 import {
@@ -16,9 +16,7 @@ import clsx from 'clsx';
 function StreamCard({ stream, onPlay }: { stream: Stream; onPlay: () => void }) {
   const hasDirectUrl = Boolean(stream.url);
   const hasTorrent = Boolean(stream.infoHash);
-  const canPlay = hasDirectUrl;
 
-  // Estrai qualità/info dal titolo
   const quality = stream.title?.match(/\b(4K|2160p|1080p|720p|480p|HDR|HEVC|x265|x264)\b/gi)?.join(' ') ?? '';
   const size = stream.behaviorHints?.videoSize
     ? `${(stream.behaviorHints.videoSize / 1e9).toFixed(1)}GB`
@@ -26,13 +24,12 @@ function StreamCard({ stream, onPlay }: { stream: Stream; onPlay: () => void }) 
 
   return (
     <button
-      onClick={() => canPlay && onPlay()}
-      disabled={!canPlay}
+      onClick={() => hasDirectUrl && onPlay()}
       className={clsx(
         'w-full text-left px-4 py-3 rounded-xl border transition-all duration-150',
-        canPlay
+        hasDirectUrl
           ? 'border-white/10 bg-white/5 hover:bg-[color:var(--accent-bg)] hover:border-[color:var(--accent)] cursor-pointer active:scale-[0.99]'
-          : 'border-white/5 bg-white/[0.02] opacity-60 cursor-not-allowed'
+          : 'border-white/10 bg-white/5 opacity-70 cursor-default'
       )}
     >
       <div className="flex items-start justify-between gap-3">
@@ -47,7 +44,8 @@ function StreamCard({ stream, onPlay }: { stream: Stream; onPlay: () => void }) 
         </div>
         <div className="flex-shrink-0 mt-0.5">
           {hasDirectUrl && <Play size={16} style={{ color: 'var(--accent)' }} className="fill-[color:var(--accent)]" />}
-          {!hasDirectUrl && hasTorrent && <Magnet size={15} className="text-yellow-500/70" />}
+          {!hasDirectUrl && hasTorrent && <span className="text-xs text-yellow-500/70 font-mono">torrent</span>}
+          {!hasDirectUrl && !hasTorrent && stream.externalUrl && <ExternalLink size={14} className="text-blue-400" />}
         </div>
       </div>
     </button>
@@ -256,7 +254,8 @@ export default function Detail() {
       const title = meta
         ? selectedVideo ? `${meta.name} – ${selectedVideo.title}` : meta.name
         : undefined;
-      await launchMpv(stream.url, title);
+      const playerPath = settings.customPlayerPath || 'mpv';
+      await launchPlayer(stream.url, title, playerPath);
       // Salva in storia
       if (meta) {
         upsertWatch({
