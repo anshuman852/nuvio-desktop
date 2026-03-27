@@ -85,15 +85,17 @@ async fn mpv_command(
     state: State<'_, AppState>,
     cmd: String,
     args: Vec<serde_json::Value>,
-) -> Result<serde_json::Value, String> {
+) -> Result<(), String> {
     let mpv = state.mpv.lock().map_err(|e| e.to_string())?;
-    mpv.send_command(&cmd, &args).map_err(|e| e.to_string())
+    mpv.send_command(&cmd, &args);
+    Ok(())
 }
 
 #[tauri::command]
 async fn mpv_stop(state: State<'_, AppState>) -> Result<(), String> {
     let mut mpv = state.mpv.lock().map_err(|e| e.to_string())?;
-    mpv.stop().map_err(|e| e.to_string())
+    mpv.stop();
+    Ok(())
 }
 
 // Apre URL nel browser di sistema
