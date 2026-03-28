@@ -116,7 +116,8 @@ function SearchBar() {
 }
 
 function Layout() {
-  const [collapsed, setCollapsed] = useState(false);
+  const { settings } = useStore();
+  const [collapsed, setCollapsed] = useState(!!(settings as any).reduceSidebar);
   return (
     <div className="flex h-screen bg-[#0f0f13] overflow-hidden">
       <Sidebar collapsed={collapsed} />

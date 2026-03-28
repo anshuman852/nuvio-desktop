@@ -72,10 +72,12 @@ function TMDBPoster({ imdbId, name, type }: { imdbId: string; name: string; type
   useEffect(() => {
     if (!settings.tmdbApiKey || !imdbId) return;
     setLoading(true);
-    fetch(`https://api.themoviedb.org/3/find/${imdbId}?api_key=${settings.tmdbApiKey}&external_source=imdb_id`)
-      .then(r => r.json())
+    fetch(`https://api.themoviedb.org/3/find/${imdbId}?api_key=${settings.tmdbApiKey}&external_source=imdb_id&language=it-IT`)
+      .then(r => r.ok ? r.json() : null)
       .then(d => {
-        const r = (d.movie_results ?? d.tv_results ?? [])[0];
+        if (!d) return;
+        const r = (type === 'movie' ? d.movie_results : d.tv_results)?.find((x: any) => x.poster_path)
+          ?? (d.movie_results ?? d.tv_results ?? [])[0];
         if (r?.poster_path) setPoster(`https://image.tmdb.org/t/p/w342${r.poster_path}`);
       })
       .catch(() => {})
@@ -85,8 +87,9 @@ function TMDBPoster({ imdbId, name, type }: { imdbId: string; name: string; type
   if (poster) return <img src={poster} alt={name} className="w-full h-full object-cover" />;
   if (loading) return <div className="w-full h-full bg-white/5 animate-pulse" />;
   return (
-    <div className="w-full h-full flex items-center justify-center text-3xl bg-white/5">
-      {type === 'movie' ? '🎬' : type === 'anime' ? '🍥' : '📺'}
+    <div className="w-full h-full flex flex-col items-center justify-center gap-2 bg-white/5 p-2">
+      <span className="text-2xl">{type === 'movie' ? '🎬' : type === 'anime' ? '🍥' : '📺'}</span>
+      <p className="text-xs text-white/30 text-center line-clamp-2 leading-tight">{name}</p>
     </div>
   );
 }

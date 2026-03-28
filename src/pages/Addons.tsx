@@ -512,24 +512,27 @@ export default function Addons() {
 
       {/* ── WEB TAB ───────────────────────────────────────────────────── */}
         {catalogTab === 'web' && (
-          <div className="flex flex-col h-full -mx-6 -mt-5 absolute inset-0 top-[48px]">
-            <div className="flex items-center gap-3 px-4 py-2 border-b border-white/[0.06] flex-shrink-0 bg-[#1a1a1f]">
-              <span className="text-xs text-white/40 truncate">stremio-addons.net — installa addon, poi copia l'URL manifest nel tab Installati</span>
+          <div style={{ position: 'absolute', inset: 0, top: '48px', display: 'flex', flexDirection: 'column' }} className="bg-[#0f0f13]">
+            {/* Toolbar */}
+            <div className="flex items-center gap-3 px-4 py-2 border-b border-white/[0.06] flex-shrink-0 bg-[#1a1a1f] z-10">
+              <button onClick={() => setCatalogTab('installed')}
+                className="flex items-center gap-1.5 text-xs text-white/60 hover:text-white bg-white/5 hover:bg-white/10 px-3 py-1.5 rounded-lg transition-colors flex-shrink-0">
+                <ArrowUp size={11} style={{ transform: 'rotate(-90deg)' }} />Chiudi
+              </button>
+              <span className="text-xs text-white/30 truncate flex-1">stremio-addons.net · installa addon, poi copia l'URL manifest nel tab Installati</span>
               <button onClick={() => openExternal('https://stremio-addons.net')}
-                className="flex items-center gap-1 text-xs text-[color:var(--accent)] hover:underline ml-auto flex-shrink-0 whitespace-nowrap">
+                className="flex items-center gap-1 text-xs text-[color:var(--accent)] hover:underline flex-shrink-0 whitespace-nowrap">
                 <ExternalLink size={11} />Apri nel browser
               </button>
             </div>
-            <div className="flex-1 overflow-hidden" style={{ minHeight: 0 }}>
-              <iframe
-                src="https://stremio-addons.net"
-                className="w-full h-full border-0"
-                style={{ display: 'block', height: '100%' }}
-                sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
-                title="Stremio Addons"
-                allow="fullscreen"
-              />
-            </div>
+            {/* iframe a pieno schermo con scrollbar */}
+            <iframe
+              src="https://stremio-addons.net"
+              style={{ flex: 1, width: '100%', border: 'none', display: 'block', minHeight: 0, overflow: 'auto' }}
+              sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
+              title="Stremio Addons"
+              scrolling="yes"
+            />
           </div>
         )}
 

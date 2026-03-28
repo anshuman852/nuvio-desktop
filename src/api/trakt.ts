@@ -51,13 +51,13 @@ export async function getTraktHistory(token: string, limit = 100): Promise<any[]
 // ─── Watched (elenco completo film/serie viste) ───────────────────────────────
 
 export async function getTraktWatchedMovies(token: string): Promise<any[]> {
-  const res = await fetch(`${BASE}/sync/watched/movies?extended=full`, { headers: h(token) });
+  const res = await fetch(`${BASE}/sync/watched/movies?extended=full,images`, { headers: h(token) });
   if (!res.ok) return [];
   return res.json();
 }
 
 export async function getTraktWatchedShows(token: string): Promise<any[]> {
-  const res = await fetch(`${BASE}/sync/watched/shows?extended=full`, { headers: h(token) });
+  const res = await fetch(`${BASE}/sync/watched/shows?extended=full,images`, { headers: h(token) });
   if (!res.ok) return [];
   return res.json();
 }
