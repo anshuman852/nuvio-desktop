@@ -512,20 +512,24 @@ export default function Addons() {
 
       {/* ── WEB TAB ───────────────────────────────────────────────────── */}
         {catalogTab === 'web' && (
-          <div className="flex flex-col flex-1 -mx-6 -my-5 min-h-0">
-            <div className="flex items-center gap-3 px-6 py-3 border-b border-white/[0.06] flex-shrink-0">
-              <p className="text-xs text-white/40">stremio-addons.net — per installare copia l'URL manifest e incollalo nel tab Installati</p>
+          <div className="flex flex-col h-full -mx-6 -mt-5 absolute inset-0 top-[48px]">
+            <div className="flex items-center gap-3 px-4 py-2 border-b border-white/[0.06] flex-shrink-0 bg-[#1a1a1f]">
+              <span className="text-xs text-white/40 truncate">stremio-addons.net — installa addon, poi copia l'URL manifest nel tab Installati</span>
               <button onClick={() => openExternal('https://stremio-addons.net')}
-                className="flex items-center gap-1 text-xs text-[color:var(--accent)] hover:underline ml-auto flex-shrink-0">
+                className="flex items-center gap-1 text-xs text-[color:var(--accent)] hover:underline ml-auto flex-shrink-0 whitespace-nowrap">
                 <ExternalLink size={11} />Apri nel browser
               </button>
             </div>
-            <iframe
-              src="https://stremio-addons.net"
-              className="flex-1 w-full border-0 min-h-[500px]"
-              sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-              title="Stremio Addons"
-            />
+            <div className="flex-1 overflow-hidden" style={{ minHeight: 0 }}>
+              <iframe
+                src="https://stremio-addons.net"
+                className="w-full h-full border-0"
+                style={{ display: 'block', height: '100%' }}
+                sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
+                title="Stremio Addons"
+                allow="fullscreen"
+              />
+            </div>
           </div>
         )}
 

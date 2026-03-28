@@ -163,14 +163,18 @@ export default function Streaming() {
           const [logoErr, setLogoErr] = useState(false);
           return (
             <Link key={s.id} to={`/streaming/${s.id}`}
-              className="group relative overflow-hidden rounded-2xl border border-white/[0.06] hover:border-white/20 transition-all hover:scale-[1.02] aspect-video flex items-center justify-center bg-[#1a1a1f]">
-              <div className="absolute inset-0 opacity-20" style={{ background: `radial-gradient(ellipse at center, ${s.color} 0%, transparent 70%)` }} />
-              <div className="relative z-10 flex flex-col items-center gap-2">
+              className="group relative overflow-hidden rounded-2xl border border-white/[0.06] hover:border-white/20 transition-all hover:scale-[1.02] aspect-video bg-[#1a1a1f]">
+              {/* Gradient background con colore del servizio */}
+              <div className="absolute inset-0" style={{ background: `linear-gradient(135deg, ${s.color}40 0%, ${s.color}15 50%, #0f0f13 100%)` }} />
+              {/* Logo centrato e grande */}
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
                 {!logoErr && s.logo
-                  ? <img src={s.logo} alt={s.name} className="h-10 object-contain drop-shadow-lg" onError={() => setLogoErr(true)} />
-                  : <span className="text-3xl">{s.logoFallback}</span>}
-                <p className="text-xs font-semibold text-white/70 group-hover:text-white">{s.name}</p>
+                  ? <img src={s.logo} alt={s.name} className="h-16 max-w-[80%] object-contain drop-shadow-2xl" onError={() => setLogoErr(true)} />
+                  : <span className="text-5xl drop-shadow-lg">{s.logoFallback}</span>}
+                <p className="text-sm font-semibold text-white/70 group-hover:text-white transition-colors">{s.name}</p>
               </div>
+              {/* Hover overlay */}
+              <div className="absolute inset-0 bg-white/0 group-hover:bg-white/[0.04] transition-colors rounded-2xl" />
             </Link>
           );
         })}

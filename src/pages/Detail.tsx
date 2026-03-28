@@ -140,6 +140,7 @@ export default function Detail() {
   const [playError, setPlayError] = useState<string | null>(null);
   const [activeStreamIdx, setActiveStreamIdx] = useState<number | null>(null);
   const [activeGroupIdx, setActiveGroupIdx] = useState<number | null>(null);
+  const [streamSort, setStreamSort] = useState<'quality' | 'size' | 'default'>('default');
 
   // Player interno
   const [playerStream, setPlayerStream] = useState<Stream | null>(null);
@@ -344,7 +345,7 @@ export default function Detail() {
       </div>
 
       {/* Scrollable content */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto" style={{ overflowY: "auto" }}>
         <div className="px-5 py-5 space-y-7 max-w-5xl">
 
           {/* Description */}
@@ -398,6 +399,22 @@ export default function Detail() {
           {/* Episodes */}
           {isSeries && meta?.videos && meta.videos.length > 0 && (
             <div>
+              {/* Sort controls */}
+              {streamGroups.length > 0 && (
+                <div className="flex gap-2 mb-4 flex-wrap">
+                  {(['default','quality','size'] as const).map(s => {
+                    const labels = { default: '⚡ Default', quality: '🎬 Qualità', size: '💾 Dimensione' };
+                    return (
+                      <button key={s} onClick={() => setStreamSort(s)}
+                        className={clsx('text-xs px-3 py-1.5 rounded-full border transition-colors',
+                          streamSort === s ? 'border-[color:var(--accent)] bg-[color:var(--accent-bg)] text-[color:var(--accent)]' : 'border-white/10 text-white/50 hover:text-white hover:border-white/20')}>
+                        {labels[s]}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
               <h2 className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-3">Episodi · {meta.videos.length}</h2>
               <EpisodeList videos={meta.videos} selectedId={selectedVideo?.id ?? null} onSelect={handleEpisodeSelect} />
             </div>
@@ -418,19 +435,34 @@ export default function Detail() {
                 </div>
               ) : (
                 <div className="space-y-5">
-                  {streamGroups.map((group, gi) => (
+                  {streamGroups.map((group, gi) => {
+                    // Sort streams dentro il gruppo
+                    const sortedStreams = [...group.streams].sort((a, b) => {
+                      if (streamSort === 'quality') {
+                        const qa = parseInt(((a.name ?? '') + (a.title ?? '')).match(/(\d{3,4})p/)?.[1] ?? '0');
+                        const qb = parseInt(((b.name ?? '') + (b.title ?? '')).match(/(\d{3,4})p/)?.[1] ?? '0');
+                        return qb - qa;
+                      }
+                      if (streamSort === 'size') {
+                        const sa = a.behaviorHints?.videoSize ?? 0;
+                        const sb = b.behaviorHints?.videoSize ?? 0;
+                        return sb - sa;
+                      }
+                      return 0;
+                    });
+                    return (
                     <div key={group.addonUrl}>
                       <p className="text-xs font-semibold mb-2 uppercase tracking-wider" style={{ color: 'var(--accent)' }}>
                         {group.addonName} <span className="text-white/25 normal-case font-normal">({group.streams.length})</span>
                       </p>
                       <div className="space-y-2">
-                        {group.streams.map((stream, si) => (
+                        {sortedStreams.map((stream, si) => (
                           <StreamCard key={si} stream={stream} onPlay={() => handlePlay(stream, gi, si)}
                             active={activeGroupIdx === gi && activeStreamIdx === si} />
-                        ))}
+                        );})}
                       </div>
                     </div>
-                  ))}
+                  );})}
                 </div>
               )}
             </div>
