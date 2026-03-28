@@ -10,7 +10,7 @@ import { validateTMDBKey, STREAMING_SERVICES } from '../api/tmdb';
 import { nuvioLogin, nuvioLogout, setAuthToken } from '../api/nuvio';
 import { getTraktDeviceCode, pollTraktToken, getTraktProfile } from '../api/trakt';
 import { getSimklPin, pollSimklToken, getSimklProfile } from '../api/simkl';
-import { getAvatar, AVATARS, AVATAR_CATEGORIES, type AvatarCategory } from './ProfileSelect';
+import { getAvatar, getAvatarUrl, AVATARS, AVATAR_CATEGORIES, type AvatarCategory } from './ProfileSelect';
 import {
   User, Users, Palette, Grid, Wrench, Link2, Play, Info,
   ChevronRight, ChevronDown, ChevronUp,
@@ -24,20 +24,9 @@ import clsx from 'clsx';
 
 function AvatarImg({ id, size = 40 }: { id: string; size?: number }) {
   const av = getAvatar(id);
-  const color = (av as any)._color as string | undefined;
-  if (color) return (
-    <div className="w-full h-full flex items-center justify-center font-bold text-white rounded-full"
-      style={{ background: `radial-gradient(circle at 30% 30%, ${color}dd, ${color}88)`, fontSize: size * 0.4 }}>
-      {av.label.charAt(0)}
-    </div>
-  );
-  if (av.url) return <img src={av.url} alt={av.label} className="w-full h-full object-cover" />;
-  return (
-    <div className="w-full h-full flex items-center justify-center font-bold text-white rounded-full"
-      style={{ background: 'var(--accent,#7c3aed)', fontSize: size * 0.4 }}>
-      {av.label.charAt(0)}
-    </div>
-  );
+  // Usa getAvatarUrl per generare l'URL DiceBear
+  const url = getAvatarUrl(av.seed, av.style, size * 2);
+  return <img src={url} alt={av.label} className="w-full h-full object-cover" loading="lazy" />;
 }
 
 const ic = 'w-full px-4 py-3 rounded-2xl bg-white/5 border border-white/[0.08] focus:border-[color:var(--accent,#7c3aed)] focus:outline-none text-sm text-white placeholder:text-white/30 transition-colors';

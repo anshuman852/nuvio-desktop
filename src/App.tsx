@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { Home, Search as SearchIcon, Library, Package, Settings, X, Tv } from 'lucide-react';
 import clsx from 'clsx';
 import { useStore } from './lib/store';
-import { getAvatar, getAvatarUrl, AVATARS, AVATARS } from './pages/ProfileSelect';
+import { getAvatar, getAvatarUrl, AVATARS } from './pages/ProfileSelect';
 
 import HomePage from './pages/Home';
 import DetailPage from './pages/Detail';
