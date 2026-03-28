@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { Home, Search as SearchIcon, Library, Package, Settings, X, Tv } from 'lucide-react';
 import clsx from 'clsx';
 import { useStore } from './lib/store';
-import { getAvatar, getAvatarUrl, AVATAR_SEEDS } from './pages/ProfileSelect';
+import { getAvatar, AVATARS } from './pages/ProfileSelect';
 
 import HomePage from './pages/Home';
 import DetailPage from './pages/Detail';
@@ -38,7 +38,7 @@ const NAV = [
 function Sidebar({ collapsed }: { collapsed: boolean }) {
   const { profiles, activeProfileId, setProfileSelected } = useStore();
   const activeProfile = profiles.find(p => p.id === activeProfileId) ?? profiles[0];
-  const av = getAvatar(activeProfile?.avatar ?? AVATAR_SEEDS[0].id);
+  const av = getAvatar(activeProfile?.avatar ?? AVATARS[0].id);
 
   return (
     <aside className={clsx(
@@ -75,8 +75,8 @@ function Sidebar({ collapsed }: { collapsed: boolean }) {
         <button onClick={() => setProfileSelected(false)}
           className="flex items-center gap-2.5 px-4 py-3 border-t border-white/[0.05] hover:bg-white/5 transition-colors">
           <div className="w-7 h-7 rounded-xl flex items-center justify-center text-base flex-shrink-0"
-            style={{ backgroundColor: av.bg }}>
-            {av.emoji}
+            style={{ backgroundColor: '#7c3aed26' }}>
+            <img src={av.url || ''} alt="" className="w-full h-full object-cover" />
           </div>
           <div className="flex-1 min-w-0 text-left">
             <p className="text-xs font-medium text-white/60 truncate">{activeProfile?.name}</p>
@@ -86,7 +86,7 @@ function Sidebar({ collapsed }: { collapsed: boolean }) {
       )}
       {collapsed && (
         <button onClick={() => setProfileSelected(false)} className="flex justify-center py-3 border-t border-white/[0.05] hover:bg-white/5 transition-colors">
-          <div className="w-7 h-7 rounded-xl flex items-center justify-center text-base" style={{ backgroundColor: av.bg }}>{av.emoji}</div>
+          <div className="w-7 h-7 rounded-xl flex items-center justify-center text-base" style={{ backgroundColor: 'var(--accent-bg)' }}><img src={av.url || ''} alt="" className="w-full h-full object-cover" /></div>
         </button>
       )}
     </aside>
