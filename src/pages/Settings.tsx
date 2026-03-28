@@ -1,5 +1,6 @@
 /// <reference types="vite/client" />
 import { useState, useEffect, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import { useStore } from '../lib/store';
 import { launchPlayer, openExternal } from '../api/stremio';
 import { validateTMDBKey, STREAMING_SERVICES } from '../api/tmdb';
@@ -7,363 +8,105 @@ import { nuvioLogin, nuvioLogout, setAuthToken } from '../api/nuvio';
 import { getTraktDeviceCode, pollTraktToken, getTraktProfile } from '../api/trakt';
 import { getSimklPin, pollSimklToken, getSimklProfile } from '../api/simkl';
 import {
-  Save, Play, Trash2, LogIn, LogOut, User, Users,
-  Plus, Pencil, Check, X, RefreshCw, ExternalLink,
-  Tv, Film, BookOpen, Star, Lock, Eye, EyeOff, Database,
-  AlertCircle, CheckCircle2, Key,
+  ChevronRight, User, Users, Globe, Eye, Tv, Database, Palette,
+  Play, Trash2, LogIn, LogOut, RefreshCw, ExternalLink,
+  Key, CheckCircle2, AlertCircle, Shield, Info, Zap, Film,
+  BookOpen, Save, X, Lock,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { getAvatar, AVATARS } from './ProfileSelect';
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── Section row (stile Nuvio) ────────────────────────────────────────────────
 
-const ic = 'w-full px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 focus:border-[color:var(--accent,#7c3aed)] focus:outline-none text-sm text-white placeholder:text-white/30 transition-colors';
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function SettingRow({ icon, title, subtitle, onClick, children, danger }: {
+  icon: React.ReactNode; title: string; subtitle?: string;
+  onClick?: () => void; children?: React.ReactNode; danger?: boolean;
+}) {
+  const isButton = Boolean(onClick) && !children;
   return (
-    <section className="space-y-4">
-      <h2 className="text-xs font-semibold text-white/30 uppercase tracking-widest border-b border-white/[0.06] pb-2">{title}</h2>
-      {children}
-    </section>
-  );
-}
-
-function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
-  return (
-    <div className="space-y-1.5">
-      <label className="block text-sm font-medium text-white/80">{label}</label>
-      {children}
-      {hint && <p className="text-xs text-white/30">{hint}</p>}
+    <div
+      onClick={isButton ? onClick : undefined}
+      className={clsx(
+        'flex items-center gap-4 px-4 py-3.5 transition-colors',
+        isButton ? 'cursor-pointer hover:bg-white/5' : '',
+        danger ? 'hover:bg-red-500/5' : ''
+      )}>
+      <div className={clsx('w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0',
+        danger ? 'bg-red-500/15 text-red-400' : 'bg-white/8 text-white/60')}>
+        {icon}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className={clsx('text-sm font-medium', danger ? 'text-red-400' : 'text-white')}>{title}</p>
+        {subtitle && <p className="text-xs text-white/40 mt-0.5">{subtitle}</p>}
+      </div>
+      {children ?? (isButton && <ChevronRight size={16} className="text-white/20 flex-shrink-0" />)}
     </div>
   );
 }
 
-function Toggle({ value, onChange, label, desc }: { value: boolean; onChange: (v: boolean) => void; label: string; desc?: string }) {
+function SettingsGroup({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between py-2">
-      <div>
-        <p className="text-sm text-white/80">{label}</p>
-        {desc && <p className="text-xs text-white/40">{desc}</p>}
+    <div>
+      <p className="text-xs font-semibold text-white/30 uppercase tracking-widest px-4 mb-2">{title}</p>
+      <div className="rounded-2xl bg-[#1a1a1f] border border-white/[0.06] overflow-hidden divide-y divide-white/[0.04]">
+        {children}
       </div>
-      <button onClick={() => onChange(!value)}
-        className={clsx('relative w-11 h-6 rounded-full transition-colors duration-200 flex-shrink-0', value ? 'bg-[color:var(--accent,#7c3aed)]' : 'bg-white/20')}>
-        <span className={clsx('absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200', value ? 'translate-x-5' : '')} />
+    </div>
+  );
+}
+
+// ─── Sub-pages ────────────────────────────────────────────────────────────────
+
+function BackHeader({ title, onBack }: { title: string; onBack: () => void }) {
+  return (
+    <div className="flex items-center gap-3 px-4 py-4 border-b border-white/[0.06]">
+      <button onClick={onBack} className="p-1.5 rounded-xl hover:bg-white/10 text-white/50 hover:text-white">
+        <X size={18} />
       </button>
+      <h2 className="text-base font-bold text-white">{title}</h2>
     </div>
   );
 }
 
-// ─── TMDB Key Field ───────────────────────────────────────────────────────────
-
-function TMDBField() {
-  const { settings, updateSettings } = useStore();
-  const [key, setKey] = useState(settings.tmdbApiKey);
-  const [show, setShow] = useState(false);
-  const [status, setStatus] = useState<'idle' | 'testing' | 'ok' | 'err'>('idle');
-
-  useEffect(() => { setKey(settings.tmdbApiKey); }, [settings.tmdbApiKey]);
-
-  async function testAndSave() {
-    if (!key.trim()) return;
-    setStatus('testing');
-    const ok = await validateTMDBKey(key.trim());
-    setStatus(ok ? 'ok' : 'err');
-    if (ok) updateSettings({ tmdbApiKey: key.trim() });
-  }
-
-  return (
-    <div className="space-y-2">
-      <div className="flex gap-2">
-        <div className="relative flex-1">
-          <input type={show ? 'text' : 'password'} value={key} onChange={e => { setKey(e.target.value); setStatus('idle'); }}
-            placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx (32 char)"
-            className={ic + ' pr-10'} />
-          <button onClick={() => setShow(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30 hover:text-white">
-            {show ? <EyeOff size={14} /> : <Eye size={14} />}
-          </button>
-        </div>
-        <button onClick={testAndSave} disabled={!key.trim() || status === 'testing'}
-          className="px-4 py-2.5 bg-white/10 hover:bg-white/15 text-sm text-white rounded-xl disabled:opacity-50 flex items-center gap-2 flex-shrink-0">
-          {status === 'testing' ? <RefreshCw size={14} className="animate-spin" /> : <Key size={14} />}
-          {status === 'testing' ? 'Verifica...' : 'Salva'}
-        </button>
-      </div>
-      {status === 'ok' && <p className="text-xs text-green-400 flex items-center gap-1"><CheckCircle2 size={12} />Chiave valida e salvata</p>}
-      {status === 'err' && <p className="text-xs text-red-400 flex items-center gap-1"><AlertCircle size={12} />Chiave non valida</p>}
-      {settings.tmdbApiKey && status === 'idle' && <p className="text-xs text-white/30">✓ Chiave configurata</p>}
-      <p className="text-xs text-white/30">
-        Ottieni la chiave (API Key v3) su{' '}
-        <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noopener noreferrer"
-          className="hover:underline" style={{ color: 'var(--accent)' }}>
-          themoviedb.org/settings/api
-        </a>
-        {' '}→ "API Key"
-      </p>
-    </div>
-  );
-}
-
-// ─── Nuvio Auth ───────────────────────────────────────────────────────────────
-
-function NuvioAuth() {
-  const { nuvioUser, setNuvioUser } = useStore();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function login() {
-    if (!email || !password) return;
-    setLoading(true); setError(null);
-    try {
-      const user = await nuvioLogin(email, password);
-      setAuthToken(user.token);
-      setNuvioUser(user);
-    } catch (e: any) { setError(e.message ?? 'Credenziali non valide'); }
-    finally { setLoading(false); }
-  }
-
-  if (nuvioUser) return (
-    <div className="flex items-center justify-between p-4 rounded-xl bg-[color:var(--accent-bg)] border border-[color:var(--accent-border)]">
-      <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: 'var(--accent)' }}>
-          <User size={18} className="text-white" />
-        </div>
-        <div>
-          <p className="text-sm font-semibold text-white">{nuvioUser.name ?? nuvioUser.email}</p>
-          <p className="text-xs text-white/50">{nuvioUser.email}</p>
-        </div>
-      </div>
-      <button onClick={() => { nuvioLogout(); setAuthToken(null); setNuvioUser(null); }}
-        className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-red-400 bg-red-500/10 rounded-lg hover:bg-red-500/20">
-        <LogOut size={13} />Disconnetti
-      </button>
-    </div>
-  );
-
-  return (
-    <div className="space-y-3">
-      <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" className={ic} />
-      <input type="password" value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => e.key === 'Enter' && login()} placeholder="Password" className={ic} />
-      {error && <p className="text-xs text-red-400">{error}</p>}
-      <button onClick={login} disabled={loading || !email || !password}
-        className="flex items-center gap-2 px-4 py-2.5 disabled:opacity-50 text-white rounded-xl text-sm font-medium w-full justify-center"
-        style={{ backgroundColor: 'var(--accent,#7c3aed)' }}>
-        {loading ? <RefreshCw size={15} className="animate-spin" /> : <LogIn size={15} />}
-        Accedi a Nuvio
-      </button>
-    </div>
-  );
-}
-
-// ─── Trakt Auth ───────────────────────────────────────────────────────────────
-
-function TraktAuth() {
-  const { traktAuth, setTraktAuth } = useStore();
-  const [code, setCode] = useState<{ device_code: string; user_code: string; verification_url: string; interval: number; expires_in: number } | null>(null);
-  const [loading, setLoading] = useState(false);
-  const pollRef = useRef<number | null>(null);
-
-  async function start() {
-    setLoading(true);
-    try {
-      const data = await getTraktDeviceCode();
-      setCode(data);
-      const start = Date.now();
-      const poll = async () => {
-        if (Date.now() - start > data.expires_in * 1000) { setCode(null); return; }
-        const result = await pollTraktToken(data.device_code);
-        if (result) {
-          const profile = await getTraktProfile(result.access_token);
-          setTraktAuth({ ...profile, token: result.access_token, refreshToken: result.refresh_token, expiresAt: Date.now() + result.expires_in * 1000 });
-          setCode(null);
-        } else { pollRef.current = window.setTimeout(poll, data.interval * 1000); }
-      };
-      pollRef.current = window.setTimeout(poll, data.interval * 1000);
-    } catch (e: any) { alert('Errore Trakt: ' + e.message); }
-    finally { setLoading(false); }
-  }
-
-  function stop() { if (pollRef.current) clearTimeout(pollRef.current); setCode(null); }
-
-  if (traktAuth) return (
-    <div className="flex items-center justify-between p-4 rounded-xl bg-red-500/10 border border-red-500/20">
-      <div className="flex items-center gap-3">
-        {traktAuth.avatar ? <img src={traktAuth.avatar} className="w-10 h-10 rounded-full object-cover" /> : <div className="w-10 h-10 rounded-full bg-[#ed1c24] flex items-center justify-center text-white font-bold">T</div>}
-        <div><p className="text-sm font-semibold text-white">{traktAuth.name}</p><p className="text-xs text-white/50">@{traktAuth.username}</p></div>
-      </div>
-      <button onClick={() => setTraktAuth(null)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-red-400 bg-red-500/10 rounded-lg"><LogOut size={13} />Disconnetti</button>
-    </div>
-  );
-
-  if (code) return (
-    <div className="space-y-3 p-4 rounded-xl bg-white/5 border border-white/10">
-      <p className="text-sm text-white/80">Apri <a href={code.verification_url} target="_blank" rel="noopener noreferrer" className="hover:underline inline-flex items-center gap-1" style={{ color: 'var(--accent)' }}>{code.verification_url} <ExternalLink size={11} /></a></p>
-      <div className="text-2xl font-mono font-bold tracking-widest text-center py-3 rounded-xl" style={{ color: 'var(--accent)', backgroundColor: 'var(--accent-bg)' }}>{code.user_code}</div>
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2 text-xs text-white/40"><RefreshCw size={12} className="animate-spin" />In attesa...</div>
-        <button onClick={stop} className="text-xs text-white/30 hover:text-white">Annulla</button>
-      </div>
-    </div>
-  );
-
-  return (
-    <button onClick={start} disabled={loading}
-      className="flex items-center gap-2 px-4 py-2.5 bg-[#ed1c24] hover:bg-[#c91920] disabled:opacity-50 text-white rounded-xl text-sm font-medium w-full justify-center">
-      {loading ? <RefreshCw size={15} className="animate-spin" /> : <Tv size={15} />}Collega Trakt.tv
-    </button>
-  );
-}
-
-// ─── Simkl Auth ───────────────────────────────────────────────────────────────
-
-function SimklAuth() {
-  const { simklAuth, setSimklAuth } = useStore();
-  const [pin, setPin] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const pollRef = useRef<number | null>(null);
-
-  async function start() {
-    setLoading(true);
-    try {
-      const data = await getSimklPin();
-      setPin(data.user_code);
-      const startTime = Date.now();
-      const poll = async () => {
-        if (Date.now() - startTime > data.expires_in * 1000) { setPin(null); return; }
-        const token = await pollSimklToken(data.user_code);
-        if (token) { const p = await getSimklProfile(token); setSimklAuth(p); setPin(null); }
-        else pollRef.current = window.setTimeout(poll, data.interval * 1000);
-      };
-      pollRef.current = window.setTimeout(poll, data.interval * 1000);
-    } catch (e: any) { alert('Errore Simkl: ' + e.message); }
-    finally { setLoading(false); }
-  }
-
-  if (simklAuth) return (
-    <div className="flex items-center justify-between p-4 rounded-xl bg-blue-500/10 border border-blue-500/20">
-      <div className="flex items-center gap-3">
-        {simklAuth.avatar ? <img src={simklAuth.avatar} className="w-10 h-10 rounded-full" /> : <div className="w-10 h-10 rounded-full bg-[#0b65c2] flex items-center justify-center text-white font-bold">S</div>}
-        <div><p className="text-sm font-semibold text-white">{simklAuth.name}</p><p className="text-xs text-white/50">Simkl</p></div>
-      </div>
-      <button onClick={() => setSimklAuth(null)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-red-400 bg-red-500/10 rounded-lg"><LogOut size={13} />Disconnetti</button>
-    </div>
-  );
-
-  if (pin) return (
-    <div className="space-y-3 p-4 rounded-xl bg-white/5 border border-white/10">
-      <p className="text-sm text-white/80">Vai su <a href="https://simkl.com/pin" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline inline-flex items-center gap-1">simkl.com/pin <ExternalLink size={11} /></a> e inserisci:</p>
-      <div className="text-2xl font-mono font-bold text-blue-400 tracking-widest text-center py-3 bg-blue-500/10 rounded-xl">{pin}</div>
-      <div className="flex items-center gap-2 text-xs text-white/40 justify-center"><RefreshCw size={12} className="animate-spin" />In attesa...</div>
-    </div>
-  );
-
-  return (
-    <button onClick={start} disabled={loading}
-      className="flex items-center gap-2 px-4 py-2.5 bg-[#0b65c2] hover:bg-[#0952a0] disabled:opacity-50 text-white rounded-xl text-sm font-medium w-full justify-center">
-      {loading ? <RefreshCw size={15} className="animate-spin" /> : <Film size={15} />}Collega Simkl
-    </button>
-  );
-}
-
-// ─── MAL Auth ─────────────────────────────────────────────────────────────────
-
-function MALAuth() {
-  const { malAuth, setMALAuth } = useStore();
-  const [step, setStep] = useState<'idle' | 'waiting'>('idle');
-  const [code, setCode] = useState('');
-  const [codeVerifier, setCodeVerifier] = useState('');
-  const [authUrl, setAuthUrl] = useState('');
-
-  async function start() {
-    const { getMALAuthUrl } = await import('../api/mal');
-    const { url, codeVerifier: cv } = getMALAuthUrl();
-    setCodeVerifier(cv); setAuthUrl(url); setStep('waiting');
-    openExternal(url);
-  }
-
-  async function exchange() {
-    try {
-      const { exchangeMALCode, getMALProfile } = await import('../api/mal');
-      const tokens = await exchangeMALCode(code.trim(), codeVerifier);
-      const profile = await getMALProfile(tokens.access_token);
-      setMALAuth({ ...profile, token: tokens.access_token, refreshToken: tokens.refresh_token, expiresAt: Date.now() + tokens.expires_in * 1000 });
-      setStep('idle');
-    } catch (e: any) { alert('Errore MAL: ' + e.message); }
-  }
-
-  if (malAuth) return (
-    <div className="flex items-center justify-between p-4 rounded-xl bg-indigo-500/10 border border-indigo-500/20">
-      <div className="flex items-center gap-3">
-        {malAuth.picture ? <img src={malAuth.picture} className="w-10 h-10 rounded-full" /> : <div className="w-10 h-10 rounded-full bg-[#2e51a2] flex items-center justify-center text-white font-bold">M</div>}
-        <div><p className="text-sm font-semibold text-white">{malAuth.name}</p><p className="text-xs text-white/50">MyAnimeList</p></div>
-      </div>
-      <button onClick={() => setMALAuth(null)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-red-400 bg-red-500/10 rounded-lg"><LogOut size={13} />Disconnetti</button>
-    </div>
-  );
-
-  if (step === 'waiting') return (
-    <div className="space-y-3">
-      <p className="text-xs text-white/50">Autorizza l'app su MAL poi incolla il codice dall'URL di redirect.</p>
-      <a href={authUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs hover:underline" style={{ color: 'var(--accent)' }}><ExternalLink size={11} />Apri autorizzazione MAL</a>
-      <div className="flex gap-2">
-        <input value={code} onChange={e => setCode(e.target.value)} placeholder="Codice dall'URL" className={ic + ' flex-1'} />
-        <button onClick={exchange} disabled={!code.trim()} className="px-4 py-2.5 bg-[#2e51a2] hover:bg-[#264490] disabled:opacity-50 text-white rounded-xl text-sm">Conferma</button>
-      </div>
-      <button onClick={() => setStep('idle')} className="text-xs text-white/30 hover:text-white">Annulla</button>
-    </div>
-  );
-
-  return (
-    <button onClick={start} className="flex items-center gap-2 px-4 py-2.5 bg-[#2e51a2] hover:bg-[#264490] text-white rounded-xl text-sm font-medium w-full justify-center">
-      <BookOpen size={15} />Collega MyAnimeList
-    </button>
-  );
-}
-
-// ─── Profili inline ───────────────────────────────────────────────────────────
-
-function ProfilesSection() {
-  const { profiles, activeProfileId, addProfile, updateProfile, removeProfile, setActiveProfile, clearHistory } = useStore();
+function ProfileSettingsPage({ onBack }: { onBack: () => void }) {
+  const { profiles, activeProfileId, updateProfile, removeProfile, addProfile } = useStore();
   const [editId, setEditId] = useState<string | null>(null);
+  const p = profiles.find(x => x.id === editId);
 
   return (
-    <div className="space-y-3">
-      <div className="grid grid-cols-3 gap-3">
-        {profiles.map(p => {
-          const av = getAvatar(p.avatar);
-          return (
-            <div key={p.id} onClick={() => setActiveProfile(p.id)}
-              className={clsx('relative rounded-xl p-4 flex flex-col items-center gap-2 cursor-pointer transition-all border',
-                p.id === activeProfileId ? 'border-[color:var(--accent)] bg-[color:var(--accent-bg)]' : 'border-white/10 bg-white/5 hover:border-white/20')}>
-              <div className="w-14 h-14 rounded-xl flex items-center justify-center text-3xl" style={{ backgroundColor: av.bg }}>{av.emoji}</div>
-              <p className="text-xs font-medium text-white">{p.name}</p>
-              <button onClick={e => { e.stopPropagation(); setEditId(p.id === editId ? null : p.id); }}
-                className="absolute top-2 right-2 p-1 rounded-lg hover:bg-white/10 text-white/30 hover:text-white">
-                <Pencil size={11} />
+    <div className="flex flex-col h-full overflow-hidden">
+      <BackHeader title="Profili" onBack={onBack} />
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+        <div className="grid grid-cols-3 gap-3">
+          {profiles.map(prof => {
+            const av = getAvatar(prof.avatar);
+            return (
+              <button key={prof.id} onClick={() => setEditId(editId === prof.id ? null : prof.id)}
+                className={clsx('flex flex-col items-center gap-2 p-3 rounded-2xl transition-all border',
+                  editId === prof.id || prof.id === activeProfileId
+                    ? 'border-[color:var(--accent)] bg-[color:var(--accent-bg)]'
+                    : 'border-white/[0.06] bg-[#1a1a1f] hover:border-white/20')}>
+                <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-3xl" style={{ backgroundColor: av.bg }}>{av.emoji}</div>
+                <p className="text-xs font-medium text-white">{prof.name}</p>
+                {prof.pin && <Lock size={10} className="text-white/40" />}
               </button>
-            </div>
-          );
-        })}
-        {profiles.length < 5 && (
-          <button onClick={() => addProfile({ name: `Profilo ${profiles.length + 1}`, avatar: 'blue', color: '#7c3aed', isKids: false })}
-            className="rounded-xl border border-dashed border-white/20 p-4 flex flex-col items-center gap-2 hover:border-white/40 text-white/30 hover:text-white/60 transition-all">
-            <Plus size={24} /><span className="text-xs">Aggiungi</span>
-          </button>
-        )}
-      </div>
-      {editId && (() => {
-        const p = profiles.find(x => x.id === editId)!;
-        return (
-          <div className="p-4 rounded-xl bg-white/5 border border-white/10 space-y-3">
-            <div className="flex gap-2">
-              <input defaultValue={p.name} onBlur={e => updateProfile(p.id, { name: e.target.value })} className={ic + ' flex-1'} />
-              {p.id !== 'default' && (
-                <button onClick={() => { removeProfile(p.id); setEditId(null); }} className="px-3 py-2 text-xs text-red-400 bg-red-500/10 rounded-xl hover:bg-red-500/20">Elimina</button>
-              )}
-              <button onClick={() => setEditId(null)} className="px-3 py-2 text-xs text-white/60 bg-white/5 rounded-xl"><X size={14} /></button>
-            </div>
-            <div className="flex gap-2 flex-wrap">
+            );
+          })}
+          {profiles.length < 5 && (
+            <button onClick={() => addProfile({ name: `Profilo ${profiles.length + 1}`, avatar: 'blue', color: '#7c3aed', isKids: false })}
+              className="flex flex-col items-center gap-2 p-3 rounded-2xl border border-dashed border-white/20 hover:border-white/40 text-white/30 hover:text-white/60 transition-all">
+              <div className="w-14 h-14 rounded-2xl bg-white/5 flex items-center justify-center text-2xl">+</div>
+              <p className="text-xs">Aggiungi</p>
+            </button>
+          )}
+        </div>
+
+        {editId && p && (
+          <div className="rounded-2xl bg-[#1a1a1f] border border-white/[0.06] p-4 space-y-4">
+            <p className="text-sm font-semibold text-white">Modifica: {p.name}</p>
+            <input defaultValue={p.name} onBlur={e => updateProfile(p.id, { name: e.target.value })}
+              className="w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 focus:border-[color:var(--accent)] focus:outline-none text-sm text-white" />
+            <div className="grid grid-cols-6 gap-2">
               {AVATARS.map(a => (
                 <button key={a.id} onClick={() => updateProfile(p.id, { avatar: a.id })}
                   className={clsx('w-10 h-10 rounded-xl flex items-center justify-center text-xl transition-all',
@@ -371,240 +114,471 @@ function ProfilesSection() {
                   style={{ backgroundColor: a.bg }}>{a.emoji}</button>
               ))}
             </div>
+            {p.id !== 'default' && (
+              <button onClick={() => { removeProfile(p.id); setEditId(null); }}
+                className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1">
+                <Trash2 size={12} />Elimina profilo
+              </button>
+            )}
           </div>
-        );
-      })()}
+        )}
+      </div>
     </div>
   );
 }
 
-// ─── Settings principale ──────────────────────────────────────────────────────
+function NuvioSyncPage({ onBack }: { onBack: () => void }) {
+  const { nuvioUser, setNuvioUser } = useStore();
+  const [email, setEmail] = useState('');
+  const [pw, setPw] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-type Tab = 'profili' | 'account' | 'player' | 'preferenze' | 'streaming' | 'dati';
-const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
-  { id: 'profili',    label: 'Profili',    icon: <Users size={15} /> },
-  { id: 'account',   label: 'Account',    icon: <User size={15} /> },
-  { id: 'player',    label: 'Player',     icon: <Play size={15} /> },
-  { id: 'preferenze',label: 'Preferenze', icon: <Star size={15} /> },
-  { id: 'streaming', label: 'Streaming',  icon: <Tv size={15} /> },
-  { id: 'dati',      label: 'Dati',       icon: <Database size={15} /> },
-];
-
-export default function Settings() {
-  const { settings, updateSettings, clearHistory } = useStore();
-  const activeProfile = (() => { const { profiles, activeProfileId } = useStore(); return profiles.find(p => p.id === activeProfileId) ?? profiles[0]; })();
-  const [tab, setTab] = useState<Tab>('profili');
-  const [local, setLocal] = useState({ ...settings });
-  const [saved, setSaved] = useState(false);
-  const [mpvStatus, setMpvStatus] = useState<'idle' | 'ok' | 'err'>('idle');
-  const av = getAvatar(activeProfile?.avatar ?? 'red');
-
-  useEffect(() => { setLocal({ ...settings }); }, [settings]);
-
-  function save() { updateSettings(local); setSaved(true); setTimeout(() => setSaved(false), 2000); }
-
-  async function testMpv() {
-    try { await launchPlayer('--version', undefined, ''); setMpvStatus('ok'); } catch { setMpvStatus('ok'); /* mpv trovato, non in esecuzione = ok */ }
+  async function login() {
+    if (!email || !pw) return;
+    setLoading(true); setError(null);
+    try { const u = await nuvioLogin(email, pw); setAuthToken(u.token); setNuvioUser(u); }
+    catch (e: any) { setError(e.message); }
+    finally { setLoading(false); }
   }
 
   return (
-    <div className="flex h-full overflow-hidden">
-      {/* Sidebar */}
-      <div className="w-48 flex-shrink-0 border-r border-white/[0.06] p-3 space-y-1">
-        <div className="flex items-center gap-2 px-3 py-2 mb-3">
-          <div className="w-8 h-8 rounded-lg flex items-center justify-center text-xl" style={{ backgroundColor: av.bg }}>{av.emoji}</div>
-          <p className="text-xs font-medium text-white/70 truncate">{activeProfile?.name}</p>
-        </div>
-        {TABS.map(t => (
-          <button key={t.id} onClick={() => setTab(t.id)}
-            className={clsx('w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm transition-colors text-left',
-              tab === t.id ? '' : 'text-white/50 hover:text-white hover:bg-white/5')}
-            style={tab === t.id ? { backgroundColor: 'var(--accent-bg)', color: 'var(--accent)' } : {}}>
-            {t.icon}{t.label}
+    <div className="flex flex-col h-full overflow-hidden">
+      <BackHeader title="Nuvio Sync" onBack={onBack} />
+      <div className="flex-1 overflow-y-auto px-4 py-5 space-y-4">
+        {nuvioUser ? (
+          <div className="rounded-2xl bg-[#1a1a1f] border border-white/[0.06] p-5 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl" style={{ backgroundColor: 'var(--accent)' }}>
+                <User size={22} className="text-white" />
+              </div>
+              <div>
+                <p className="font-semibold text-white">{nuvioUser.name}</p>
+                <p className="text-xs text-white/50">{nuvioUser.email}</p>
+              </div>
+            </div>
+            <p className="text-xs text-white/40">Sincronizzazione attiva: CW, libreria e addon.</p>
+            <button onClick={() => { nuvioLogout(); setAuthToken(null); setNuvioUser(null); }}
+              className="flex items-center gap-2 px-4 py-2 bg-red-500/10 text-red-400 rounded-xl text-sm hover:bg-red-500/15 transition-colors">
+              <LogOut size={14} />Disconnetti
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="rounded-2xl bg-[#1a1a1f] border border-white/[0.06] p-4 space-y-3">
+              <p className="text-sm font-semibold text-white">Accedi a Nuvio</p>
+              <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Email"
+                className="w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 focus:border-[color:var(--accent)] focus:outline-none text-sm text-white placeholder:text-white/30" />
+              <input type="password" value={pw} onChange={e => setPw(e.target.value)} onKeyDown={e => e.key === 'Enter' && login()} placeholder="Password"
+                className="w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 focus:border-[color:var(--accent)] focus:outline-none text-sm text-white placeholder:text-white/30" />
+              {error && <p className="text-xs text-red-400">{error}</p>}
+              <button onClick={login} disabled={loading || !email || !pw}
+                className="flex items-center gap-2 px-4 py-2.5 text-white rounded-xl text-sm font-medium w-full justify-center disabled:opacity-50"
+                style={{ backgroundColor: 'var(--accent)' }}>
+                {loading ? <RefreshCw size={14} className="animate-spin" /> : <LogIn size={14} />}Accedi
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TraktPage({ onBack }: { onBack: () => void }) {
+  const { traktAuth, setTraktAuth } = useStore();
+  const [code, setCode] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const pollRef = useRef<number | null>(null);
+
+  async function start() {
+    setLoading(true);
+    try {
+      const d = await getTraktDeviceCode(); setCode(d);
+      const poll = async () => {
+        const r = await pollTraktToken(d.device_code);
+        if (r) { const p = await getTraktProfile(r.access_token); setTraktAuth({ ...p, token: r.access_token, refreshToken: r.refresh_token, expiresAt: Date.now() + r.expires_in * 1000 }); setCode(null); }
+        else pollRef.current = window.setTimeout(poll, d.interval * 1000);
+      };
+      pollRef.current = window.setTimeout(poll, d.interval * 1000);
+    } catch (e: any) { alert(e.message); }
+    finally { setLoading(false); }
+  }
+
+  return (
+    <div className="flex flex-col h-full overflow-hidden">
+      <BackHeader title="Trakt.tv" onBack={onBack} />
+      <div className="flex-1 overflow-y-auto px-4 py-5">
+        {traktAuth ? (
+          <div className="rounded-2xl bg-[#1a1a1f] border border-white/[0.06] p-5 space-y-4">
+            <div className="flex items-center gap-3">
+              {traktAuth.avatar ? <img src={traktAuth.avatar} className="w-12 h-12 rounded-full" /> : <div className="w-12 h-12 rounded-full bg-[#ed1c24] flex items-center justify-center text-white font-bold text-lg">T</div>}
+              <div><p className="font-semibold text-white">{traktAuth.name}</p><p className="text-xs text-white/50">@{traktAuth.username}</p></div>
+            </div>
+            <button onClick={() => setTraktAuth(null)} className="flex items-center gap-2 px-4 py-2 bg-red-500/10 text-red-400 rounded-xl text-sm"><LogOut size={14} />Disconnetti</button>
+          </div>
+        ) : code ? (
+          <div className="rounded-2xl bg-[#1a1a1f] border border-white/[0.06] p-5 space-y-4">
+            <p className="text-sm text-white/70">1. Apri <button onClick={() => openExternal(code.verification_url)} className="underline" style={{ color: 'var(--accent)' }}>{code.verification_url}</button></p>
+            <p className="text-sm text-white/70">2. Inserisci:</p>
+            <div className="text-3xl font-mono font-bold tracking-widest text-center py-4 rounded-2xl" style={{ color: 'var(--accent)', backgroundColor: 'var(--accent-bg)' }}>{code.user_code}</div>
+            <div className="flex items-center justify-center gap-2 text-xs text-white/40"><RefreshCw size={12} className="animate-spin" />In attesa di autorizzazione...</div>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <p className="text-sm text-white/50 mb-4">Sincronizza cronologia, voti e watchlist con Trakt.tv.</p>
+            <button onClick={start} disabled={loading} className="flex items-center gap-2 px-5 py-3 bg-[#ed1c24] hover:bg-[#c91920] text-white rounded-2xl text-sm font-medium w-full justify-center disabled:opacity-50">
+              {loading ? <RefreshCw size={15} className="animate-spin" /> : <Tv size={15} />}Collega Trakt.tv
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SimklPage({ onBack }: { onBack: () => void }) {
+  const { simklAuth, setSimklAuth } = useStore();
+  const [pin, setPin] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const pollRef = useRef<number | null>(null);
+
+  async function start() {
+    setLoading(true);
+    try {
+      const d = await getSimklPin(); setPin(d);
+      const poll = async () => {
+        const t = await pollSimklToken(d.user_code);
+        if (t) { const p = await getSimklProfile(t); setSimklAuth(p); setPin(null); }
+        else pollRef.current = window.setTimeout(poll, d.interval * 1000);
+      };
+      pollRef.current = window.setTimeout(poll, d.interval * 1000);
+    } catch (e: any) { alert(e.message); }
+    finally { setLoading(false); }
+  }
+
+  return (
+    <div className="flex flex-col h-full overflow-hidden">
+      <BackHeader title="Simkl" onBack={onBack} />
+      <div className="flex-1 overflow-y-auto px-4 py-5">
+        {simklAuth ? (
+          <div className="rounded-2xl bg-[#1a1a1f] border border-white/[0.06] p-5 space-y-4">
+            <div className="flex items-center gap-3">
+              {simklAuth.avatar ? <img src={simklAuth.avatar} className="w-12 h-12 rounded-full" /> : <div className="w-12 h-12 rounded-full bg-[#0b65c2] flex items-center justify-center text-white font-bold">S</div>}
+              <div><p className="font-semibold text-white">{simklAuth.name}</p><p className="text-xs text-white/50">Simkl</p></div>
+            </div>
+            <button onClick={() => setSimklAuth(null)} className="flex items-center gap-2 px-4 py-2 bg-red-500/10 text-red-400 rounded-xl text-sm"><LogOut size={14} />Disconnetti</button>
+          </div>
+        ) : pin ? (
+          <div className="rounded-2xl bg-[#1a1a1f] border border-white/[0.06] p-5 space-y-4">
+            <p className="text-sm text-white/70">Apri <button onClick={() => openExternal('https://simkl.com/pin')} className="text-blue-400 underline">simkl.com/pin</button> e inserisci:</p>
+            <div className="text-3xl font-mono font-bold text-blue-400 tracking-widest text-center py-4 bg-blue-500/10 rounded-2xl">{pin.user_code}</div>
+            <div className="flex items-center justify-center gap-2 text-xs text-white/40"><RefreshCw size={12} className="animate-spin" />In attesa...</div>
+          </div>
+        ) : (
+          <button onClick={start} disabled={loading} className="flex items-center gap-2 px-5 py-3 bg-[#0b65c2] hover:bg-[#0952a0] text-white rounded-2xl text-sm font-medium w-full justify-center">
+            {loading ? <RefreshCw size={15} className="animate-spin" /> : <Film size={15} />}Collega Simkl
           </button>
-        ))}
+        )}
       </div>
+    </div>
+  );
+}
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto px-8 py-6">
-        <div className="max-w-xl space-y-8">
+function MALPage({ onBack }: { onBack: () => void }) {
+  const { malAuth, setMALAuth } = useStore();
+  const [step, setStep] = useState<'idle' | 'waiting'>('idle');
+  const [code, setCode] = useState('');
+  const [cv, setCv] = useState('');
+  const [authUrl, setAuthUrl] = useState('');
 
-          {tab === 'profili' && (
-            <>
-              <h1 className="text-lg font-bold text-white">Profili</h1>
-              <Section title="Gestisci profili"><ProfilesSection /></Section>
-            </>
-          )}
+  async function start() {
+    const { getMALAuthUrl } = await import('../api/mal');
+    const { url, codeVerifier } = getMALAuthUrl();
+    setCv(codeVerifier); setAuthUrl(url); setStep('waiting');
+    openExternal(url);
+  }
+  async function exchange() {
+    try {
+      const { exchangeMALCode, getMALProfile } = await import('../api/mal');
+      const t = await exchangeMALCode(code.trim(), cv);
+      const p = await getMALProfile(t.access_token);
+      setMALAuth({ ...p, token: t.access_token, refreshToken: t.refresh_token, expiresAt: Date.now() + t.expires_in * 1000 });
+      setStep('idle');
+    } catch (e: any) { alert(e.message); }
+  }
 
-          {tab === 'account' && (
-            <>
-              <h1 className="text-lg font-bold text-white">Account & Sync</h1>
-              <Section title="Nuvio Cloud"><NuvioAuth /></Section>
-              <Section title="Sync Nuvio Cloud">
-                <div className="flex items-center gap-2 text-xs text-white/40 bg-white/5 border border-white/10 rounded-xl px-4 py-3">
-                  <Database size={13} />
-                  <span>Il sync con Nuvio (CW, libreria, addon) avviene automaticamente dopo il login. Configurato via env secrets nella build.</span>
-                </div>
-              </Section>
-              <Section title="Trakt.tv"><TraktAuth /></Section>
-              <Section title="Simkl"><SimklAuth /></Section>
-              <Section title="MyAnimeList"><MALAuth /></Section>
-              <button onClick={save} className="flex items-center gap-2 px-6 py-2.5 text-white rounded-xl font-medium text-sm" style={{ backgroundColor: 'var(--accent)' }}>
-                <Save size={15} />{saved ? '✓ Salvato' : 'Salva'}
-              </button>
-            </>
-          )}
+  return (
+    <div className="flex flex-col h-full overflow-hidden">
+      <BackHeader title="MyAnimeList" onBack={onBack} />
+      <div className="flex-1 overflow-y-auto px-4 py-5">
+        {malAuth ? (
+          <div className="rounded-2xl bg-[#1a1a1f] border border-white/[0.06] p-5 space-y-4">
+            <div className="flex items-center gap-3">
+              {malAuth.picture ? <img src={malAuth.picture} className="w-12 h-12 rounded-full" /> : <div className="w-12 h-12 rounded-full bg-[#2e51a2] flex items-center justify-center text-white font-bold">M</div>}
+              <div><p className="font-semibold text-white">{malAuth.name}</p><p className="text-xs text-white/50">MyAnimeList</p></div>
+            </div>
+            <button onClick={() => setMALAuth(null)} className="flex items-center gap-2 px-4 py-2 bg-red-500/10 text-red-400 rounded-xl text-sm"><LogOut size={14} />Disconnetti</button>
+          </div>
+        ) : step === 'waiting' ? (
+          <div className="rounded-2xl bg-[#1a1a1f] border border-white/[0.06] p-5 space-y-3">
+            <p className="text-xs text-white/50">Autorizza su MAL, poi incolla il codice dall'URL:</p>
+            <div className="flex gap-2">
+              <input value={code} onChange={e => setCode(e.target.value)} placeholder="Codice dall'URL"
+                className="flex-1 px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 focus:border-[color:var(--accent)] focus:outline-none text-sm text-white placeholder:text-white/30" />
+              <button onClick={exchange} disabled={!code.trim()} className="px-4 py-2.5 bg-[#2e51a2] text-white rounded-xl text-sm disabled:opacity-50">OK</button>
+            </div>
+            <button onClick={() => setStep('idle')} className="text-xs text-white/30 hover:text-white">Annulla</button>
+          </div>
+        ) : (
+          <button onClick={start} className="flex items-center gap-2 px-5 py-3 bg-[#2e51a2] hover:bg-[#264490] text-white rounded-2xl text-sm font-medium w-full justify-center">
+            <BookOpen size={15} />Collega MyAnimeList
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
 
-          {tab === 'player' && (
-            <>
-              <h1 className="text-lg font-bold text-white">Player</h1>
-              <Section title="mpv">
-                <Field label="Percorso mpv" hint="Di solito non serve modificarlo — mpv.exe è già incluso nell'app.">
-                  <div className="flex gap-2">
-                    <input value={local.mpvPath} onChange={e => setLocal(p => ({ ...p, mpvPath: e.target.value }))} placeholder="mpv" className={ic} />
-                    <button onClick={testMpv} className="flex items-center gap-2 px-4 py-2.5 bg-white/10 hover:bg-white/15 text-white/70 hover:text-white rounded-xl text-sm flex-shrink-0">
-                      <Play size={14} />Test
-                    </button>
-                  </div>
-                  {mpvStatus === 'ok' && <p className="text-xs text-green-400 mt-1">✓ mpv trovato</p>}
-                </Field>
-              </Section>
-              <Section title="Riproduzione">
-                <Toggle value={local.hardwareDecode} onChange={v => setLocal(p => ({ ...p, hardwareDecode: v }))} label="Decodifica hardware (GPU)" desc="Usa la GPU per decodificare video — consigliato" />
-                <Toggle value={local.autoplay} onChange={v => setLocal(p => ({ ...p, autoplay: v }))} label="Autoplay episodio successivo" />
-              </Section>
-              <Section title="Player esterno (opzionale)">
-                <p className="text-xs text-white/40 mb-2">Lascia vuoto per usare mpv (incluso). Oppure specifica il percorso di VLC, MPC-HC, ecc.</p>
-                <Field label="Percorso player esterno">
-                  <input value={local.customPlayerPath ?? ''} onChange={e => setLocal(p => ({ ...p, customPlayerPath: e.target.value }))}
-                    placeholder="es. C:\Program Files\VideoLAN\VLC\vlc.exe" className={ic} />
-                </Field>
-                <div className="flex gap-2">
-                  {['mpv (default)', 'VLC', 'MPC-HC', 'IINA', 'Potplayer'].map(p => (
-                    <button key={p} onClick={() => {
-                      const paths: Record<string, string> = {
-                        'mpv (default)': '',
-                        'VLC': 'C:\\Program Files\\VideoLAN\\VLC\\vlc.exe',
-                        'MPC-HC': 'C:\\Program Files\\MPC-HC\\mpc-hc64.exe',
-                        'IINA': '/Applications/IINA.app/Contents/MacOS/iina-cli',
-                        'Potplayer': 'C:\\Program Files\\DAUM\\PotPlayer\\PotPlayerMini64.exe',
-                      };
-                      setLocal(prev => ({ ...prev, customPlayerPath: paths[p] }));
-                    }}
-                      className={clsx('text-xs px-2 py-1 rounded-lg border transition-colors',
-                        (local.customPlayerPath ?? '') === (p === 'mpv (default)' ? '' : `C:\\...`) ? 'border-[color:var(--accent)] text-[color:var(--accent)]' : 'border-white/10 text-white/50 hover:text-white hover:border-white/20')}>
-                      {p}
-                    </button>
-                  ))}
-                </div>
-              </Section>
+function PreferencePage({ onBack }: { onBack: () => void }) {
+  const { settings, updateSettings } = useStore();
+  const [local, setLocal] = useState({ ...settings });
+  const [tmdbStatus, setTmdbStatus] = useState<'idle' | 'testing' | 'ok' | 'err'>('idle');
+  const [saved, setSaved] = useState(false);
 
-              <button onClick={save} className="flex items-center gap-2 px-6 py-2.5 text-white rounded-xl font-medium text-sm" style={{ backgroundColor: 'var(--accent)' }}>
-                <Save size={15} />{saved ? '✓ Salvato' : 'Salva'}
-              </button>
-            </>
-          )}
+  async function testTMDB() {
+    if (!local.tmdbApiKey.trim()) return;
+    setTmdbStatus('testing');
+    const ok = await validateTMDBKey(local.tmdbApiKey.trim());
+    setTmdbStatus(ok ? 'ok' : 'err');
+    if (ok) updateSettings({ tmdbApiKey: local.tmdbApiKey.trim() });
+  }
 
-          {tab === 'preferenze' && (
-            <>
-              <h1 className="text-lg font-bold text-white">Preferenze</h1>
-              <Section title="Lingua">
-                <Field label="Lingua interfaccia">
-                  <select value={local.language} onChange={e => setLocal(p => ({ ...p, language: e.target.value }))} className={ic + ' cursor-pointer'}>
-                    <option value="it">Italiano</option><option value="en">English</option>
-                    <option value="es">Español</option><option value="de">Deutsch</option>
-                    <option value="fr">Français</option><option value="ja">日本語</option>
-                  </select>
-                </Field>
-                <Field label="Lingua sottotitoli">
-                  <select value={local.subtitleLanguage} onChange={e => setLocal(p => ({ ...p, subtitleLanguage: e.target.value }))} className={ic + ' cursor-pointer'}>
-                    <option value="it">Italiano</option><option value="en">English</option>
-                    <option value="es">Español</option><option value="de">Deutsch</option>
-                  </select>
-                </Field>
-                <Field label="Qualità preferita">
-                  <select value={local.defaultQuality} onChange={e => setLocal(p => ({ ...p, defaultQuality: e.target.value }))} className={ic + ' cursor-pointer'}>
-                    <option value="best">Migliore disponibile</option>
-                    <option value="4k">4K / 2160p</option>
-                    <option value="1080p">1080p Full HD</option>
-                    <option value="720p">720p HD</option>
-                  </select>
-                </Field>
-              </Section>
-              <Section title="TMDB — The Movie Database">
-                <p className="text-xs text-white/40 mb-2">Necessario per trame tradotte, cast, provider streaming e informazioni complete.</p>
-                <TMDBField />
-                <Field label="Lingua contenuti TMDB">
-                  <select value={local.tmdbLanguage} onChange={e => setLocal(p => ({ ...p, tmdbLanguage: e.target.value }))} className={ic + ' cursor-pointer'}>
-                    <option value="it-IT">Italiano</option><option value="en-US">English</option>
-                    <option value="es-ES">Español</option><option value="de-DE">Deutsch</option>
-                  </select>
-                </Field>
-              </Section>
-              <Section title="Colore accent">
-                <div className="flex gap-2 flex-wrap">
-                  {['#7c3aed','#2563eb','#16a34a','#dc2626','#d97706','#0891b2','#be185d','#e11d48','#0d9488','#ea580c'].map(c => (
-                    <button key={c} onClick={() => setLocal(p => ({ ...p, accentColor: c }))}
-                      className={clsx('w-8 h-8 rounded-full transition-all', local.accentColor === c ? 'ring-2 ring-white scale-110' : 'hover:scale-105')}
-                      style={{ backgroundColor: c }} />
-                  ))}
-                  <input type="color" value={local.accentColor} onChange={e => setLocal(p => ({ ...p, accentColor: e.target.value }))}
-                    className="w-8 h-8 rounded-full cursor-pointer border-0 bg-transparent" />
-                </div>
-              </Section>
-              <button onClick={save} className="flex items-center gap-2 px-6 py-2.5 text-white rounded-xl font-medium text-sm" style={{ backgroundColor: 'var(--accent)' }}>
-                <Save size={15} />{saved ? '✓ Salvato' : 'Salva'}
-              </button>
-            </>
-          )}
+  function save() { updateSettings(local as any); setSaved(true); setTimeout(() => setSaved(false), 2000); }
 
-          {tab === 'streaming' && (
-            <>
-              <h1 className="text-lg font-bold text-white">Servizi Streaming</h1>
-              <Section title="Servizi visibili">
-                <p className="text-xs text-white/40 mb-3">Seleziona quali servizi mostrare nella sezione Streaming. Richiede la chiave API TMDB.</p>
-                <div className="space-y-2">
-                  {STREAMING_SERVICES.map(s => {
-                    const visible = local.visibleServices ?? STREAMING_SERVICES.map(x => x.id);
-                    const isOn = visible.includes(s.id);
-                    return (
-                      <div key={s.id} className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10">
-                        <div className="flex items-center gap-3"><span className="text-2xl">{s.logo}</span><span className="text-sm font-medium text-white">{s.name}</span></div>
-                        <button onClick={() => {
-                          const cur = local.visibleServices ?? STREAMING_SERVICES.map(x => x.id);
-                          setLocal(p => ({ ...p, visibleServices: isOn ? cur.filter(id => id !== s.id) : [...cur, s.id] }));
-                        }}
-                          className={clsx('relative w-11 h-6 rounded-full transition-colors duration-200', isOn ? 'bg-[color:var(--accent,#7c3aed)]' : 'bg-white/20')}>
-                          <span className={clsx('absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200', isOn ? 'translate-x-5' : '')} />
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              </Section>
-              <button onClick={save} className="flex items-center gap-2 px-6 py-2.5 text-white rounded-xl font-medium text-sm" style={{ backgroundColor: 'var(--accent)' }}>
-                <Save size={15} />{saved ? '✓ Salvato' : 'Salva'}
-              </button>
-            </>
-          )}
+  return (
+    <div className="flex flex-col h-full overflow-hidden">
+      <BackHeader title="Preferenze" onBack={onBack} />
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-5">
 
-          {tab === 'dati' && (
-            <>
-              <h1 className="text-lg font-bold text-white">Dati & Privacy</h1>
-              <Section title="Cronologia">
-                <div className="flex items-center justify-between p-4 rounded-xl bg-white/5 border border-white/10">
-                  <div><p className="text-sm text-white">Cancella cronologia</p><p className="text-xs text-white/40">Solo per il profilo corrente</p></div>
-                  <button onClick={() => { if (confirm('Cancellare la cronologia?')) clearHistory(); }}
-                    className="flex items-center gap-2 px-4 py-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 rounded-xl text-sm">
-                    <Trash2 size={14} />Cancella
-                  </button>
-                </div>
-              </Section>
-            </>
-          )}
-
+        <div className="rounded-2xl bg-[#1a1a1f] border border-white/[0.06] p-4 space-y-3">
+          <p className="text-sm font-semibold text-white">TMDB API Key</p>
+          <p className="text-xs text-white/40">Necessaria per trame in italiano, cast, copertine e info complete. Ottieni su <button onClick={() => openExternal('https://www.themoviedb.org/settings/api')} className="underline" style={{ color: 'var(--accent)' }}>themoviedb.org</button></p>
+          <div className="flex gap-2">
+            <input value={local.tmdbApiKey} onChange={e => { setLocal(p => ({ ...p, tmdbApiKey: e.target.value })); setTmdbStatus('idle'); }}
+              placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+              className="flex-1 px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 focus:border-[color:var(--accent)] focus:outline-none text-sm text-white font-mono placeholder:text-white/30" />
+            <button onClick={testTMDB} disabled={!local.tmdbApiKey.trim() || tmdbStatus === 'testing'}
+              className="px-4 py-2.5 bg-white/10 hover:bg-white/15 text-white rounded-xl text-sm disabled:opacity-50">
+              {tmdbStatus === 'testing' ? <RefreshCw size={14} className="animate-spin" /> : <Key size={14} />}
+            </button>
+          </div>
+          {tmdbStatus === 'ok' && <p className="text-xs text-green-400 flex items-center gap-1"><CheckCircle2 size={12} />Chiave valida e salvata</p>}
+          {tmdbStatus === 'err' && <p className="text-xs text-red-400 flex items-center gap-1"><AlertCircle size={12} />Chiave non valida</p>}
+          {settings.tmdbApiKey && tmdbStatus === 'idle' && <p className="text-xs text-white/30">✓ Configurata</p>}
+          <div>
+            <label className="text-xs text-white/40 mb-1.5 block">Lingua contenuti</label>
+            <select value={local.tmdbLanguage} onChange={e => setLocal(p => ({ ...p, tmdbLanguage: e.target.value }))}
+              className="w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm text-white focus:outline-none cursor-pointer">
+              <option value="it-IT">Italiano</option><option value="en-US">English</option>
+              <option value="es-ES">Español</option><option value="de-DE">Deutsch</option>
+            </select>
+          </div>
         </div>
+
+        <div className="rounded-2xl bg-[#1a1a1f] border border-white/[0.06] p-4 space-y-3">
+          <p className="text-sm font-semibold text-white">Lingua interfaccia</p>
+          <select value={local.language} onChange={e => setLocal(p => ({ ...p, language: e.target.value }))}
+            className="w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm text-white focus:outline-none cursor-pointer">
+            <option value="it">Italiano</option><option value="en">English</option>
+            <option value="es">Español</option><option value="de">Deutsch</option>
+          </select>
+        </div>
+
+        <div className="rounded-2xl bg-[#1a1a1f] border border-white/[0.06] p-4 space-y-3">
+          <p className="text-sm font-semibold text-white">Colore accent</p>
+          <div className="flex gap-2 flex-wrap">
+            {['#7c3aed','#2563eb','#16a34a','#dc2626','#d97706','#0891b2','#be185d','#ea580c','#0d9488','#6366f1'].map(c => (
+              <button key={c} onClick={() => setLocal(p => ({ ...p, accentColor: c }))}
+                className={clsx('w-9 h-9 rounded-full transition-all', local.accentColor === c ? 'ring-2 ring-white ring-offset-2 ring-offset-[#1a1a1f] scale-110' : 'hover:scale-105')}
+                style={{ backgroundColor: c }} />
+            ))}
+            <input type="color" value={local.accentColor} onChange={e => setLocal(p => ({ ...p, accentColor: e.target.value }))}
+              className="w-9 h-9 rounded-full cursor-pointer border-0 bg-transparent" />
+          </div>
+        </div>
+
+        <button onClick={save} className="w-full flex items-center gap-2 px-4 py-3 text-white rounded-2xl font-medium text-sm justify-center"
+          style={{ backgroundColor: 'var(--accent)' }}>
+          <Save size={15} />{saved ? '✓ Salvato' : 'Salva preferenze'}
+        </button>
       </div>
+    </div>
+  );
+}
+
+function PlayerPage({ onBack }: { onBack: () => void }) {
+  const { settings, updateSettings } = useStore();
+  const [local, setLocal] = useState({ ...settings });
+  const [saved, setSaved] = useState(false);
+
+  function save() { updateSettings(local as any); setSaved(true); setTimeout(() => setSaved(false), 2000); }
+
+  return (
+    <div className="flex flex-col h-full overflow-hidden">
+      <BackHeader title="Riproduzione" onBack={onBack} />
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+        <div className="rounded-2xl bg-[#1a1a1f] border border-white/[0.06] divide-y divide-white/[0.04]">
+          <div className="p-4 space-y-2">
+            <label className="text-xs text-white/40 uppercase tracking-wider block">Player (default: mpv incluso)</label>
+            <input value={local.customPlayerPath ?? ''} onChange={e => setLocal(p => ({ ...p, customPlayerPath: e.target.value }))}
+              placeholder="Lascia vuoto per mpv · oppure es. C:\Program Files\VLC\vlc.exe"
+              className="w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 focus:border-[color:var(--accent)] focus:outline-none text-sm text-white placeholder:text-white/30 font-mono" />
+            <div className="flex gap-1.5 flex-wrap">
+              {['mpv (default)', 'VLC', 'MPC-HC', 'Potplayer'].map(p => (
+                <button key={p} onClick={() => setLocal(prev => ({ ...prev, customPlayerPath: p === 'mpv (default)' ? '' : '' }))}
+                  className="text-xs px-2.5 py-1 rounded-full bg-white/5 hover:bg-white/10 text-white/50 hover:text-white transition-colors border border-white/10">
+                  {p}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="px-4 py-3 flex items-center justify-between">
+            <div><p className="text-sm text-white">Decodifica hardware</p><p className="text-xs text-white/40">Usa GPU per video</p></div>
+            <button onClick={() => setLocal(p => ({ ...p, hardwareDecode: !p.hardwareDecode }))}
+              className={clsx('relative w-11 h-6 rounded-full transition-colors', local.hardwareDecode ? 'bg-[color:var(--accent)]' : 'bg-white/20')}>
+              <span className={clsx('absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform', local.hardwareDecode ? 'translate-x-5' : '')} />
+            </button>
+          </div>
+          <div className="px-4 py-3 flex items-center justify-between">
+            <div><p className="text-sm text-white">Autoplay</p><p className="text-xs text-white/40">Episodio successivo automatico</p></div>
+            <button onClick={() => setLocal(p => ({ ...p, autoplay: !p.autoplay }))}
+              className={clsx('relative w-11 h-6 rounded-full transition-colors', local.autoplay ? 'bg-[color:var(--accent)]' : 'bg-white/20')}>
+              <span className={clsx('absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform', local.autoplay ? 'translate-x-5' : '')} />
+            </button>
+          </div>
+        </div>
+        <button onClick={save} className="w-full flex items-center gap-2 px-4 py-3 text-white rounded-2xl font-medium text-sm justify-center"
+          style={{ backgroundColor: 'var(--accent)' }}>
+          <Save size={15} />{saved ? '✓ Salvato' : 'Salva'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function StreamingServicesPage({ onBack }: { onBack: () => void }) {
+  const { settings, updateSettings } = useStore();
+  const [visible, setVisible] = useState<string[]>(settings.visibleServices ?? STREAMING_SERVICES.map(s => s.id));
+
+  function toggle(id: string) {
+    setVisible(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  }
+
+  function save() { updateSettings({ visibleServices: visible } as any); }
+
+  return (
+    <div className="flex flex-col h-full overflow-hidden">
+      <BackHeader title="Servizi Streaming" onBack={onBack} />
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+        <p className="text-xs text-white/40">Seleziona i servizi da mostrare nella sezione Streaming.</p>
+        <div className="rounded-2xl bg-[#1a1a1f] border border-white/[0.06] overflow-hidden divide-y divide-white/[0.04]">
+          {STREAMING_SERVICES.map(s => {
+            const [logoErr, setLogoErr] = useState(false);
+            const on = visible.includes(s.id);
+            return (
+              <div key={s.id} className="flex items-center gap-4 px-4 py-3">
+                <div className="w-8 h-8 flex items-center justify-center">
+                  {!logoErr && s.logo ? <img src={s.logo} alt={s.name} className="h-6 object-contain" onError={() => setLogoErr(true)} /> : <span className="text-xl">{s.logoFallback}</span>}
+                </div>
+                <p className="flex-1 text-sm font-medium text-white">{s.name}</p>
+                <button onClick={() => toggle(s.id)}
+                  className={clsx('relative w-11 h-6 rounded-full transition-colors', on ? 'bg-[color:var(--accent)]' : 'bg-white/20')}>
+                  <span className={clsx('absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform', on ? 'translate-x-5' : '')} />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+        <button onClick={save} className="w-full flex items-center gap-2 px-4 py-3 text-white rounded-2xl font-medium text-sm justify-center"
+          style={{ backgroundColor: 'var(--accent)' }}>
+          <Save size={15} />Salva
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main Settings ────────────────────────────────────────────────────────────
+
+type SubPage = null | 'profiles' | 'nuvio' | 'trakt' | 'simkl' | 'mal' | 'preferences' | 'player' | 'streaming' | 'data';
+
+export default function Settings() {
+  const { traktAuth, simklAuth, malAuth, nuvioUser, clearHistory } = useStore();
+  const activeProfile = (() => { const { profiles, activeProfileId } = useStore(); return profiles.find(p => p.id === activeProfileId) ?? profiles[0]; })();
+  const [sub, setSub] = useState<SubPage>(null);
+  const av = getAvatar(activeProfile?.avatar ?? 'red');
+
+  if (sub === 'profiles') return <ProfileSettingsPage onBack={() => setSub(null)} />;
+  if (sub === 'nuvio')    return <NuvioSyncPage onBack={() => setSub(null)} />;
+  if (sub === 'trakt')    return <TraktPage onBack={() => setSub(null)} />;
+  if (sub === 'simkl')    return <SimklPage onBack={() => setSub(null)} />;
+  if (sub === 'mal')      return <MALPage onBack={() => setSub(null)} />;
+  if (sub === 'preferences') return <PreferencePage onBack={() => setSub(null)} />;
+  if (sub === 'player')   return <PlayerPage onBack={() => setSub(null)} />;
+  if (sub === 'streaming') return <StreamingServicesPage onBack={() => setSub(null)} />;
+
+  return (
+    <div className="overflow-y-auto h-full px-4 py-5 space-y-6">
+      <h1 className="text-xl font-bold text-white px-0">Impostazioni</h1>
+
+      {/* Account */}
+      <SettingsGroup title="Account">
+        <SettingRow icon={<Users size={16} />} title="Profili" subtitle={`${activeProfile?.name} · ${useStore.getState().profiles.length} profili`} onClick={() => setSub('profiles')} />
+        <SettingRow icon={<div className="text-base">{av.emoji}</div>} title="Profilo attivo" subtitle={activeProfile?.name} onClick={() => setSub('profiles')} />
+        <SettingRow
+          icon={<Zap size={16} />}
+          title="Nuvio Sync"
+          subtitle={nuvioUser ? `Connesso: ${nuvioUser.email}` : 'Sincronizza dati tra dispositivi'}
+          onClick={() => setSub('nuvio')}
+        />
+        <SettingRow
+          icon={<span className="text-sm font-bold text-[#ed1c24]">T</span>}
+          title="Impostazioni Trakt"
+          subtitle={traktAuth ? `@${traktAuth.username}` : 'Non connesso'}
+          onClick={() => setSub('trakt')}
+        />
+        <SettingRow
+          icon={<span className="text-sm font-bold text-[#0b65c2]">S</span>}
+          title="Simkl"
+          subtitle={simklAuth ? `@${simklAuth.username}` : 'Traccia ciò che guardi'}
+          onClick={() => setSub('simkl')}
+        />
+        <SettingRow
+          icon={<span className="text-sm font-bold text-[#2e51a2]">M</span>}
+          title="MyAnimeList"
+          subtitle={malAuth ? malAuth.name : 'Sync con MyAnimeList'}
+          onClick={() => setSub('mal')}
+        />
+      </SettingsGroup>
+
+      {/* General */}
+      <SettingsGroup title="Generale">
+        <SettingRow icon={<Globe size={16} />} title="Preferenze" subtitle="TMDB, lingua, colori" onClick={() => setSub('preferences')} />
+        <SettingRow icon={<Tv size={16} />} title="Servizi Streaming" subtitle="Netflix, Disney+, ecc." onClick={() => setSub('streaming')} />
+        <SettingRow icon={<Play size={16} />} title="Riproduzione" subtitle="Player, qualità, autoplay" onClick={() => setSub('player')} />
+      </SettingsGroup>
+
+      {/* Data */}
+      <SettingsGroup title="Dati">
+        <SettingRow icon={<Trash2 size={16} />} title="Cancella cronologia" subtitle="Solo profilo corrente" danger
+          onClick={() => { if (confirm('Cancellare la cronologia?')) clearHistory(); }} />
+      </SettingsGroup>
+
+      {/* Info */}
+      <SettingsGroup title="Informazioni">
+        <SettingRow icon={<Info size={16} />} title="Informazioni su Nuvio" subtitle="v0.4.0 · Nuvio Desktop" onClick={() => openExternal('https://github.com/Davako94/nuvio-desktop')} />
+      </SettingsGroup>
     </div>
   );
 }

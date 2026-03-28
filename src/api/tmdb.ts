@@ -1,14 +1,10 @@
 /// <reference types="vite/client" />
-
+/**
+ * TMDB v3 API — usa api_key come query parameter (NON bearer token v4).
+ * La chiave si ottiene su https://www.themoviedb.org/settings/api
+ * e ha il formato: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx (32 char hex)
+ */
 import { useStore } from '../lib/store';
-import netflixLogo from '../assets/logos/netflix.svg';
-import disneyLogo from '../assets/logos/disney.svg';
-import appleLogo from '../assets/logos/apple.svg';
-import paramountLogo from '../assets/logos/paramount.svg';
-import amazonLogo from '../assets/logos/amazon.svg';
-import maxLogo from '../assets/logos/max.svg';
-import crunchyrollLogo from '../assets/logos/crunchyroll.svg';
-import raiplayLogo from '../assets/logos/raiplay.svg';
 
 const BASE = 'https://api.themoviedb.org/3';
 export const IMG_BASE = 'https://image.tmdb.org/t/p';
@@ -41,19 +37,20 @@ export interface StreamingService {
   name: string;
   tmdbId: number;
   color: string;
-  logo: string;
+  logo: string;        // path in /public/logos/
+  logoFallback: string; // emoji fallback
   gradient: string;
 }
 
 export const STREAMING_SERVICES: StreamingService[] = [
-  { id: 'netflix', name: 'Netflix', tmdbId: 8, color: '#E50914', logo: netflixLogo, gradient: 'from-red-900 to-black' },
-  { id: 'disney', name: 'Disney+', tmdbId: 337, color: '#113CCF', logo: disneyLogo, gradient: 'from-blue-900 to-indigo-950' },
-  { id: 'apple', name: 'Apple TV+', tmdbId: 350, color: '#555555', logo: appleLogo, gradient: 'from-gray-800 to-black' },
-  { id: 'paramount', name: 'Paramount+', tmdbId: 531, color: '#0064FF', logo: paramountLogo, gradient: 'from-blue-800 to-blue-950' },
-  { id: 'amazon', name: 'Amazon Prime', tmdbId: 9, color: '#00A8E1', logo: amazonLogo, gradient: 'from-cyan-900 to-slate-950' },
-  { id: 'hbo', name: 'Max', tmdbId: 384, color: '#5822B4', logo: maxLogo, gradient: 'from-purple-900 to-black' },
-  { id: 'crunchyroll', name: 'Crunchyroll', tmdbId: 283, color: '#F47521', logo: crunchyrollLogo, gradient: 'from-orange-900 to-black' },
-  { id: 'raiplay', name: 'RaiPlay', tmdbId: 675, color: '#009246', logo: raiplayLogo, gradient: 'from-green-900 to-slate-950' },
+  { id: 'netflix',    name: 'Netflix',      tmdbId: 8,   color: '#E50914', logo: '/logos/netflix.png',     logoFallback: '🔴', gradient: 'from-red-950 to-black' },
+  { id: 'disney',     name: 'Disney+',      tmdbId: 337, color: '#113CCF', logo: '/logos/disney.png',      logoFallback: '✨', gradient: 'from-blue-950 to-black' },
+  { id: 'apple',      name: 'Apple TV+',    tmdbId: 350, color: '#ffffff', logo: '/logos/apple.png',       logoFallback: '🍎', gradient: 'from-gray-900 to-black' },
+  { id: 'paramount',  name: 'Paramount+',   tmdbId: 531, color: '#0064FF', logo: '/logos/paramount.png',   logoFallback: '⛰️', gradient: 'from-blue-950 to-black' },
+  { id: 'amazon',     name: 'Amazon Prime', tmdbId: 9,   color: '#00A8E1', logo: '/logos/prime.png',       logoFallback: '📦', gradient: 'from-cyan-950 to-black' },
+  { id: 'hbo',        name: 'Max',          tmdbId: 384, color: '#5822B4', logo: '/logos/max.png',         logoFallback: '💜', gradient: 'from-purple-950 to-black' },
+  { id: 'crunchyroll',name: 'Crunchyroll',  tmdbId: 283, color: '#F47521', logo: '/logos/crunchyroll.png', logoFallback: '🍥', gradient: 'from-orange-950 to-black' },
+  { id: 'raiplay',    name: 'RaiPlay',      tmdbId: 675, color: '#009246', logo: '/logos/raiplay.png',     logoFallback: '🇮🇹', gradient: 'from-green-950 to-black' },
 ];
 
 // ─── Discover ─────────────────────────────────────────────────────────────────

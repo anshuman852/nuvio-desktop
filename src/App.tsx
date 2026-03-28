@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 import { BrowserRouter, Routes, Route, NavLink, useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
-import { Home, Package, Settings, Search as SearchIcon, X, Menu, Tv, Library } from 'lucide-react';
+import { Home, Search as SearchIcon, Library, Package, Settings, X, Tv } from 'lucide-react';
 import clsx from 'clsx';
 import { useStore } from './lib/store';
 import { getAvatar } from './pages/ProfileSelect';
@@ -39,53 +39,79 @@ function Sidebar({ collapsed }: { collapsed: boolean }) {
   const { profiles, activeProfileId, setProfileSelected } = useStore();
   const activeProfile = profiles.find(p => p.id === activeProfileId) ?? profiles[0];
   const av = getAvatar(activeProfile?.avatar ?? 'red');
+
   return (
-    <aside className={clsx('flex flex-col h-full bg-[#111115] border-r border-white/[0.06] transition-all duration-200 flex-shrink-0', collapsed ? 'w-14' : 'w-52')}>
-      <div className={clsx('flex items-center h-14 px-4 border-b border-white/[0.06]', collapsed ? 'justify-center' : 'gap-2')}>
-        <div className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0" style={{ backgroundColor: 'var(--accent,#7c3aed)' }}>
-          <span className="text-white font-bold text-xs">N</span>
+    <aside className={clsx(
+      'flex flex-col h-full bg-[#0f0f13]/95 backdrop-blur-xl border-r border-white/[0.05] transition-all duration-200 flex-shrink-0',
+      collapsed ? 'w-[60px]' : 'w-[200px]'
+    )}>
+      {/* Logo */}
+      <div className={clsx('flex items-center h-14 border-b border-white/[0.05]', collapsed ? 'justify-center px-0' : 'px-5 gap-2.5')}>
+        <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
+          style={{ backgroundColor: 'var(--accent,#7c3aed)' }}>
+          <span className="text-white font-bold text-sm">N</span>
         </div>
         {!collapsed && <span className="font-bold text-white text-sm tracking-wide">Nuvio</span>}
       </div>
-      <nav className="flex-1 py-3 space-y-0.5 px-2">
+
+      {/* Nav */}
+      <nav className="flex-1 py-3 px-2 space-y-0.5">
         {NAV.map(({ to, icon: Icon, label, end }) => (
           <NavLink key={to} to={to} end={end}
-            className={({ isActive }) => clsx('flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors', isActive ? '' : 'text-white/50 hover:text-white hover:bg-white/5', collapsed && 'justify-center')}
+            className={({ isActive }) => clsx(
+              'flex items-center gap-3 py-2.5 rounded-xl text-sm font-medium transition-all',
+              collapsed ? 'justify-center px-0' : 'px-3',
+              isActive ? 'text-white' : 'text-white/40 hover:text-white/80 hover:bg-white/5'
+            )}
             style={({ isActive }) => isActive ? { backgroundColor: 'var(--accent-bg)', color: 'var(--accent)' } : {}}>
-            <Icon size={17} className="flex-shrink-0" />
-            {!collapsed && label}
+            <Icon size={18} className="flex-shrink-0" />
+            {!collapsed && <span>{label}</span>}
           </NavLink>
         ))}
       </nav>
+
+      {/* Profile */}
       {!collapsed && (
-        <button onClick={() => setProfileSelected(false)} className="flex items-center gap-2 px-4 py-3 border-t border-white/[0.06] hover:bg-white/5 transition-colors text-left">
-          <div className="w-7 h-7 rounded-lg flex items-center justify-center text-lg flex-shrink-0" style={{ backgroundColor: av.bg }}>{av.emoji}</div>
-          <div className="flex-1 min-w-0">
-            <p className="text-xs font-medium text-white/70 truncate">{activeProfile?.name}</p>
-            <p className="text-xs text-white/30">Cambia profilo</p>
+        <button onClick={() => setProfileSelected(false)}
+          className="flex items-center gap-2.5 px-4 py-3 border-t border-white/[0.05] hover:bg-white/5 transition-colors">
+          <div className="w-7 h-7 rounded-xl flex items-center justify-center text-base flex-shrink-0"
+            style={{ backgroundColor: av.bg }}>
+            {av.emoji}
           </div>
+          <div className="flex-1 min-w-0 text-left">
+            <p className="text-xs font-medium text-white/60 truncate">{activeProfile?.name}</p>
+            <p className="text-xs text-white/25">Cambia profilo</p>
+          </div>
+        </button>
+      )}
+      {collapsed && (
+        <button onClick={() => setProfileSelected(false)} className="flex justify-center py-3 border-t border-white/[0.05] hover:bg-white/5 transition-colors">
+          <div className="w-7 h-7 rounded-xl flex items-center justify-center text-base" style={{ backgroundColor: av.bg }}>{av.emoji}</div>
         </button>
       )}
     </aside>
   );
 }
 
-function Topbar({ onToggle }: { onToggle: () => void }) {
+function SearchBar() {
   const [query, setQuery] = useState('');
+  const [focused, setFocused] = useState(false);
   const navigate = useNavigate();
   return (
-    <header className="flex items-center gap-3 h-14 px-4 border-b border-white/[0.06] bg-[#0f0f13] flex-shrink-0">
-      <button onClick={onToggle} className="p-1.5 rounded-xl hover:bg-white/10 text-white/50 hover:text-white transition-colors"><Menu size={18} /></button>
-      <form onSubmit={e => { e.preventDefault(); if (query.trim()) navigate(`/search?q=${encodeURIComponent(query.trim())}`); }} className="flex-1 max-w-sm">
-        <div className="relative">
-          <SearchIcon size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" />
-          <input type="search" value={query} onChange={e => setQuery(e.target.value)} placeholder="Cerca film, serie, anime..."
-            className="w-full pl-8 pr-8 py-1.5 rounded-xl bg-white/5 border border-white/10 focus:outline-none text-sm text-white placeholder:text-white/30"
-            onFocus={e => e.target.style.borderColor = 'var(--accent)'} onBlur={e => e.target.style.borderColor = ''} />
-          {query && <button type="button" onClick={() => setQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-white/30 hover:text-white"><X size={14} /></button>}
-        </div>
-      </form>
-    </header>
+    <form onSubmit={e => { e.preventDefault(); if (query.trim()) navigate(`/search?q=${encodeURIComponent(query.trim())}`); }}
+      className="flex-1 max-w-sm">
+      <div className={clsx('relative transition-all duration-200', focused ? 'scale-[1.01]' : '')}>
+        <SearchIcon size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" />
+        <input type="search" value={query} onChange={e => setQuery(e.target.value)}
+          onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
+          placeholder="Cerca film, serie, anime..."
+          className={clsx(
+            'w-full pl-9 pr-8 py-2 rounded-full text-sm text-white placeholder:text-white/30 focus:outline-none transition-all',
+            focused ? 'bg-white/15 border border-white/20' : 'bg-white/8 border border-white/8 hover:bg-white/10'
+          )} />
+        {query && <button type="button" onClick={() => setQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30 hover:text-white"><X size={13} /></button>}
+      </div>
+    </form>
   );
 }
 
@@ -95,7 +121,16 @@ function Layout() {
     <div className="flex h-screen bg-[#0f0f13] overflow-hidden">
       <Sidebar collapsed={collapsed} />
       <div className="flex flex-col flex-1 min-w-0">
-        <Topbar onToggle={() => setCollapsed(v => !v)} />
+        {/* Topbar */}
+        <header className="flex items-center gap-3 h-14 px-4 border-b border-white/[0.05] flex-shrink-0">
+          <button onClick={() => setCollapsed(v => !v)}
+            className="p-1.5 rounded-lg hover:bg-white/10 text-white/30 hover:text-white transition-colors">
+            <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" />
+            </svg>
+          </button>
+          <SearchBar />
+        </header>
         <main className="flex-1 overflow-hidden">
           <Routes>
             <Route path="/"                     element={<HomePage />} />
