@@ -49,6 +49,7 @@ interface Store {
   addons: Addon[];
   addAddon: (a: Addon) => void;
   removeAddon: (id: string) => void;
+  setAddons: (addons: Addon[]) => void;
   reorderAddon: (id: string, dir: 'up' | 'down') => void;
   updateAddon: (id: string, patch: Partial<Addon>) => void;
 
@@ -99,6 +100,7 @@ export const useStore = create<Store>()(
         addons: [...s.addons.filter((x) => x.id !== a.id), a],
       })),
       removeAddon: (id) => set((s) => ({ addons: s.addons.filter((a) => a.id !== id) })),
+      setAddons: (addons) => set({ addons }),
       updateAddon: (id, patch) => set((s) => ({
         addons: s.addons.map((a) => a.id === id ? { ...a, ...patch } : a),
       })),

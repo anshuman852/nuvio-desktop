@@ -3,7 +3,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useStore } from '../lib/store';
 import { fetchMeta, fetchAllStreams, openExternal, launchPlayer } from '../api/stremio';
-import { getDetails, tmdbImg, hasTMDBKey } from '../api/tmdb';
+import { getDetails, tmdbImg, hasTMDBKey, STREAMING_SERVICES } from '../api/tmdb';
 import { MetaItem, Stream, StreamGroup, Video } from '../lib/types';
 import VideoPlayer from '../components/VideoPlayer';
 import {
@@ -226,7 +226,15 @@ export default function Detail() {
 
   function handleEpisodeSelect(video: Video) {
     setSelectedVideo(video);
-    loadStreams(video.id);
+    setStreamGroups([]);
+    setStreamError(null);
+    setPlayError(null);
+    // L'ID video per Stremio è nel formato: tt1234567:1:2 (imdbId:season:episode)
+    const imdbBase = meta?.id?.startsWith('tt') ? meta.id : (decodedId.startsWith('tt') ? decodedId : null);
+    const streamId = imdbBase && video.season && video.episode
+      ? `${imdbBase}:${video.season}:${video.episode}`
+      : video.id;
+    loadStreams(streamId);
   }
 
   // ── Play ──────────────────────────────────────────────────────────────────
@@ -472,6 +480,34 @@ export default function Detail() {
           {isSeries && !selectedVideo && !streamsLoading && streamGroups.length === 0 && !streamError && (
             <div className="text-center py-8 text-white/25 text-sm border border-dashed border-white/[0.08] rounded-2xl">
               ← Seleziona un episodio per caricare gli stream
+            </div>
+          )}
+
+          {/* Production companies → link a streaming */}
+          {(tmdb?.production_companies ?? tmdb?.networks)?.length > 0 && (
+            <div>
+              <h2 className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-3">
+                {tmdb?.networks ? 'Network' : 'Produzione'}
+              </h2>
+              <div className="flex gap-2 flex-wrap">
+                {(tmdb?.networks ?? tmdb?.production_companies ?? []).slice(0, 6).map((co: any) => {
+                  // Prova a matchare con un servizio streaming
+                  const matchService = STREAMING_SERVICES.find((s: any) =>
+                    co.name?.toLowerCase().includes(s.id) ||
+                    co.origin_country === s.id.toUpperCase()
+                  );
+                  const el = (
+                    <div key={co.id} className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:border-white/25 transition-colors">
+                      {co.logo_path
+                        ? <img src={tmdbImg(co.logo_path, 'w92')} alt={co.name} className="h-5 object-contain max-w-[80px] brightness-150" />
+                        : <span className="text-xs text-white/60">{co.name}</span>}
+                    </div>
+                  );
+                  return matchService
+                    ? <Link key={co.id} to={`/streaming/${matchService.id}`}>{el}</Link>
+                    : <div key={co.id}>{el}</div>;
+                })}
+              </div>
             </div>
           )}
 

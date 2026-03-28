@@ -65,12 +65,31 @@ function HeroSection({ item }: { item: MetaItem }) {
 
 function PosterCard({ item }: { item: any }) {
   const [imgErr, setImgErr] = useState(false);
+  const [tmdbPoster, setTmdbPoster] = useState<string|null>(null);
+  const { settings } = useStore();
   const progress = item.progress;
+
+  // Carica poster da TMDB se mancante
+  useEffect(() => {
+    if (item.poster || !item.id || !settings.tmdbApiKey) return;
+    const imdbId = item.id.startsWith('tt') ? item.id : null;
+    if (!imdbId) return;
+    fetch(`https://api.themoviedb.org/3/find/${imdbId}?api_key=${settings.tmdbApiKey}&external_source=imdb_id`)
+      .then(r => r.json())
+      .then(d => {
+        const r = (d.movie_results ?? d.tv_results ?? [])[0];
+        if (r?.poster_path) setTmdbPoster(`https://image.tmdb.org/t/p/w342${r.poster_path}`);
+      })
+      .catch(() => {});
+  }, [item.id, item.poster, settings.tmdbApiKey]);
+
+  const posterSrc = item.poster || tmdbPoster;
+
   return (
     <Link to={`/detail/${item.type}/${encodeURIComponent(item.id)}`} className="flex-shrink-0 group">
       <div className="relative w-[120px] h-[180px] rounded-xl overflow-hidden bg-white/5 border border-white/[0.06] group-hover:border-white/20 transition-all duration-200 group-hover:scale-[1.04] shadow-lg">
-        {item.poster && !imgErr
-          ? <img src={item.poster} alt={item.name} className="w-full h-full object-cover" onError={() => setImgErr(true)} />
+        {posterSrc && !imgErr
+          ? <img src={posterSrc} alt={item.name} className="w-full h-full object-cover" onError={() => setImgErr(true)} />
           : <div className="w-full h-full flex items-center justify-center text-white/10"><Play size={28} /></div>}
 
         {/* Hover play overlay */}
@@ -201,7 +220,7 @@ export default function Home() {
   );
 
   return (
-    <div className="overflow-y-auto h-full scrollbar-hide">
+    <div className="overflow-y-auto h-full">
       {/* Hero */}
       {heroItem && <HeroSection item={heroItem} />}
 
