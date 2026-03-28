@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { Home, Search as SearchIcon, Library, Package, Settings, X, Tv } from 'lucide-react';
 import clsx from 'clsx';
 import { useStore } from './lib/store';
-import { getAvatar } from './pages/ProfileSelect';
+import { getAvatar, getAvatarUrl, AVATAR_SEEDS } from './pages/ProfileSelect';
 
 import HomePage from './pages/Home';
 import DetailPage from './pages/Detail';
@@ -38,7 +38,7 @@ const NAV = [
 function Sidebar({ collapsed }: { collapsed: boolean }) {
   const { profiles, activeProfileId, setProfileSelected } = useStore();
   const activeProfile = profiles.find(p => p.id === activeProfileId) ?? profiles[0];
-  const av = getAvatar(activeProfile?.avatar ?? 'red');
+  const av = getAvatar(activeProfile?.avatar ?? AVATAR_SEEDS[0].id);
 
   return (
     <aside className={clsx(
