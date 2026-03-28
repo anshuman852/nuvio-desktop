@@ -436,11 +436,10 @@ export default function Detail() {
               ) : (
                 <div className="space-y-5">
                   {streamGroups.map((group, gi) => {
-                    // Sort streams dentro il gruppo
                     const sortedStreams = [...group.streams].sort((a, b) => {
                       if (streamSort === 'quality') {
-                        const qa = parseInt(((a.name ?? '') + (a.title ?? '')).match(/(\d{3,4})p/)?.[1] ?? '0');
-                        const qb = parseInt(((b.name ?? '') + (b.title ?? '')).match(/(\d{3,4})p/)?.[1] ?? '0');
+                        const qa = parseInt(((a.name ?? '') + (a.title ?? '')).match(/([0-9]{3,4})p/)?.[1] ?? '0');
+                        const qb = parseInt(((b.name ?? '') + (b.title ?? '')).match(/([0-9]{3,4})p/)?.[1] ?? '0');
                         return qb - qa;
                       }
                       if (streamSort === 'size') {
@@ -451,18 +450,19 @@ export default function Detail() {
                       return 0;
                     });
                     return (
-                    <div key={group.addonUrl}>
-                      <p className="text-xs font-semibold mb-2 uppercase tracking-wider" style={{ color: 'var(--accent)' }}>
-                        {group.addonName} <span className="text-white/25 normal-case font-normal">({group.streams.length})</span>
-                      </p>
-                      <div className="space-y-2">
-                        {sortedStreams.map((stream, si) => (
-                          <StreamCard key={si} stream={stream} onPlay={() => handlePlay(stream, gi, si)}
-                            active={activeGroupIdx === gi && activeStreamIdx === si} />
-                        );})}
+                      <div key={group.addonUrl}>
+                        <p className="text-xs font-semibold mb-2 uppercase tracking-wider" style={{ color: 'var(--accent)' }}>
+                          {group.addonName} <span className="text-white/25 normal-case font-normal">({group.streams.length})</span>
+                        </p>
+                        <div className="space-y-2">
+                          {sortedStreams.map((stream, si) => (
+                            <StreamCard key={si} stream={stream} onPlay={() => handlePlay(stream, gi, si)}
+                              active={activeGroupIdx === gi && activeStreamIdx === si} />
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  );})}
+                    );
+                  })}
                 </div>
               )}
             </div>
