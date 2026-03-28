@@ -314,11 +314,11 @@ function LayoutPage({ onBack }: { onBack: () => void }) {
                 {/* Layout preview mini */}
                 <div className="w-full h-14 rounded-lg bg-white/10 mb-3 overflow-hidden flex flex-col gap-1 p-1.5">
                   {l.id === 'modern' ? (
-                    <><div className="h-6 rounded bg-white/20 w-full" /><div className="flex gap-1">{[1,2,3].map(i => <div key={i} className="h-4 rounded bg-white/10 flex-1" />)}</>
+                    <><div className="h-6 rounded bg-white/20 w-full" /><div className="flex gap-1">{[1,2,3].map(i => <div key={i} className="h-4 rounded bg-white/10 flex-1" />)}</div></>
                   ) : l.id === 'grid' ? (
                     <div className="grid grid-cols-4 gap-1">{Array(8).fill(0).map((_, i) => <div key={i} className="aspect-[2/3] rounded bg-white/10" />)}</div>
                   ) : (
-                    <><div className="flex gap-1 mb-1">{[1,2,3,4].map(i => <div key={i} className="h-3 rounded bg-white/10 flex-1" />)}</><div className="flex gap-1">{[1,2,3,4].map(i => <div key={i} className="h-3 rounded bg-white/10 flex-1" />)}</></>
+                    <><div className="flex gap-1 mb-1">{[1,2,3,4].map(i => <div key={i} className="h-3 rounded bg-white/10 flex-1" />)}</div><div className="flex gap-1">{[1,2,3,4].map(i => <div key={i} className="h-3 rounded bg-white/10 flex-1" />)}</div></>
                   )}
                 </div>
                 <p className="text-xs font-semibold text-white">{l.label}</p>
