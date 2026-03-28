@@ -63,6 +63,34 @@ function StarRating({ value, onChange }: { value: number; onChange: (n: number) 
 
 // ─── Item Card ────────────────────────────────────────────────────────────────
 
+// Carica poster da TMDB tramite IMDb ID
+function TMDBPoster({ imdbId, name, type }: { imdbId: string; name: string; type: string }) {
+  const { settings } = useStore();
+  const [poster, setPoster] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!settings.tmdbApiKey || !imdbId) return;
+    setLoading(true);
+    fetch(`https://api.themoviedb.org/3/find/${imdbId}?api_key=${settings.tmdbApiKey}&external_source=imdb_id`)
+      .then(r => r.json())
+      .then(d => {
+        const r = (d.movie_results ?? d.tv_results ?? [])[0];
+        if (r?.poster_path) setPoster(`https://image.tmdb.org/t/p/w342${r.poster_path}`);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [imdbId, settings.tmdbApiKey]);
+
+  if (poster) return <img src={poster} alt={name} className="w-full h-full object-cover" />;
+  if (loading) return <div className="w-full h-full bg-white/5 animate-pulse" />;
+  return (
+    <div className="w-full h-full flex items-center justify-center text-3xl bg-white/5">
+      {type === 'movie' ? '🎬' : type === 'anime' ? '🍥' : '📺'}
+    </div>
+  );
+}
+
 function ItemCard({ item, onToggleWatched, onToggleWatchlist, onRate }: {
   item: LibItem;
   onToggleWatched: (item: LibItem) => void;
@@ -97,6 +125,8 @@ function ItemCard({ item, onToggleWatched, onToggleWatchlist, onRate }: {
         )}>
           {item.poster && !imgErr
             ? <img src={item.poster} alt={item.name} className="w-full h-full object-cover" onError={() => setImgErr(true)} />
+            : item.imdbId
+            ? <TMDBPoster imdbId={item.imdbId} name={item.name} type={item.type} />
             : <div className="w-full h-full flex items-center justify-center text-3xl bg-white/5">
                 {item.type === 'movie' ? '🎬' : item.type === 'anime' ? '🍥' : '📺'}
               </div>}

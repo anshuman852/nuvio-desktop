@@ -203,10 +203,16 @@ function GearDialog({ addon, onClose }: { addon: Addon; onClose: () => void }) {
 
         <div className="border-t border-white/[0.06] pt-4">
           <p className="text-xs text-white/40 mb-2">Pagina di configurazione dell'addon (per impostare token, filtri, ecc.):</p>
-          <button onClick={() => openExternal(configUrl)}
-            className="flex items-center gap-2 w-full px-4 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-sm text-white/70 hover:text-white transition-colors">
-            <Globe size={14} />Apri configurazione nel browser
-          </button>
+          <div className="space-y-2">
+            <button onClick={() => openExternal(configUrl)}
+              className="flex items-center gap-2 w-full px-4 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-sm text-white/70 hover:text-white transition-colors">
+              <Globe size={14} />Apri /configure nel browser
+            </button>
+            <button onClick={() => openExternal(`${normalizeUrl(addon.url)}/manifest.json`)}
+              className="flex items-center gap-2 w-full px-4 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-sm text-white/70 hover:text-white transition-colors">
+              <ExternalLink size={14} />Apri manifest.json
+            </button>
+          </div>
         </div>
 
         <div className="flex gap-2 justify-end pt-1">
@@ -286,7 +292,7 @@ export default function Addons() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [gearAddon, setGearAddon] = useState<Addon | null>(null);
-  const [catalogTab, setCatalogTab] = useState<'installed' | 'catalog'>('installed');
+  const [catalogTab, setCatalogTab] = useState<'installed' | 'catalog' | 'web'>('installed');
 
   // Catalogo
   const [catalogItems, setCatalogItems] = useState<any[]>([]);
@@ -304,7 +310,7 @@ export default function Addons() {
   }, [catalogSearch]);
 
   useEffect(() => {
-    if (catalogTab === 'catalog') {
+    if (catalogTab === 'catalog') { //
       setCatalogPage(1);
       loadCatalog(searchDebounce, 1, true);
     }
@@ -351,7 +357,8 @@ export default function Addons() {
         <div className="flex gap-1">
           {[
             { id: 'installed' as const, label: `Installati (${addons.length})`, icon: Package },
-            { id: 'catalog' as const, label: 'Catalogo Stremio', icon: Globe },
+            { id: 'catalog' as const, label: 'Catalogo', icon: Globe },
+            { id: 'web' as const, label: 'Stremio Web', icon: ExternalLink },
           ].map(({ id, label, icon: Icon }) => (
             <button key={id} onClick={() => setCatalogTab(id)}
               className={clsx('flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors',
@@ -365,7 +372,7 @@ export default function Addons() {
       <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
 
         {/* ── INSTALLATI ─────────────────────────────────────────────────── */}
-        {catalogTab === 'installed' && (
+        {catalogTab !== 'web' && catalogTab === 'installed' && (
           <>
             <div>
               <h2 className="text-xs font-semibold text-white/30 uppercase tracking-widest mb-3">Aggiungi tramite URL</h2>
@@ -408,7 +415,7 @@ export default function Addons() {
                         className="p-1.5 rounded-lg hover:bg-white/10 text-white/40 hover:text-white transition-colors">
                         <Settings2 size={15} />
                       </button>
-                      <button onClick={() => openExternal(`${normalizeUrl(addon.url)}/manifest.json`)} title="Apri URL"
+                      <button onClick={() => openExternal(`${normalizeUrl(addon.url)}/configure`)} title="Apri configurazione"
                         className="p-1.5 rounded-lg hover:bg-white/10 text-white/40 hover:text-white transition-colors">
                         <ExternalLink size={14} />
                       </button>
@@ -433,7 +440,7 @@ export default function Addons() {
         )}
 
         {/* ── CATALOGO ───────────────────────────────────────────────────── */}
-        {catalogTab === 'catalog' && (
+        {catalogTab !== 'web' && catalogTab === 'catalog' && (
           <>
             {/* Search */}
             <div className="relative">
@@ -502,6 +509,25 @@ export default function Addons() {
           </>
         )}
       </div>
+
+      {/* ── WEB TAB ───────────────────────────────────────────────────── */}
+        {catalogTab === 'web' && (
+          <div className="flex flex-col flex-1 -mx-6 -my-5 min-h-0">
+            <div className="flex items-center gap-3 px-6 py-3 border-b border-white/[0.06] flex-shrink-0">
+              <p className="text-xs text-white/40">stremio-addons.net — per installare copia l'URL manifest e incollalo nel tab Installati</p>
+              <button onClick={() => openExternal('https://stremio-addons.net')}
+                className="flex items-center gap-1 text-xs text-[color:var(--accent)] hover:underline ml-auto flex-shrink-0">
+                <ExternalLink size={11} />Apri nel browser
+              </button>
+            </div>
+            <iframe
+              src="https://stremio-addons.net"
+              className="flex-1 w-full border-0 min-h-[500px]"
+              sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+              title="Stremio Addons"
+            />
+          </div>
+        )}
 
       {gearAddon && <GearDialog addon={gearAddon} onClose={() => setGearAddon(null)} />}
     </div>

@@ -2,7 +2,8 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useStore } from '../lib/store';
-import { fetchMeta, fetchAllStreams, launchPlayer, openExternal } from '../api/stremio';
+import { fetchMeta, fetchAllStreams, openExternal, launchPlayer } from '../api/stremio';
+import VideoPlayer from '../components/VideoPlayer';
 import { getDetails, tmdbImg, hasTMDBKey } from '../api/tmdb';
 import { MetaItem, Stream, StreamGroup, Video } from '../lib/types';
 import {
@@ -141,6 +142,7 @@ export default function Detail() {
   const [playError, setPlayError] = useState<string | null>(null);
   const [castExpanded, setCastExpanded] = useState(false);
   const [launching, setLaunching] = useState(false);
+  const [activePlayer, setActivePlayer] = useState<{ url: string; title?: string } | null>(null);
 
   const isTmdbId = decodedId.startsWith('tmdb:');
 
@@ -284,6 +286,23 @@ export default function Detail() {
   }
 
   const isSeries = meta?.type === 'series' || type === 'series';
+
+  // Player interno attivo
+  if (activePlayer) {
+    return (
+      <VideoPlayer
+        url={activePlayer.url}
+        title={activePlayer.title}
+        contentId={meta?.id ?? decodedId}
+        contentType={type}
+        poster={meta?.poster ?? (tmdb?.poster_path ? tmdbImg(tmdb.poster_path, 'w342') : undefined)}
+        season={selectedVideo?.season}
+        episode={selectedVideo?.episode}
+        onClose={() => setActivePlayer(null)}
+        onEnded={() => setActivePlayer(null)}
+      />
+    );
+  }
   const bgImage = meta?.background ?? (tmdb?.backdrop_path ? tmdbImg(tmdb.backdrop_path, 'w1280') : meta?.poster);
 
   // ── Loading ───────────────────────────────────────────────────────────────
