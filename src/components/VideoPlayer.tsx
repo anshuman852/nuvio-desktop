@@ -17,7 +17,7 @@ import {
   Download, Users, ExternalLink, Settings2,
 } from 'lucide-react';
 import clsx from 'clsx';
-import { addMagnet, removeTorrent, formatSpeed, formatSize, type TorrentProgress } from '../lib/torrent';
+import { removeTorrent } from '../lib/torrent';
 
 export interface VideoPlayerProps {
   url: string;
@@ -41,7 +41,7 @@ function fmt(s: number) {
   return h > 0 ? `${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}` : `${m}:${String(sec).padStart(2,'0')}`;
 }
 
-type Mode = 'starting' | 'playing' | 'torrent' | 'mpv' | 'error';
+type Mode = 'starting' | 'playing' | 'mpv' | 'error';
 
 export default function VideoPlayer(props: VideoPlayerProps) {
   const { url, title, subtitle, contentId, contentType, poster, backdrop, season, episode, nextEpisode, onClose, onNext, initialProgress = 0 } = props;
@@ -66,7 +66,6 @@ export default function VideoPlayer(props: VideoPlayerProps) {
   const [fullscreen, setFullscreen] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showNextEp, setShowNextEp] = useState(false);
-  const [torrentProgress, setTorrentProgress] = useState<TorrentProgress | null>(null);
   const [mpvTime, setMpvTime] = useState(0);
   const [mpvDur, setMpvDur] = useState(0);
 
@@ -139,20 +138,9 @@ export default function VideoPlayer(props: VideoPlayerProps) {
   }
 
   async function initTorrent(magnetUri: string) {
-    setMode('torrent');
-    try {
-      const result = await addMagnet(magnetUri, setTorrentProgress);
-      torrentHash.current = result.infoHash;
-      const v = vidRef.current;
-      if (v) {
-        v.src = result.streamUrl;
-        v.load();
-        v.play().catch(() => {});
-        setMode('playing');
-      }
-    } catch (e: any) {
-      await tryMpv(magnetUri, e.message);
-    }
+    // I magnet link vengono gestiti da mpv (supporto nativo se c'è un client torrent)
+    // oppure dall'utente che configura Real-Debrid in Torrentio per avere stream HTTP diretti
+    await tryMpv(magnetUri, undefined);
   }
 
   async function tryMpv(streamUrl: string, reason?: string) {
@@ -268,49 +256,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
       )}
 
       {/* ── Torrent loading ───────────────────────────────────────────── */}
-      {mode === 'torrent' && (
-        <div className="relative z-10 flex flex-col items-center gap-5 max-w-xs w-full px-6">
-          {poster && <img src={poster} alt={title} className="h-32 rounded-xl shadow-2xl object-cover" />}
-          {title && <p className="text-white font-semibold text-center">{title}</p>}
 
-          <div className="w-full bg-[#1c1c22] rounded-2xl p-4 space-y-3 border border-white/[0.08]">
-            {torrentProgress ? (
-              <>
-                <div className="flex justify-between text-xs text-white/50">
-                  <span className="flex items-center gap-1.5"><Download size={11} />{formatSpeed(torrentProgress.downloadSpeed)}</span>
-                  <span className="flex items-center gap-1.5"><Users size={11} />{torrentProgress.numPeers} peer</span>
-                  <span className="font-mono">{(torrentProgress.progress * 100).toFixed(1)}%</span>
-                </div>
-                <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
-                  <div className="h-full rounded-full transition-all duration-500" style={{ width: `${torrentProgress.progress * 100}%`, backgroundColor: 'var(--accent,#7c3aed)' }} />
-                </div>
-                <div className="flex justify-between text-xs text-white/30">
-                  <span>{formatSize(torrentProgress.downloaded)}</span>
-                  <span>{formatSize(torrentProgress.total)}</span>
-                </div>
-                {torrentProgress.numPeers === 0 && (
-                  <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 text-xs text-amber-400/90 space-y-1.5">
-                    <p>⚡ Nessun peer trovato. Usa <strong>Real-Debrid</strong> con Torrentio per stream istantanei:</p>
-                    <button onClick={() => invoke('open_url', { url: 'https://torrentio.strem.fun/configure' })}
-                      className="flex items-center gap-1 underline hover:text-amber-300">
-                      <ExternalLink size={10} />Configura Torrentio + Debrid
-                    </button>
-                  </div>
-                )}
-              </>
-            ) : (
-              <div className="flex items-center gap-2 text-white/40 text-sm justify-center py-2">
-                <div className="w-4 h-4 border-2 border-white/20 border-t-white/60 rounded-full animate-spin" />
-                Ricerca peers...
-              </div>
-            )}
-          </div>
-
-          <button onClick={handleClose} className="px-4 py-2 rounded-full bg-white/10 hover:bg-white/20 text-white/60 text-sm flex items-center gap-2">
-            <X size={13} />Annulla
-          </button>
-        </div>
-      )}
 
       {/* ── MPV mode ─────────────────────────────────────────────────── */}
       {mode === 'mpv' && (
