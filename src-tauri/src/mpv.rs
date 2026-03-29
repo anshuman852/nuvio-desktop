@@ -32,13 +32,30 @@ impl MpvManager {
                 }
             }
         }
-        // 2. Nel PATH di sistema
-        for name in &["mpv", "mpv.exe"] {
-            if let Ok(path) = which::which(name) {
-                return Ok(path);
+        // 2. Nel PATH di sistema tramite where/which
+        #[cfg(target_os = "windows")]
+        {
+            if let Ok(out) = Command::new("where").arg("mpv.exe").output() {
+                if out.status.success() {
+                    let s = String::from_utf8_lossy(&out.stdout);
+                    if let Some(line) = s.lines().next() {
+                        return Ok(PathBuf::from(line.trim()));
+                    }
+                }
             }
         }
-        Err("mpv non trovato. Scarica mpv da https://mpv.io e mettilo nella cartella dell'app".into())
+        #[cfg(not(target_os = "windows"))]
+        {
+            if let Ok(out) = Command::new("which").arg("mpv").output() {
+                if out.status.success() {
+                    let s = String::from_utf8_lossy(&out.stdout);
+                    if let Some(line) = s.lines().next() {
+                        return Ok(PathBuf::from(line.trim()));
+                    }
+                }
+            }
+        }
+        Err("mpv non trovato. Scarica mpv da https://mpv.io e mettilo nella cartella dell'app.".into())
     }
 
     fn ipc_name() -> String {
@@ -116,7 +133,6 @@ impl MpvManager {
 
         #[cfg(target_os = "windows")]
         {
-            use std::os::windows::io::FromRawHandle;
             use std::fs::OpenOptions;
             let mut f = OpenOptions::new().read(true).write(true).open(&ipc)?;
             f.write_all(msg.as_bytes())?;
@@ -153,7 +169,7 @@ impl MpvManager {
     }
 
     pub fn stop(&mut self) {
-        if let Some(ref ipc) = self.ipc_path {
+        if let Some(ref _ipc) = self.ipc_path {
             let _ = self.send_command("quit", &[]);
         }
         if let Some(mut child) = self.process.take() {
