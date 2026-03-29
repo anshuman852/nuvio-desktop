@@ -1,3 +1,6 @@
+// @ts-ignore
+declare module 'webtorrent';
+
 /**
  * WebTorrent browser client — streaming P2P direttamente nel player HTML5
  * Usa WebRTC (non Node.js), compatibile con WebView2 di Tauri

@@ -1,6 +1,5 @@
 /// <reference types="vite/client" />
-import { Play,
-   useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useStore } from '../lib/store';
 import { fetchMeta, fetchAllStreams, openExternal, launchPlayer } from '../api/stremio';

@@ -18,7 +18,7 @@ function useServiceBackdrops(service: StreamingService, skip = false) {
         const imgs = (data.results ?? [])
           .filter((r: any) => r.backdrop_path)
           .slice(0, 8)
-          .map((r: any) => tmdbImg(r.backdrop_path, 'w780'));
+          .map((r: any) => tmdbImg(r.backdrop_path, 'w780')).filter(Boolean) as string[];
         setBackdrops(imgs);
       })
       .catch(() => {});
