@@ -6,49 +6,87 @@ import { STREAMING_SERVICES, StreamingService, discoverByProvider, tmdbToMeta, h
 import { ArrowLeft, Film, Tv, Search, Loader2, AlertCircle, X, Star } from 'lucide-react';
 import clsx from 'clsx';
 
-// ─── Card servizio — logo riempie il rettangolo ──────────────────────────────
+// ─── Hook: carica backdrop immagini per il servizio ───────────────────────────
+function useServiceBackdrops(service: StreamingService, skip = false) {
+  const { settings } = useStore();
+  const [backdrops, setBackdrops] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (skip || !hasTMDBKey()) return;
+    discoverByProvider(service.tmdbId, 'movie', 1)
+      .then(data => {
+        const imgs = (data.results ?? [])
+          .filter((r: any) => r.backdrop_path)
+          .slice(0, 8)
+          .map((r: any) => tmdbImg(r.backdrop_path, 'w780'));
+        setBackdrops(imgs);
+      })
+      .catch(() => {});
+  }, [service.id, settings.tmdbApiKey]);
+
+  return backdrops;
+}
+
+// ─── Service card con backdrop TMDB ──────────────────────────────────────────
 function ServiceCard({ s, large = false }: { s: StreamingService; large?: boolean }) {
   const [logoErr, setLogoErr] = useState(false);
+  const backdrops = useServiceBackdrops(s);
+
   return (
     <Link to={`/streaming/${s.id}`}
       className="group relative overflow-hidden rounded-2xl border border-white/[0.06] hover:border-white/20 transition-all duration-200 hover:scale-[1.015] cursor-pointer block"
       style={{ aspectRatio: '16/9' }}>
-      {/* Sfondo solido del brand */}
-      <div className="absolute inset-0" style={{ backgroundColor: s.color + '30', background: `linear-gradient(140deg, ${s.color}55, #0d0d14)` }} />
-      {/* Logo che riempie la card — object-cover per riempire, object-contain per mantenere proporzioni */}
-      {!logoErr && s.logo ? (
-        <img
-          src={s.logo}
-          alt={s.name}
-          className="absolute inset-0 w-full h-full object-contain p-8 group-hover:scale-105 transition-transform duration-300 drop-shadow-2xl"
-          onError={() => setLogoErr(true)}
-        />
-      ) : (
-        <div className="absolute inset-0 flex items-center justify-center">
-          <span className="text-7xl drop-shadow-2xl group-hover:scale-105 transition-transform duration-300">{s.logoFallback}</span>
+
+      {/* Backdrop collage — riempie tutta la card */}
+      {backdrops.length > 0 ? (
+        <div className="absolute inset-0 grid grid-cols-4 grid-rows-2 gap-0">
+          {backdrops.slice(0, 8).map((src, i) => (
+            <img key={i} src={src} alt="" className="w-full h-full object-cover" />
+          ))}
         </div>
+      ) : (
+        <div className="absolute inset-0" style={{ background: `linear-gradient(135deg, ${s.color}70 0%, #0d0d16 100%)` }} />
       )}
-      {/* Overlay scuro hover */}
-      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors rounded-2xl" />
-      {/* Nome in basso */}
-      <div className="absolute bottom-0 left-0 right-0 px-4 py-3 opacity-0 group-hover:opacity-100 transition-opacity" style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.8) 0%, transparent 100%)' }}>
-        <p className="text-sm font-semibold text-white">{s.name}</p>
+
+      {/* Overlay scuro semi-trasparente per leggibilità */}
+      <div className="absolute inset-0 bg-black/50 group-hover:bg-black/35 transition-colors" />
+
+      {/* Logo centrato e grande */}
+      <div className="absolute inset-0 flex items-center justify-center">
+        {!logoErr && s.logo ? (
+          <img
+            src={s.logo}
+            alt={s.name}
+            className={clsx(
+              'object-contain drop-shadow-2xl group-hover:scale-105 transition-transform duration-300',
+              large ? 'max-h-20 max-w-[55%]' : 'max-h-14 max-w-[60%]'
+            )}
+            onError={() => setLogoErr(true)}
+          />
+        ) : (
+          <span className={clsx('drop-shadow-2xl', large ? 'text-7xl' : 'text-5xl')}>{s.logoFallback}</span>
+        )}
+      </div>
+
+      {/* Nome in basso a sinistra */}
+      <div className="absolute bottom-0 left-0 right-0 px-4 py-3" style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.75) 0%, transparent 100%)' }}>
+        <p className={clsx('font-semibold text-white/80 group-hover:text-white transition-colors', large ? 'text-base' : 'text-sm')}>{s.name}</p>
       </div>
     </Link>
   );
 }
 
-// ─── Content Card ─────────────────────────────────────────────────────────────
+// ─── Content card ─────────────────────────────────────────────────────────────
 function ContentCard({ item }: { item: ReturnType<typeof tmdbToMeta> }) {
   const [err, setErr] = useState(false);
   return (
     <Link to={`/detail/${item.type}/${encodeURIComponent(item.id)}`} className="group">
-      <div className="relative w-full aspect-[2/3] rounded-xl overflow-hidden bg-white/5 border border-white/[0.06] group-hover:border-[color:var(--accent)] group-hover:scale-[1.04] transition-all duration-200 shadow-lg">
+      <div className="relative aspect-[2/3] rounded-xl overflow-hidden bg-white/5 border border-white/[0.06] group-hover:border-[color:var(--accent)] group-hover:scale-[1.04] transition-all duration-200">
         {item.poster && !err
           ? <img src={item.poster} alt={item.name} className="w-full h-full object-cover" onError={() => setErr(true)} />
-          : <div className="w-full h-full flex items-center justify-center text-4xl bg-white/5">🎬</div>}
+          : <div className="w-full h-full flex items-center justify-center text-4xl">🎬</div>}
         {item.imdbRating && (
-          <div className="absolute top-2 right-2 bg-black/70 backdrop-blur-sm px-1.5 py-0.5 rounded-full text-xs font-bold text-yellow-400 flex items-center gap-0.5">
+          <div className="absolute top-2 right-2 bg-black/70 px-1.5 py-0.5 rounded-full text-xs font-bold text-yellow-400 flex items-center gap-0.5">
             <Star size={9} className="fill-yellow-400" />{item.imdbRating}
           </div>
         )}
@@ -59,7 +97,7 @@ function ContentCard({ item }: { item: ReturnType<typeof tmdbToMeta> }) {
   );
 }
 
-// ─── Service Detail ───────────────────────────────────────────────────────────
+// ─── Service detail ───────────────────────────────────────────────────────────
 function ServiceDetail({ service }: { service: StreamingService }) {
   const navigate = useNavigate();
   const [tab, setTab] = useState<'movie' | 'tv'>('movie');
@@ -69,6 +107,7 @@ function ServiceDetail({ service }: { service: StreamingService }) {
   const [totalPages, setTotalPages] = useState(1);
   const [search, setSearch] = useState('');
   const [logoErr, setLogoErr] = useState(false);
+  const backdrops = useServiceBackdrops(service);
 
   useEffect(() => { setItems([]); setPage(1); load(1); }, [tab, service.id]);
 
@@ -77,8 +116,7 @@ function ServiceDetail({ service }: { service: StreamingService }) {
     setLoading(true);
     try {
       const data = await discoverByProvider(service.tmdbId, tab, p);
-      const mapped = (data.results ?? []).map(tmdbToMeta);
-      setItems(prev => p === 1 ? mapped : [...prev, ...mapped]);
+      setItems(prev => p === 1 ? (data.results ?? []).map(tmdbToMeta) : [...prev, ...(data.results ?? []).map(tmdbToMeta)]);
       setTotalPages(data.total_pages ?? 1);
     } catch { } finally { setLoading(false); }
   }
@@ -87,42 +125,37 @@ function ServiceDetail({ service }: { service: StreamingService }) {
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      {/* Hero header con gradiente colore servizio */}
-      <div className="relative flex-shrink-0 flex flex-col justify-end px-6 pb-5"
-        style={{ minHeight: 180, background: `linear-gradient(135deg, ${service.color}30 0%, #0f0f13 80%)` }}>
-        <div className="absolute inset-0" style={{ background: `radial-gradient(ellipse at 10% 60%, ${service.color}40 0%, transparent 55%)` }} />
+      <div className="relative flex-shrink-0 flex flex-col justify-end px-6 pb-5" style={{ minHeight: 200 }}>
+        {/* Backdrop */}
+        {backdrops[0] && <img src={backdrops[0]} alt="" className="absolute inset-0 w-full h-full object-cover opacity-30" />}
+        <div className="absolute inset-0" style={{ background: 'linear-gradient(to bottom, rgba(15,15,19,0.3) 0%, rgba(15,15,19,0.95) 100%)' }} />
 
         <button onClick={() => navigate('/streaming')}
-          className="absolute top-5 left-5 flex items-center gap-1.5 text-white/60 hover:text-white text-sm bg-black/30 px-3 py-1.5 rounded-full backdrop-blur-sm transition-colors z-10">
+          className="absolute top-5 left-5 flex items-center gap-1.5 text-white/60 hover:text-white text-sm bg-black/40 px-3 py-1.5 rounded-full backdrop-blur-sm z-10">
           <ArrowLeft size={15} />Streaming
         </button>
 
-        <div className="relative z-10 flex items-end gap-5 mt-12">
-          <div className="w-20 h-20 rounded-2xl overflow-hidden flex items-center justify-center bg-black/50 border border-white/10 shadow-2xl flex-shrink-0">
+        <div className="relative z-10 flex items-end gap-5 mt-14">
+          <div className="w-20 h-20 rounded-2xl overflow-hidden flex items-center justify-center bg-black/60 border border-white/10 shadow-2xl flex-shrink-0">
             {!logoErr && service.logo
               ? <img src={service.logo} alt={service.name} className="w-14 h-14 object-contain" onError={() => setLogoErr(true)} />
               : <span className="text-4xl">{service.logoFallback}</span>}
           </div>
-          <div>
-            <h1 className="text-2xl font-bold text-white">{service.name}</h1>
-            <p className="text-sm text-white/50 mt-0.5">{items.length > 0 ? `${items.length}+ contenuti` : 'Catalogo'}</p>
-          </div>
+          <div><h1 className="text-2xl font-bold text-white">{service.name}</h1><p className="text-sm text-white/50 mt-0.5">{items.length > 0 ? `${items.length}+ contenuti` : 'Catalogo'}</p></div>
         </div>
 
         <div className="relative z-10 flex items-center gap-3 mt-4">
-          <div className="flex gap-1 bg-white/10 backdrop-blur-sm rounded-full p-1">
+          <div className="flex gap-1 bg-white/10 rounded-full p-1">
             {(['movie', 'tv'] as const).map(t => (
               <button key={t} onClick={() => { setTab(t); setPage(1); setItems([]); }}
-                className={clsx('flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-medium transition-all',
-                  tab === t ? 'bg-white text-black shadow' : 'text-white/70 hover:text-white')}>
+                className={clsx('flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-medium transition-all', tab === t ? 'bg-white text-black shadow' : 'text-white/70 hover:text-white')}>
                 {t === 'movie' ? <><Film size={13} />Film</> : <><Tv size={13} />Serie</>}
               </button>
             ))}
           </div>
           <div className="relative flex-1 max-w-xs">
             <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
-            <input value={search} onChange={e => setSearch(e.target.value)}
-              placeholder={`Cerca in ${service.name}...`}
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder={`Cerca in ${service.name}...`}
               className="w-full pl-8 pr-8 py-2 bg-white/10 border border-white/10 focus:border-white/30 rounded-full text-sm text-white placeholder:text-white/40 focus:outline-none" />
             {search && <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30 hover:text-white"><X size={13} /></button>}
           </div>
@@ -132,13 +165,13 @@ function ServiceDetail({ service }: { service: StreamingService }) {
       <div className="flex-1 overflow-y-auto px-6 py-5">
         {!hasTMDBKey() ? (
           <div className="flex items-center gap-2 text-yellow-400/80 text-sm bg-yellow-500/10 border border-yellow-500/20 rounded-xl px-4 py-3">
-            <AlertCircle size={15} />Aggiungi la chiave TMDB in <Link to="/settings" className="underline">Impostazioni → Integrazioni</Link>.
+            <AlertCircle size={15} />Configura TMDB in <Link to="/settings" className="underline ml-1">Impostazioni</Link>.
           </div>
         ) : loading && filtered.length === 0 ? (
           <div className="flex items-center justify-center h-40 gap-2 text-white/40"><Loader2 size={20} className="animate-spin" />Caricamento...</div>
         ) : (
           <>
-            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 gap-3">
+            <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-7 gap-3">
               {filtered.map(item => <ContentCard key={item.id} item={item} />)}
             </div>
             {page < totalPages && !search && (
@@ -156,7 +189,7 @@ function ServiceDetail({ service }: { service: StreamingService }) {
   );
 }
 
-// ─── Main grid (stile screenshot) ─────────────────────────────────────────────
+// ─── Main ─────────────────────────────────────────────────────────────────────
 export default function Streaming() {
   const { serviceId } = useParams<{ serviceId?: string }>();
   const { settings } = useStore();
@@ -168,38 +201,28 @@ export default function Streaming() {
     (settings.visibleServices ?? STREAMING_SERVICES.map(x => x.id)).includes(s.id)
   );
 
-  // Layout: prima riga = 1 grande + 2 medie, seconda riga = 4 piccole
-  const [first, ...rest] = visible;
-
   return (
     <div className="px-6 py-6 overflow-y-auto h-full">
       <h1 className="text-xl font-bold text-white mb-5">Streaming</h1>
-
       {!hasTMDBKey() && (
         <div className="flex items-center gap-2 text-yellow-400/80 text-sm bg-yellow-500/10 border border-yellow-500/20 rounded-xl px-4 py-3 mb-5">
           <AlertCircle size={15} />
-          Aggiungi la chiave TMDB in <Link to="/settings" className="underline hover:text-yellow-300 ml-1">Impostazioni → Integrazioni</Link> per vedere i cataloghi.
+          Aggiungi TMDB in <Link to="/settings" className="underline ml-1 hover:text-yellow-300">Impostazioni → Integrazioni</Link> per vedere i cataloghi con immagini.
         </div>
       )}
-
-      {/* Layout identico screenshot: Netflix grande sx, 2 a dx, poi 4 in riga */}
-      {visible.length >= 4 ? (
+      {/* Layout: Netflix grande, poi 2 affiancate, poi 4 in riga */}
+      {visible.length >= 3 ? (
         <div className="space-y-3">
-          {/* Riga 1: Netflix grande + 2 affiancate */}
-          <div className="grid gap-3" style={{ gridTemplateColumns: '1.5fr 1fr 1fr' }}>
-            {visible[0] && <ServiceCard key={visible[0].id} s={visible[0]} large />}
-            <div className="flex flex-col gap-3">
-              {visible[1] && <ServiceCard key={visible[1].id} s={visible[1]} />}
-            </div>
-            <div className="flex flex-col gap-3">
-              {visible[2] && <ServiceCard key={visible[2].id} s={visible[2]} />}
-            </div>
+          <div className="grid gap-3" style={{ gridTemplateColumns: '1.6fr 1fr 1fr' }}>
+            {visible[0] && <ServiceCard s={visible[0]} large />}
+            {visible[1] && <ServiceCard s={visible[1]} />}
+            {visible[2] && <ServiceCard s={visible[2]} />}
           </div>
-          {/* Riga 2: 4 uniformi */}
-          <div className="grid grid-cols-4 gap-3">
-            {visible.slice(3, 7).map(s => <ServiceCard key={s.id} s={s} />)}
-          </div>
-          {/* Riga 3: eventuali rimanenti */}
+          {visible.length > 3 && (
+            <div className="grid grid-cols-4 gap-3">
+              {visible.slice(3, 7).map(s => <ServiceCard key={s.id} s={s} />)}
+            </div>
+          )}
           {visible.length > 7 && (
             <div className="grid grid-cols-4 gap-3">
               {visible.slice(7).map(s => <ServiceCard key={s.id} s={s} />)}

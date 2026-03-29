@@ -153,7 +153,7 @@ async function fetchFromStremioNet(search = '', page = 1): Promise<{ addons: any
 
 // ─── Gear dialog ──────────────────────────────────────────────────────────────
 
-function GearDialog({ addon, onClose }: { addon: Addon; onClose: () => void }) {
+function GearDialog({ addon, onClose, onConfigure }: { addon: Addon; onClose: () => void; onConfigure?: (url: string) => void }) {
   const { updateAddon } = useStore();
   const [name, setName] = useState(addon.name);
   const [logo, setLogo] = useState(addon.logo ?? '');
@@ -204,13 +204,13 @@ function GearDialog({ addon, onClose }: { addon: Addon; onClose: () => void }) {
         <div className="border-t border-white/[0.06] pt-4">
           <p className="text-xs text-white/40 mb-2">Pagina di configurazione dell'addon (per impostare token, filtri, ecc.):</p>
           <div className="space-y-2">
+            <button onClick={() => { onClose(); setTimeout(() => onConfigure?.(configUrl), 100); }}
+              className="flex items-center gap-2 w-full px-4 py-2.5 text-white rounded-xl text-sm font-medium transition-colors" style={{ backgroundColor: 'var(--accent)' }}>
+              <Globe size={14} />Configura nell'app
+            </button>
             <button onClick={() => openExternal(configUrl)}
               className="flex items-center gap-2 w-full px-4 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-sm text-white/70 hover:text-white transition-colors">
-              <Globe size={14} />Apri /configure nel browser
-            </button>
-            <button onClick={() => openExternal(`${normalizeUrl(addon.url)}/manifest.json`)}
-              className="flex items-center gap-2 w-full px-4 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-sm text-white/70 hover:text-white transition-colors">
-              <ExternalLink size={14} />Apri manifest.json
+              <ExternalLink size={14} />Apri nel browser
             </button>
           </div>
         </div>
@@ -292,6 +292,7 @@ export default function Addons() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [gearAddon, setGearAddon] = useState<Addon | null>(null);
+  const [configureUrl, setConfigureUrl] = useState<string | null>(null);
   const [catalogTab, setCatalogTab] = useState<'installed' | 'catalog' | 'web'>('installed');
 
   // Catalogo
@@ -536,7 +537,30 @@ export default function Addons() {
           </div>
         )}
 
-      {gearAddon && <GearDialog addon={gearAddon} onClose={() => setGearAddon(null)} />}
+      {/* ── Configure In-App (iframe) ─────────────────────────────── */}
+      {configureUrl && (
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex flex-col">
+          <div className="flex items-center gap-3 px-4 py-3 bg-[#1a1a1f] border-b border-white/[0.06] flex-shrink-0">
+            <button onClick={() => setConfigureUrl(null)}
+              className="flex items-center gap-1.5 text-white/60 hover:text-white bg-white/5 hover:bg-white/10 px-3 py-1.5 rounded-lg text-sm transition-colors">
+              <X size={14} />Chiudi
+            </button>
+            <span className="text-xs text-white/40 truncate flex-1 font-mono">{configureUrl}</span>
+            <button onClick={() => openExternal(configureUrl)}
+              className="flex items-center gap-1 text-xs text-[color:var(--accent)] hover:underline flex-shrink-0">
+              <ExternalLink size={11} />Browser
+            </button>
+          </div>
+          <iframe
+            src={configureUrl}
+            className="flex-1 w-full border-0"
+            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
+            title="Configura Addon"
+          />
+        </div>
+      )}
+
+      {gearAddon && <GearDialog addon={gearAddon} onClose={() => setGearAddon(null)} onConfigure={url => { setGearAddon(null); setConfigureUrl(url); }} />}
     </div>
   );
 }

@@ -1,5 +1,6 @@
 /// <reference types="vite/client" />
-import { useEffect, useState, useCallback } from 'react';
+import { Play,
+   useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useStore } from '../lib/store';
 import { fetchMeta, fetchAllStreams, openExternal, launchPlayer } from '../api/stremio';
@@ -449,7 +450,7 @@ export default function Detail() {
                   <AlertCircle size={16} className="flex-shrink-0 mt-0.5" /><span>{streamError}</span>
                 </div>
               ) : (
-                <div className="space-y-5">
+                <div className="space-y-6">
                   {streamGroups.map((group, gi) => {
                     const sortedStreams = [...group.streams].sort((a, b) => {
                       if (streamSort === 'quality') {
@@ -466,14 +467,43 @@ export default function Detail() {
                     });
                     return (
                       <div key={group.addonUrl}>
-                        <p className="text-xs font-semibold mb-2 uppercase tracking-wider" style={{ color: 'var(--accent)' }}>
-                          {group.addonName} <span className="text-white/25 normal-case font-normal">({group.streams.length})</span>
-                        </p>
-                        <div className="space-y-2">
-                          {sortedStreams.map((stream, si) => (
-                            <StreamCard key={si} stream={stream} onPlay={() => handlePlay(stream, gi, si)}
-                              active={activeGroupIdx === gi && activeStreamIdx === si} />
-                          ))}
+                        {/* Header addon stile Stremio */}
+                        <div className="flex items-center gap-2 mb-2.5">
+                          <span className="text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--accent)' }}>{group.addonName}</span>
+                          <span className="text-xs text-white/25">({sortedStreams.length})</span>
+                        </div>
+                        {/* Stream orizzontali scrollabili — identico a Stremio */}
+                        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+                          {sortedStreams.map((stream, si) => {
+                            const hasUrl = Boolean(stream.url);
+                            const hasMagnet = Boolean(stream.infoHash);
+                            const quality = ((stream.name ?? '') + ' ' + (stream.title ?? '')).match(/(4K|2160p|1080p|720p|480p|HDR|HEVC|x265|x264)/gi)?.slice(0, 2).join(' ') ?? '';
+                            const size = stream.behaviorHints?.videoSize ? `${(stream.behaviorHints.videoSize / 1e9).toFixed(1)} GB` : '';
+                            const isActive = activeGroupIdx === gi && activeStreamIdx === si;
+                            return (
+                              <button key={si} type="button"
+                                onClick={() => handlePlay(stream, gi, si)}
+                                className={clsx(
+                                  'flex-shrink-0 text-left px-4 py-3 rounded-xl border transition-all duration-150 w-56',
+                                  isActive ? 'border-[color:var(--accent)] bg-[color:var(--accent-bg)]'
+                                    : 'border-white/[0.08] bg-white/[0.03] hover:bg-[color:var(--accent-bg)] hover:border-[color:var(--accent)] cursor-pointer'
+                                )}>
+                                <div className="flex items-start justify-between gap-2 mb-1.5">
+                                  <p className="text-sm font-semibold text-white leading-tight line-clamp-1">{stream.name ?? 'Stream'}</p>
+                                  {/* Play icon */}
+                                  <div className={clsx('w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0', isActive ? 'bg-[color:var(--accent)]' : hasMagnet && !hasUrl ? 'bg-amber-500/20' : 'bg-white/10')}>
+                                    <Play size={11} className={clsx('ml-0.5', isActive ? 'text-white fill-white' : hasMagnet && !hasUrl ? 'text-amber-400 fill-amber-400' : 'text-white fill-white')} />
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  {quality && <span className="text-xs px-1.5 py-0.5 rounded bg-white/10 text-white/70 font-medium">{quality}</span>}
+                                  {hasMagnet && !hasUrl && <span className="text-xs px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400">🧲</span>}
+                                  {size && <span className="text-xs text-white/40">{size}</span>}
+                                </div>
+                                {stream.title && <p className="text-xs text-white/40 mt-1 line-clamp-2 leading-tight">{stream.title}</p>}
+                              </button>
+                            );
+                          })}
                         </div>
                       </div>
                     );
