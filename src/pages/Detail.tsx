@@ -449,7 +449,6 @@ export default function Detail() {
                   <AlertCircle size={16} className="flex-shrink-0 mt-0.5" /><span>{streamError}</span>
                 </div>
               ) : (
-                {/* Layout colonne: ogni addon è una colonna affiancata alle altre */}
                 <div className="flex gap-6 overflow-x-auto pb-2">
                   {streamGroups.map((group, gi) => {
                     const sortedStreams = [...group.streams].sort((a, b) => {
@@ -467,12 +466,10 @@ export default function Detail() {
                     });
                     return (
                       <div key={group.addonUrl} className="flex-shrink-0 w-64">
-                        {/* Header addon */}
                         <div className="flex items-center gap-2 mb-3 px-1">
                           <span className="text-xs font-bold uppercase tracking-widest" style={{ color: 'var(--accent)' }}>{group.addonName}</span>
                           <span className="text-xs text-white/25">({sortedStreams.length})</span>
                         </div>
-                        {/* Stream in VERTICALE sotto l'addon */}
                         <div className="space-y-1.5">
                           {sortedStreams.slice(0, 15).map((stream, si) => {
                             const hasUrl = Boolean(stream.url);
