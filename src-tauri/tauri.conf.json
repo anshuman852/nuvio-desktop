@@ -1,6 +1,6 @@
 {
   "productName": "NuvioDesktop",
-  "version": "0.7.4",
+  "version": "0.7.8",
   "identifier": "space.nuvioapp.desktop",
   "build": {
     "frontendDist": "../dist",

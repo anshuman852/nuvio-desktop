@@ -16,7 +16,9 @@ import clsx from 'clsx';
 // ─── Stream Card ──────────────────────────────────────────────────────────────
 
 function StreamCard({ stream, onPlay, active }: { stream: Stream; onPlay: () => void; active: boolean }) {
-  const canPlay = Boolean(stream.url);
+  const hasUrl = Boolean(stream.url);
+  const hasMagnet = Boolean(stream.infoHash);
+  const canPlay = hasUrl || hasMagnet; // entrambi cliccabili
   const quality = ((stream.name ?? '') + ' ' + (stream.title ?? '')).match(/\b(4K|2160p|1080p|720p|480p|HDR|HEVC|x265|x264)\b/gi)?.join(' ') ?? '';
   const size = stream.behaviorHints?.videoSize ? `${(stream.behaviorHints.videoSize / 1e9).toFixed(1)} GB` : '';
 
@@ -25,8 +27,7 @@ function StreamCard({ stream, onPlay, active }: { stream: Stream; onPlay: () => 
       className={clsx(
         'w-full text-left px-4 py-3 rounded-xl border transition-all duration-150 cursor-pointer',
         active ? 'border-[color:var(--accent)] bg-[color:var(--accent-bg)]'
-          : canPlay ? 'border-white/[0.08] bg-white/[0.04] hover:bg-[color:var(--accent-bg)] hover:border-[color:var(--accent)]'
-          : 'border-white/[0.06] bg-white/[0.02] opacity-60'
+          : 'border-white/[0.08] bg-white/[0.04] hover:bg-[color:var(--accent-bg)] hover:border-[color:var(--accent)]'
       )}>
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
@@ -34,17 +35,14 @@ function StreamCard({ stream, onPlay, active }: { stream: Stream; onPlay: () => 
             <p className="text-sm font-semibold text-white">{stream.name ?? 'Stream'}</p>
             {quality && <span className="text-xs px-1.5 py-0.5 rounded-md bg-white/10 text-white/70 font-medium">{quality}</span>}
             {size && <span className="text-xs text-white/40">{size}</span>}
+            {hasMagnet && !hasUrl && <span className="text-xs px-1.5 py-0.5 rounded-md bg-amber-500/15 text-amber-400">🧲 torrent</span>}
           </div>
           {stream.title && <p className="text-xs text-white/50 mt-0.5 line-clamp-2">{stream.title}</p>}
-          {!canPlay && stream.infoHash && <p className="text-xs text-amber-500/60 mt-1">🧲 torrent — serve Debrid o resolver</p>}
         </div>
         <div className="flex-shrink-0 mt-0.5">
-          {canPlay && (
-            <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: 'var(--accent-bg)' }}>
-              <Play size={13} style={{ color: 'var(--accent)' }} className="ml-0.5 fill-[color:var(--accent)]" />
-            </div>
-          )}
-          {!canPlay && stream.infoHash && <Magnet size={14} className="text-amber-500/50 mt-1" />}
+          <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: hasMagnet && !hasUrl ? '#f59e0b22' : 'var(--accent-bg)' }}>
+            <Play size={13} style={{ color: hasMagnet && !hasUrl ? '#f59e0b' : 'var(--accent)' }} className="ml-0.5" />
+          </div>
         </div>
       </div>
     </button>
@@ -244,10 +242,19 @@ export default function Detail() {
     setActiveGroupIdx(gi);
     setActiveStreamIdx(si);
 
-    if (!stream.url) {
-      setPlayError('Stream senza URL diretto. Configura Real-Debrid o AllDebrid in Torrentio.');
+    // Costruisce l'URL: preferisce url diretto, fallback a magnet
+    const playUrl = stream.url ?? (stream.infoHash
+      ? `magnet:?xt=urn:btih:${stream.infoHash}${stream.fileIdx !== undefined ? `&so=${stream.fileIdx}` : ''}`
+      : null);
+
+    if (!playUrl) {
+      setPlayError('Stream senza URL. Configura Real-Debrid in Torrentio per stream diretti.');
       return;
     }
+
+    // Override per usare la url costruita
+    stream = { ...stream, url: playUrl };
+    if (!stream.url) return;
 
     // Player esterno custom?
     const custom = settings.customPlayerPath?.trim();
@@ -492,10 +499,21 @@ export default function Detail() {
               <div className="flex gap-2 flex-wrap">
                 {(tmdb?.networks ?? tmdb?.production_companies ?? []).slice(0, 6).map((co: any) => {
                   // Prova a matchare con un servizio streaming
-                  const matchService = STREAMING_SERVICES.find((s: any) =>
-                    co.name?.toLowerCase().includes(s.id) ||
-                    co.origin_country === s.id.toUpperCase()
-                  );
+                  const coName = co.name?.toLowerCase() ?? '';
+                  const matchService = STREAMING_SERVICES.find((s: any) => {
+                    const sid = s.id.toLowerCase();
+                    const sname = s.name.toLowerCase();
+                    return coName.includes(sid) || coName.includes(sname) ||
+                      sname.includes(coName.split(' ')[0]) ||
+                      // Match specifici comuni
+                      (sid === 'netflix' && coName.includes('netflix')) ||
+                      (sid === 'disney' && (coName.includes('disney') || coName.includes('pixar'))) ||
+                      (sid === 'amazon' && coName.includes('amazon')) ||
+                      (sid === 'apple' && coName.includes('apple')) ||
+                      (sid === 'hbo' && (coName.includes('hbo') || coName.includes('warner'))) ||
+                      (sid === 'paramount' && coName.includes('paramount')) ||
+                      (sid === 'crunchyroll' && coName.includes('crunchyroll'));
+                  });
                   const el = (
                     <div key={co.id} className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:border-white/25 transition-colors">
                       {co.logo_path

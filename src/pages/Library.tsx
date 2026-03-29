@@ -420,6 +420,35 @@ export default function Library() {
     setLoading(false);
 
     // Fetch poster mancanti da TMDB in background
+    const apiKey = useStore.getState().settings.tmdbApiKey;
+    if (!apiKey) return;
+
+    const needsPoster = [...film, ...serie, ...watchlist].filter(i => !i.poster && i.imdbId);
+    const batches: typeof needsPoster[] = [];
+    for (let i = 0; i < needsPoster.length; i += 5) batches.push(needsPoster.slice(i, i + 5));
+
+    for (const batch of batches.slice(0, 10)) {
+      await Promise.allSettled(batch.map(async item => {
+        try {
+          const r = await fetch(`https://api.themoviedb.org/3/find/${item.imdbId}?api_key=${apiKey}&external_source=imdb_id&language=it-IT`);
+          if (!r.ok) return;
+          const d = await r.json();
+          const result = (item.type === 'movie' ? d.movie_results : d.tv_results)?.[0]
+            ?? d.movie_results?.[0] ?? d.tv_results?.[0];
+          if (!result?.poster_path) return;
+          const poster = `https://image.tmdb.org/t/p/w342${result.poster_path}`;
+          setData(prev => ({
+            film: prev.film.map(x => x.id === item.id ? { ...x, poster } : x),
+            serie: prev.serie.map(x => x.id === item.id ? { ...x, poster } : x),
+            anime: prev.anime.map(x => x.id === item.id ? { ...x, poster } : x),
+            watchlist: prev.watchlist.map(x => x.id === item.id ? { ...x, poster } : x),
+          }));
+        } catch { }
+      }));
+      await new Promise(r => setTimeout(r, 100));
+    }
+
+    // Fetch poster mancanti da TMDB in background
     if (hasTMDBKey()) {
       const fetchPoster = async (item: LibItem) => {
         if (item.poster || !item.imdbId) return;

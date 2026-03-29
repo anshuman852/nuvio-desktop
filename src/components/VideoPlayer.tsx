@@ -83,7 +83,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
   useEffect(() => {
     cwTimer.current = setInterval(() => {
       if (mode === 'playing') syncCW(vidRef.current?.currentTime ?? 0, vidRef.current?.duration ?? 0);
-    }, 15000);
+    }, 5000);
     return () => clearInterval(cwTimer.current);
   }, [mode, syncCW]);
 
@@ -236,7 +236,11 @@ export default function VideoPlayer(props: VideoPlayerProps) {
       <video ref={vidRef}
         className={clsx('absolute inset-0 w-full h-full object-contain', mode !== 'playing' && 'invisible')}
         onClick={() => { vidRef.current?.paused ? vidRef.current.play() : vidRef.current?.pause(); resetHide(); }}
-        onPlay={() => { setPlaying(true); setBuffering(false); }}
+        onPlay={() => {
+          setPlaying(true); setBuffering(false);
+          // Sync subito all'avvio per registrare che si sta guardando
+          setTimeout(() => syncCW(vidRef.current?.currentTime ?? 0, vidRef.current?.duration ?? 0), 2000);
+        }}
         onPause={() => setPlaying(false)}
         onWaiting={() => setBuffering(true)}
         onPlaying={() => setBuffering(false)}
