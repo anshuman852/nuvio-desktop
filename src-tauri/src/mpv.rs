@@ -1,106 +1,165 @@
-use anyhow::{anyhow, Result};
-use std::io::Write;
-use std::path::PathBuf;
 use std::process::{Child, Command};
-
-#[cfg(target_os = "windows")]
-const IPC_PATH: &str = r"\\.\pipe\nuvio-mpv";
-
-#[cfg(not(target_os = "windows"))]
-const IPC_PATH: &str = "/tmp/nuvio-mpv.sock";
+use std::io::{Write, BufRead, BufReader};
+use std::path::{Path, PathBuf};
+use serde_json::Value;
 
 pub struct MpvManager {
-    process: Option<Child>,
+    pub process: Option<Child>,
+    pub ipc_path: Option<String>,
+    #[cfg(target_os = "windows")]
+    pub ipc_writer: Option<std::fs::File>,
 }
 
 impl MpvManager {
     pub fn new() -> Self {
-        Self { process: None }
+        MpvManager {
+            process: None,
+            ipc_path: None,
+            #[cfg(target_os = "windows")]
+            ipc_writer: None,
+        }
     }
 
-    /// Risolve il path di mpv: prima cerca il binario bundled (sidecar),
-    /// poi cade back sul PATH di sistema se l'utente lo ha installato.
-    fn mpv_path() -> PathBuf {
-        // Tauri mette i sidecar nella stessa cartella dell'eseguibile
+    /// Trova il binario mpv (sidecar bundled o nel PATH)
+    fn find_mpv() -> Result<PathBuf, Box<dyn std::error::Error>> {
+        // 1. Sidecar bundled nella cartella dell'app
         if let Ok(exe) = std::env::current_exe() {
-            let bundled = exe
-                .parent()
-                .unwrap_or_else(|| std::path::Path::new("."))
-                .join("mpv.exe");
-
-            if bundled.exists() {
-                return bundled;
+            let dir = exe.parent().unwrap_or(Path::new("."));
+            for name in &["mpv.exe", "mpv"] {
+                let candidate = dir.join(name);
+                if candidate.exists() {
+                    return Ok(candidate);
+                }
             }
         }
-        // Fallback: cerca nel PATH
-        PathBuf::from("mpv")
+        // 2. Nel PATH di sistema
+        for name in &["mpv", "mpv.exe"] {
+            if let Ok(path) = which::which(name) {
+                return Ok(path);
+            }
+        }
+        Err("mpv non trovato. Scarica mpv da https://mpv.io e mettilo nella cartella dell'app".into())
     }
 
-    pub fn launch(&mut self, url: &str, title: Option<&str>) -> Result<()> {
-        self.kill_existing();
+    fn ipc_name() -> String {
+        #[cfg(target_os = "windows")]
+        return format!("\\\\.\\pipe\\nuvio-mpv-{}", std::process::id());
+        #[cfg(not(target_os = "windows"))]
+        return format!("/tmp/nuvio-mpv-{}.sock", std::process::id());
+    }
 
-        let mpv = Self::mpv_path();
-
-        let mut cmd = Command::new(&mpv);
-        cmd.arg(url)
-            .arg(format!("--input-ipc-server={}", IPC_PATH))
-            .arg("--force-window=yes")
-            .arg("--keep-open=yes")
-            .arg("--osc=yes")
-            .arg("--hwdec=auto")
-            .arg("--no-terminal");
-
+    fn base_args(url: &str, title: Option<&str>, ipc: &str) -> Vec<String> {
+        let mut args = vec![
+            url.to_string(),
+            format!("--input-ipc-server={}", ipc),
+            "--no-terminal".to_string(),
+            "--force-window=yes".to_string(),
+            "--keep-open=yes".to_string(),
+        ];
         if let Some(t) = title {
-            cmd.arg(format!("--title=Nuvio – {}", t));
+            args.push(format!("--force-media-title={}", t));
+        }
+        args
+    }
+
+    /// Lancia mpv in finestra separata (external mode)
+    pub fn launch(&mut self, url: &str, title: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+        self.stop();
+        let mpv = Self::find_mpv()?;
+        let ipc = Self::ipc_name();
+        let mut args = Self::base_args(url, title, &ipc);
+        args.push("--ontop=yes".to_string());
+        args.push("--geometry=900x506+100+100".to_string());
+
+        let child = Command::new(&mpv).args(&args).spawn()?;
+        self.process = Some(child);
+        self.ipc_path = Some(ipc);
+
+        // Aspetta che la pipe sia pronta
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        Ok(())
+    }
+
+    /// Lancia mpv embedded nella finestra Tauri tramite HWND (Windows only)
+    #[cfg(target_os = "windows")]
+    pub fn launch_embedded(&mut self, url: &str, title: Option<&str>, hwnd: isize) -> Result<(), Box<dyn std::error::Error>> {
+        self.stop();
+        let mpv = Self::find_mpv()?;
+        let ipc = Self::ipc_name();
+        let mut args = Self::base_args(url, title, &ipc);
+
+        // Embedding: usa HWND del panel nativo
+        args.push(format!("--wid={}", hwnd));
+        args.push("--no-border".to_string());
+        args.push("--no-osc".to_string());
+        args.push("--no-input-default-bindings".to_string());
+        args.push("--keepaspect=yes".to_string());
+        args.push("--video-unscaled=downscale-big".to_string());
+
+        let child = Command::new(&mpv).args(&args).spawn()?;
+        self.process = Some(child);
+        self.ipc_path = Some(ipc);
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        Ok(())
+    }
+
+    pub fn send_command(&self, cmd: &str, args: &[Value]) -> Result<Value, Box<dyn std::error::Error>> {
+        let ipc = match &self.ipc_path {
+            Some(p) => p.clone(),
+            None => return Err("mpv non in esecuzione".into()),
+        };
+
+        let mut command_args = vec![Value::String(cmd.to_string())];
+        command_args.extend_from_slice(args);
+        let payload = serde_json::json!({ "command": command_args });
+        let msg = format!("{}\n", payload.to_string());
+
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::io::FromRawHandle;
+            use std::fs::OpenOptions;
+            let mut f = OpenOptions::new().read(true).write(true).open(&ipc)?;
+            f.write_all(msg.as_bytes())?;
+            f.flush()?;
+            let mut response = String::new();
+            BufReader::new(f).read_line(&mut response)?;
+            let v: Value = serde_json::from_str(&response).unwrap_or(Value::Null);
+            return Ok(v.get("data").cloned().unwrap_or(Value::Null));
         }
 
-        let child = cmd.spawn().map_err(|e| {
-            anyhow!(
-                "Impossibile avviare mpv ({}): {}",
-                mpv.display(),
-                e
-            )
-        })?;
-
-        self.process = Some(child);
-        Ok(())
+        #[cfg(not(target_os = "windows"))]
+        {
+            use std::os::unix::net::UnixStream;
+            let stream = UnixStream::connect(&ipc)?;
+            let mut writer = stream.try_clone()?;
+            writer.write_all(msg.as_bytes())?;
+            let mut response = String::new();
+            BufReader::new(stream).read_line(&mut response)?;
+            let v: Value = serde_json::from_str(&response).unwrap_or(Value::Null);
+            return Ok(v.get("data").cloned().unwrap_or(Value::Null));
+        }
     }
 
-    pub fn send_command(&self, cmd: &str, args: &[serde_json::Value]) -> Result<()> {
-        use std::fs::OpenOptions;
+    pub fn get_position(&self) -> f64 {
+        self.send_command("get_property", &[serde_json::json!("time-pos")])
+            .map(|v| v.as_f64().unwrap_or(0.0))
+            .unwrap_or(0.0)
+    }
 
-        let mut parts: Vec<serde_json::Value> =
-            vec![serde_json::Value::String(cmd.to_string())];
-        parts.extend_from_slice(args);
-
-        let payload = serde_json::json!({ "command": parts });
-        let mut line = serde_json::to_string(&payload)?;
-        line.push('\n');
-
-        let mut pipe = OpenOptions::new()
-            .write(true)
-            .open(IPC_PATH)
-            .map_err(|e| anyhow!("IPC non disponibile (mpv in esecuzione?): {}", e))?;
-
-        pipe.write_all(line.as_bytes())?;
-        Ok(())
+    pub fn get_duration(&self) -> f64 {
+        self.send_command("get_property", &[serde_json::json!("duration")])
+            .map(|v| v.as_f64().unwrap_or(0.0))
+            .unwrap_or(0.0)
     }
 
     pub fn stop(&mut self) {
-        let _ = self.send_command("quit", &[]);
-        self.kill_existing();
-    }
-
-    fn kill_existing(&mut self) {
-        if let Some(mut child) = self.process.take() {
-            let _ = child.kill();
-            let _ = child.wait();
+        if let Some(ref ipc) = self.ipc_path {
+            let _ = self.send_command("quit", &[]);
         }
-    }
-}
-
-impl Drop for MpvManager {
-    fn drop(&mut self) {
-        self.kill_existing();
+        if let Some(mut child) = self.process.take() {
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            let _ = child.kill();
+        }
+        self.ipc_path = None;
     }
 }

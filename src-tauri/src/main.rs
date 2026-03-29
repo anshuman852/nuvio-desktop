@@ -16,46 +16,55 @@ async fn fetch_manifest(url: String) -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
-async fn fetch_catalog(addon_url: String, type_: String, id: String, extra: Option<String>) -> Result<serde_json::Value, String> {
-    addon::fetch_catalog(&addon_url, &type_, &id, extra.as_deref()).await.map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-async fn fetch_meta(addon_url: String, type_: String, id: String) -> Result<serde_json::Value, String> {
-    addon::fetch_meta(&addon_url, &type_, &id).await.map_err(|e| e.to_string())
-}
-
-#[tauri::command]
 async fn fetch_streams(addon_url: String, type_: String, id: String) -> Result<serde_json::Value, String> {
     addon::fetch_streams(&addon_url, &type_, &id).await.map_err(|e| e.to_string())
 }
 
-/// Lancia mpv in finestra separata sempre in primo piano
+/// Lancia mpv in finestra separata
 #[tauri::command]
 async fn launch_mpv(state: State<'_, AppState>, url: String, title: Option<String>) -> Result<(), String> {
     let mut mpv = state.mpv.lock().map_err(|e| e.to_string())?;
     mpv.launch(&url, title.as_deref()).map_err(|e| e.to_string())
 }
 
-/// Lancia player esterno custom (VLC, MPC-HC, ecc.)
+/// Lancia mpv embedded nella finestra Tauri (Windows: HWND injection)
+#[tauri::command]
+async fn launch_mpv_embedded(
+    state: State<'_, AppState>,
+    window: tauri::Window,
+    url: String,
+    title: Option<String>,
+) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        // Ottieni HWND della finestra Tauri
+        let hwnd = window.hwnd().map_err(|e| e.to_string())?;
+        let mut mpv = state.mpv.lock().map_err(|e| e.to_string())?;
+        mpv.launch_embedded(&url, title.as_deref(), hwnd.0 as isize)
+            .map_err(|e| e.to_string())
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let mut mpv = state.mpv.lock().map_err(|e| e.to_string())?;
+        mpv.launch(&url, title.as_deref()).map_err(|e| e.to_string())
+    }
+}
+
 #[tauri::command]
 async fn launch_custom_player(player_path: String, url: String, title: Option<String>) -> Result<(), String> {
     use std::process::Command;
     let mut cmd = Command::new(&player_path);
     cmd.arg(&url);
     if let Some(t) = &title {
-        if player_path.to_lowercase().contains("vlc") {
-            cmd.args(["--meta-title", t]);
-        } else if player_path.to_lowercase().contains("mpc") {
-            cmd.args(["/title", t]);
-        }
+        if player_path.to_lowercase().contains("vlc") { cmd.args(["--meta-title", t]); }
+        else if player_path.to_lowercase().contains("mpc") { cmd.args(["/title", t]); }
     }
     cmd.spawn().map_err(|e| format!("Impossibile avviare {}: {}", player_path, e))?;
     Ok(())
 }
 
 #[tauri::command]
-async fn mpv_command(state: State<'_, AppState>, cmd: String, args: Vec<serde_json::Value>) -> Result<(), String> {
+async fn mpv_command(state: State<'_, AppState>, cmd: String, args: Vec<serde_json::Value>) -> Result<serde_json::Value, String> {
     let mpv = state.mpv.lock().map_err(|e| e.to_string())?;
     mpv.send_command(&cmd, &args).map_err(|e| e.to_string())
 }
@@ -67,38 +76,26 @@ async fn mpv_stop(state: State<'_, AppState>) -> Result<(), String> {
     Ok(())
 }
 
-/// Ottieni posizione attuale mpv (per sync progress)
 #[tauri::command]
 async fn mpv_get_position(state: State<'_, AppState>) -> Result<f64, String> {
     let mpv = state.mpv.lock().map_err(|e| e.to_string())?;
-    mpv.get_position().map_err(|e| e.to_string())
+    Ok(mpv.get_position())
 }
 
-/// Ottieni durata attuale mpv
 #[tauri::command]
 async fn mpv_get_duration(state: State<'_, AppState>) -> Result<f64, String> {
     let mpv = state.mpv.lock().map_err(|e| e.to_string())?;
-    mpv.get_duration().map_err(|e| e.to_string())
+    Ok(mpv.get_duration())
 }
 
-/// Apri URL nel browser di sistema
 #[tauri::command]
 async fn open_url(url: String) -> Result<(), String> {
     #[cfg(target_os = "windows")]
-    {
-        std::process::Command::new("cmd")
-            .args(["/C", "start", "", &url])
-            .spawn()
-            .map_err(|e| e.to_string())?;
-    }
+    std::process::Command::new("cmd").args(["/C", "start", "", &url]).spawn().map_err(|e| e.to_string())?;
     #[cfg(target_os = "macos")]
-    {
-        std::process::Command::new("open").arg(&url).spawn().map_err(|e| e.to_string())?;
-    }
+    std::process::Command::new("open").arg(&url).spawn().map_err(|e| e.to_string())?;
     #[cfg(target_os = "linux")]
-    {
-        std::process::Command::new("xdg-open").arg(&url).spawn().map_err(|e| e.to_string())?;
-    }
+    std::process::Command::new("xdg-open").arg(&url).spawn().map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -108,9 +105,10 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::new().build())
         .manage(AppState { mpv: Mutex::new(mpv::MpvManager::new()) })
         .invoke_handler(tauri::generate_handler![
-            fetch_manifest, fetch_catalog, fetch_meta, fetch_streams,
-            launch_mpv, launch_custom_player, mpv_command, mpv_stop,
-            mpv_get_position, mpv_get_duration, open_url,
+            fetch_manifest, fetch_streams,
+            launch_mpv, launch_mpv_embedded, launch_custom_player,
+            mpv_command, mpv_stop, mpv_get_position, mpv_get_duration,
+            open_url,
         ])
         .run(tauri::generate_context!())
         .expect("error while running nuvio-desktop");
