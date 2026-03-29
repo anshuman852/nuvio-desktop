@@ -412,11 +412,11 @@ export default function Addons() {
                       <p className="text-xs text-white/40">v{addon.version} · {addon.catalogs.length} cataloghi · {addon.types.join(', ')}</p>
                     </div>
                     <div className="flex items-center gap-1">
-                      <button onClick={() => setGearAddon(addon)} title="Configura"
+                      <button onClick={() => setConfigureUrl(`${normalizeUrl(addon.url)}/configure`)} title="Configura nell'app"
                         className="p-1.5 rounded-lg hover:bg-white/10 text-white/40 hover:text-white transition-colors">
                         <Settings2 size={15} />
                       </button>
-                      <button onClick={() => openExternal(`${normalizeUrl(addon.url)}/configure`)} title="Apri configurazione"
+                      <button onClick={() => setGearAddon(addon)} title="Opzioni addon"
                         className="p-1.5 rounded-lg hover:bg-white/10 text-white/40 hover:text-white transition-colors">
                         <ExternalLink size={14} />
                       </button>

@@ -66,6 +66,7 @@ impl MpvManager {
     }
 
     fn base_args(url: &str, title: Option<&str>, ipc: &str) -> Vec<String> {
+        let is_magnet = url.starts_with("magnet:");
         let mut args = vec![
             url.to_string(),
             format!("--input-ipc-server={}", ipc),
@@ -75,6 +76,10 @@ impl MpvManager {
         ];
         if let Some(t) = title {
             args.push(format!("--force-media-title={}", t));
+        }
+        if is_magnet {
+            // Per i magnet, mpv usa il protocollo torrent se disponibile
+            args.push("--ytdl=no".to_string());
         }
         args
     }

@@ -449,7 +449,8 @@ export default function Detail() {
                   <AlertCircle size={16} className="flex-shrink-0 mt-0.5" /><span>{streamError}</span>
                 </div>
               ) : (
-                <div className="space-y-6">
+                {/* Layout colonne: ogni addon è una colonna affiancata alle altre */}
+                <div className="flex gap-6 overflow-x-auto pb-2">
                   {streamGroups.map((group, gi) => {
                     const sortedStreams = [...group.streams].sort((a, b) => {
                       if (streamSort === 'quality') {
@@ -465,44 +466,49 @@ export default function Detail() {
                       return 0;
                     });
                     return (
-                      <div key={group.addonUrl}>
-                        {/* Header addon stile Stremio */}
-                        <div className="flex items-center gap-2 mb-2.5">
-                          <span className="text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--accent)' }}>{group.addonName}</span>
+                      <div key={group.addonUrl} className="flex-shrink-0 w-64">
+                        {/* Header addon */}
+                        <div className="flex items-center gap-2 mb-3 px-1">
+                          <span className="text-xs font-bold uppercase tracking-widest" style={{ color: 'var(--accent)' }}>{group.addonName}</span>
                           <span className="text-xs text-white/25">({sortedStreams.length})</span>
                         </div>
-                        {/* Stream orizzontali scrollabili — identico a Stremio */}
-                        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
-                          {sortedStreams.map((stream, si) => {
+                        {/* Stream in VERTICALE sotto l'addon */}
+                        <div className="space-y-1.5">
+                          {sortedStreams.slice(0, 15).map((stream, si) => {
                             const hasUrl = Boolean(stream.url);
                             const hasMagnet = Boolean(stream.infoHash);
-                            const quality = ((stream.name ?? '') + ' ' + (stream.title ?? '')).match(/(4K|2160p|1080p|720p|480p|HDR|HEVC|x265|x264)/gi)?.slice(0, 2).join(' ') ?? '';
+                            const quality = ((stream.name ?? '') + ' ' + (stream.title ?? '')).match(/(4K|2160p|1080p|720p|480p|HDR|HEVC)/gi)?.slice(0,2).join(' ') ?? '';
                             const size = stream.behaviorHints?.videoSize ? `${(stream.behaviorHints.videoSize / 1e9).toFixed(1)} GB` : '';
                             const isActive = activeGroupIdx === gi && activeStreamIdx === si;
                             return (
                               <button key={si} type="button"
                                 onClick={() => handlePlay(stream, gi, si)}
                                 className={clsx(
-                                  'flex-shrink-0 text-left px-4 py-3 rounded-xl border transition-all duration-150 w-56',
-                                  isActive ? 'border-[color:var(--accent)] bg-[color:var(--accent-bg)]'
-                                    : 'border-white/[0.08] bg-white/[0.03] hover:bg-[color:var(--accent-bg)] hover:border-[color:var(--accent)] cursor-pointer'
+                                  'w-full text-left px-3 py-2.5 rounded-xl border transition-all duration-150 group/s',
+                                  isActive
+                                    ? 'border-[color:var(--accent)] bg-[color:var(--accent-bg)]'
+                                    : 'border-white/[0.07] bg-white/[0.02] hover:border-[color:var(--accent)] hover:bg-[color:var(--accent-bg)] cursor-pointer'
                                 )}>
-                                <div className="flex items-start justify-between gap-2 mb-1.5">
-                                  <p className="text-sm font-semibold text-white leading-tight line-clamp-1">{stream.name ?? 'Stream'}</p>
-                                  {/* Play icon */}
-                                  <div className={clsx('w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0', isActive ? 'bg-[color:var(--accent)]' : hasMagnet && !hasUrl ? 'bg-amber-500/20' : 'bg-white/10')}>
-                                    <Play size={11} className={clsx('ml-0.5', isActive ? 'text-white fill-white' : hasMagnet && !hasUrl ? 'text-amber-400 fill-amber-400' : 'text-white fill-white')} />
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
+                                      {quality && <span className="text-xs font-bold" style={{ color: isActive ? 'var(--accent)' : 'rgba(255,255,255,0.8)' }}>{quality}</span>}
+                                      {hasMagnet && !hasUrl && <span className="text-xs text-amber-400">🧲</span>}
+                                      {size && <span className="text-xs text-white/40">{size}</span>}
+                                    </div>
+                                    {stream.title && <p className="text-xs text-white/40 line-clamp-1">{stream.title}</p>}
+                                  </div>
+                                  <div className={clsx('w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 transition-colors',
+                                    isActive ? 'bg-[color:var(--accent)]' : 'bg-white/10 group-hover/s:bg-[color:var(--accent)]')}>
+                                    <Play size={9} className="ml-0.5 fill-white text-white" />
                                   </div>
                                 </div>
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  {quality && <span className="text-xs px-1.5 py-0.5 rounded bg-white/10 text-white/70 font-medium">{quality}</span>}
-                                  {hasMagnet && !hasUrl && <span className="text-xs px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400">🧲</span>}
-                                  {size && <span className="text-xs text-white/40">{size}</span>}
-                                </div>
-                                {stream.title && <p className="text-xs text-white/40 mt-1 line-clamp-2 leading-tight">{stream.title}</p>}
                               </button>
                             );
                           })}
+                          {sortedStreams.length > 15 && (
+                            <p className="text-xs text-white/30 text-center py-1">+{sortedStreams.length - 15} altri</p>
+                          )}
                         </div>
                       </div>
                     );
