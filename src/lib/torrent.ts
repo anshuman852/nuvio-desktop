@@ -1,25 +1,26 @@
 /**
- * WebTorrent bridge — streaming magnet link direttamente nel player HTML5
- * Funziona in Tauri WebView2 tramite WebRTC
+ * WebTorrent bridge — streaming magnet link nel player HTML5
+ * Usa require con ts-ignore per evitare problemi di types
  */
 
 let _client: any = null;
 
-async function getClient() {
+async function getClient(): Promise<any> {
   if (_client) return _client;
-  // Import dinamico per bundle splitting
-  const WebTorrent = (await import('webtorrent')).default;
-  _client = new WebTorrent({
-    // Disabilita tracker annunci per velocità
-    announce: [],
-  });
-  _client.on('error', (e: any) => console.warn('[WebTorrent]', e.message));
-  return _client;
+  try {
+    // @ts-ignore - webtorrent non ha @types
+    const WebTorrent = (await import(/* @vite-ignore */ 'webtorrent')).default;
+    _client = new WebTorrent();
+    _client.on('error', (e: any) => console.warn('[WebTorrent]', e?.message ?? e));
+    return _client;
+  } catch (err) {
+    throw new Error('WebTorrent non disponibile. Esegui: npm install webtorrent');
+  }
 }
 
 export interface TorrentProgress {
-  progress: number;       // 0-1
-  downloadSpeed: number;  // bytes/s
+  progress: number;
+  downloadSpeed: number;
   uploadSpeed: number;
   numPeers: number;
   downloaded: number;
@@ -27,7 +28,6 @@ export interface TorrentProgress {
 }
 
 export interface TorrentResult {
-  // URL blob streamabile per <video src="">
   streamUrl: string;
   fileName: string;
   fileSize: number;
@@ -35,122 +35,63 @@ export interface TorrentResult {
   torrent: any;
 }
 
-/**
- * Aggiunge un magnet link a WebTorrent e restituisce lo stream URL
- * per il primo file video trovato.
- */
 export async function addMagnet(
   magnetUri: string,
   onProgress?: (p: TorrentProgress) => void,
-  timeoutMs = 45000
+  timeoutMs = 60000
 ): Promise<TorrentResult> {
   const wt = await getClient();
-
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
-      reject(new Error('Timeout: nessun peer trovato in 45s. Verifica la connessione o usa un servizio Debrid.'));
+      reject(new Error('Timeout: nessun peer trovato. Configura Real-Debrid in Torrentio per stream diretti.'));
     }, timeoutMs);
 
-    // Evita torrent duplicati
     const existing = wt.get(magnetUri);
-    if (existing) {
-      clearTimeout(timer);
-      handleTorrent(existing, resolve, reject, onProgress);
-      return;
-    }
+    if (existing) { clearTimeout(timer); handleTorrent(existing, resolve, reject, onProgress); return; }
 
-    wt.add(magnetUri, { path: '/tmp/nuvio-torrent' }, (torrent: any) => {
-      clearTimeout(timer);
-      handleTorrent(torrent, resolve, reject, onProgress);
-    });
-
-    wt.on('error', (e: any) => {
-      clearTimeout(timer);
-      reject(new Error(`WebTorrent: ${e.message}`));
-    });
+    wt.add(magnetUri, {}, (torrent: any) => { clearTimeout(timer); handleTorrent(torrent, resolve, reject, onProgress); });
+    wt.on('error', (e: any) => { clearTimeout(timer); reject(new Error(`WebTorrent: ${e?.message ?? e}`)); });
   });
 }
 
-function handleTorrent(
-  torrent: any,
-  resolve: (r: TorrentResult) => void,
-  reject: (e: Error) => void,
-  onProgress?: (p: TorrentProgress) => void
-) {
+function handleTorrent(torrent: any, resolve: (r: TorrentResult) => void, reject: (e: Error) => void, onProgress?: (p: TorrentProgress) => void) {
   const VIDEO_EXTS = /\.(mp4|mkv|avi|mov|webm|m4v|ts|wmv|flv|m2ts)$/i;
-
-  // Trova il file video più grande
   const videoFiles = torrent.files.filter((f: any) => VIDEO_EXTS.test(f.name));
-  if (videoFiles.length === 0) {
-    reject(new Error('Nessun file video nel torrent'));
-    return;
-  }
-  const file = videoFiles.reduce((a: any, b: any) => a.length > b.length ? a : b);
+  if (videoFiles.length === 0) { reject(new Error('Nessun file video nel torrent')); return; }
 
-  // Prioritizza download del file selezionato
-  torrent.files.forEach((f: any) => f.deselect());
+  const file = videoFiles.reduce((a: any, b: any) => a.length > b.length ? a : b);
+  torrent.files.forEach((f: any) => { if (f !== file) f.deselect(); });
   file.select();
 
-  // Progress tracking
+  let iv: ReturnType<typeof setInterval> | null = null;
   if (onProgress) {
-    const interval = setInterval(() => {
-      if (!torrent.destroyed) {
-        onProgress({
-          progress: torrent.progress,
-          downloadSpeed: torrent.downloadSpeed,
-          uploadSpeed: torrent.uploadSpeed,
-          numPeers: torrent.numPeers,
-          downloaded: torrent.downloaded,
-          total: torrent.length,
-        });
-      } else {
-        clearInterval(interval);
-      }
+    iv = setInterval(() => {
+      if (!torrent.destroyed) onProgress({ progress: torrent.progress, downloadSpeed: torrent.downloadSpeed, uploadSpeed: torrent.uploadSpeed, numPeers: torrent.numPeers, downloaded: torrent.downloaded, total: torrent.length });
+      else if (iv) clearInterval(iv);
     }, 1000);
   }
 
-  // Crea blob URL streamabile (non scarica tutto, usa MediaSource)
   file.getBlobURL((err: any, blobUrl: string) => {
-    if (err) {
-      // Fallback: usa renderTo su elemento video virtuale
-      reject(new Error(`Stream non disponibile: ${err.message}`));
-      return;
-    }
-    resolve({
-      streamUrl: blobUrl,
-      fileName: file.name,
-      fileSize: file.length,
-      infoHash: torrent.infoHash,
-      torrent,
-    });
+    if (iv) clearInterval(iv);
+    if (err) { reject(new Error(`Stream non disponibile: ${err.message}`)); return; }
+    resolve({ streamUrl: blobUrl, fileName: file.name, fileSize: file.length, infoHash: torrent.infoHash, torrent });
   });
 }
 
-/** Rimuovi torrent (ferma download e libera risorse) */
-export async function removeTorrent(infoHashOrMagnet: string) {
-  const wt = await getClient();
-  const t = wt.get(infoHashOrMagnet);
-  if (t) wt.remove(t);
+export async function removeTorrent(infoHashOrMagnet: string): Promise<void> {
+  if (!_client) return;
+  const t = _client.get(infoHashOrMagnet);
+  if (t) _client.remove(t);
 }
 
-/** Distruggi il client WebTorrent */
-export async function destroyClient() {
-  if (_client) {
-    _client.destroy();
-    _client = null;
-  }
-}
-
-/** Formatta velocità in bytes/s */
 export function formatSpeed(bps: number): string {
   if (bps < 1024) return `${bps.toFixed(0)} B/s`;
-  if (bps < 1024 * 1024) return `${(bps / 1024).toFixed(1)} KB/s`;
-  return `${(bps / 1024 / 1024).toFixed(1)} MB/s`;
+  if (bps < 1048576) return `${(bps / 1024).toFixed(1)} KB/s`;
+  return `${(bps / 1048576).toFixed(1)} MB/s`;
 }
 
 export function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
+  if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1073741824) return `${(bytes / 1048576).toFixed(1)} MB`;
+  return `${(bytes / 1073741824).toFixed(2)} GB`;
 }
