@@ -47,10 +47,7 @@ function Sidebar({ collapsed }: { collapsed: boolean }) {
     )}>
       {/* Logo */}
       <div className={clsx('flex items-center h-14 border-b border-white/[0.05]', collapsed ? 'justify-center px-0' : 'px-5 gap-2.5')}>
-        <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
-          style={{ backgroundColor: 'var(--accent,#7c3aed)' }}>
-          <span className="text-white font-bold text-sm">N</span>
-        </div>
+        <img src="/nuvio-icon.svg" alt="Nuvio" className="w-8 h-8 flex-shrink-0 rounded-xl" />
         {!collapsed && <span className="font-bold text-white text-sm tracking-wide">Nuvio</span>}
       </div>
 

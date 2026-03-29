@@ -27,47 +27,54 @@ function useServiceBackdrops(service: StreamingService, skip = false) {
   return backdrops;
 }
 
-// ─── Service card — immagini collage che riempiono tutto ─────────────────────
+// ─── Service card — logo riempie tutta la card ───────────────────────────────
 function ServiceCard({ s }: { s: StreamingService }) {
   const [logoErr, setLogoErr] = useState(false);
   const backdrops = useServiceBackdrops(s);
+  const bg = (s as any).logoBg ?? s.color;
 
   return (
     <Link to={`/streaming/${s.id}`}
-      className="group relative overflow-hidden rounded-2xl cursor-pointer block"
+      className="group relative overflow-hidden rounded-2xl cursor-pointer block transition-all duration-200 hover:scale-[1.03] hover:shadow-2xl"
       style={{ aspectRatio: '16/9' }}>
 
-      {/* Collage di immagini che riempie TUTTO il rettangolo */}
-      {backdrops.length >= 4 ? (
+      {/* Layer 1: collage backdrop TMDB se disponibile */}
+      {backdrops.length >= 4 && (
         <div className="absolute inset-0 grid grid-cols-4 grid-rows-2 gap-0">
           {backdrops.slice(0, 8).map((src, i) => (
-            <img key={i} src={src} alt="" className="w-full h-full object-cover" style={{ display: 'block' }} />
+            <img key={i} src={src} alt="" className="w-full h-full object-cover" />
           ))}
         </div>
-      ) : backdrops.length > 0 ? (
-        <img src={backdrops[0]} alt="" className="absolute inset-0 w-full h-full object-cover" />
-      ) : (
-        <div className="absolute inset-0" style={{ background: `linear-gradient(135deg, ${s.color}80, #0d0d16)` }} />
       )}
 
-      {/* Overlay semitrasparente */}
-      <div className="absolute inset-0 bg-black/45 group-hover:bg-black/30 transition-colors" />
+      {/* Layer 2: sfondo solido del brand (sempre presente, visibile quando no TMDB) */}
+      <div className="absolute inset-0 transition-opacity"
+        style={{
+          background: `linear-gradient(135deg, ${bg}cc 0%, ${bg}66 50%, #0a0a12 100%)`,
+          opacity: backdrops.length >= 4 ? 0 : 1
+        }} />
 
-      {/* Logo GRANDE centrato — object-contain per mantenere il brand */}
-      <div className="absolute inset-0 flex items-center justify-center px-6 py-4">
+      {/* Layer 3: overlay semitrasparente su tutto */}
+      <div className="absolute inset-0 bg-black/40 group-hover:bg-black/25 transition-colors" />
+
+      {/* Logo al centro — object-cover per riempire TUTTO (come vuole l'utente) */}
+      <div className="absolute inset-0 flex items-center justify-center p-5">
         {!logoErr && s.logo ? (
-          <img src={s.logo} alt={s.name}
-            className="w-full h-full object-contain drop-shadow-2xl group-hover:scale-105 transition-transform duration-300"
-            style={{ maxHeight: '70%', maxWidth: '80%' }}
-            onError={() => setLogoErr(true)} />
+          <img
+            src={s.logo}
+            alt={s.name}
+            className="w-full h-full object-contain drop-shadow-2xl group-hover:scale-105 transition-transform duration-300 filter brightness-110"
+            onError={() => setLogoErr(true)}
+          />
         ) : (
-          <span className="text-6xl drop-shadow-2xl">{s.logoFallback}</span>
+          <span className="text-6xl drop-shadow-2xl group-hover:scale-105 transition-transform">{s.logoFallback}</span>
         )}
       </div>
 
-      {/* Nome in basso */}
-      <div className="absolute bottom-0 left-0 right-0 px-4 py-3" style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.8), transparent)' }}>
-        <p className="text-sm font-semibold text-white/90 group-hover:text-white">{s.name}</p>
+      {/* Nome in basso — visibile sempre */}
+      <div className="absolute bottom-0 left-0 right-0 px-4 py-2.5"
+        style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.85) 0%, transparent 100%)' }}>
+        <p className="text-sm font-bold text-white drop-shadow">{s.name}</p>
       </div>
     </Link>
   );
@@ -207,31 +214,10 @@ export default function Streaming() {
           Aggiungi TMDB in <Link to="/settings" className="underline ml-1 hover:text-yellow-300">Impostazioni → Integrazioni</Link> per vedere i cataloghi con immagini.
         </div>
       )}
-      {/* Layout: riga 1 = Netflix grande + 2 medie + Paramount (come foto originale)
-           riga 2 = 4 uniformi
-           riga 3 = restanti */}
-      {visible.length >= 4 ? (
-        <div className="space-y-3">
-          {/* Prima riga: Netflix occupa 1/2, Disney e Apple TV+ occupano 1/4 ciascuna */}
-          <div className="grid gap-3" style={{ gridTemplateColumns: '2fr 1fr 1fr 1fr' }}>
-            {visible.slice(0, 4).map(s => <ServiceCard key={s.id} s={s} />)}
-          </div>
-          {visible.length > 4 && (
-            <div className="grid grid-cols-4 gap-3">
-              {visible.slice(4, 8).map(s => <ServiceCard key={s.id} s={s} />)}
-            </div>
-          )}
-          {visible.length > 8 && (
-            <div className="grid grid-cols-4 gap-3">
-              {visible.slice(8).map(s => <ServiceCard key={s.id} s={s} />)}
-            </div>
-          )}
-        </div>
-      ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {visible.map(s => <ServiceCard key={s.id} s={s} />)}
-        </div>
-      )}
+      {/* Griglia uniforme 4 colonne — tutte identiche */}
+      <div className="grid grid-cols-4 gap-3">
+        {visible.map(s => <ServiceCard key={s.id} s={s} />)}
+      </div>
     </div>
   );
 }

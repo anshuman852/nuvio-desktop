@@ -37,20 +37,37 @@ export interface StreamingService {
   name: string;
   tmdbId: number;
   color: string;
-  logo: string;        // path in /public/logos/
-  logoFallback: string; // emoji fallback
+  logo: string;
+  logoBg?: string;      // background color per il logo
+  logoFallback: string;
   gradient: string;
 }
 
 export const STREAMING_SERVICES: StreamingService[] = [
-  { id: 'netflix',    name: 'Netflix',      tmdbId: 8,   color: '#E50914', logo: '/logos/netflix.png',     logoFallback: '🔴', gradient: 'from-red-950 to-black' },
-  { id: 'disney',     name: 'Disney+',      tmdbId: 337, color: '#113CCF', logo: '/logos/disney.png',      logoFallback: '✨', gradient: 'from-blue-950 to-black' },
-  { id: 'apple',      name: 'Apple TV+',    tmdbId: 350, color: '#ffffff', logo: '/logos/apple.png',       logoFallback: '🍎', gradient: 'from-gray-900 to-black' },
-  { id: 'paramount',  name: 'Paramount+',   tmdbId: 531, color: '#0064FF', logo: '/logos/paramount.png',   logoFallback: '⛰️', gradient: 'from-blue-950 to-black' },
-  { id: 'amazon',     name: 'Amazon Prime', tmdbId: 9,   color: '#00A8E1', logo: '/logos/prime.png',       logoFallback: '📦', gradient: 'from-cyan-950 to-black' },
-  { id: 'hbo',        name: 'Max',          tmdbId: 384, color: '#5822B4', logo: '/logos/max.png',         logoFallback: '💜', gradient: 'from-purple-950 to-black' },
-  { id: 'crunchyroll',name: 'Crunchyroll',  tmdbId: 283, color: '#F47521', logo: '/logos/crunchyroll.png', logoFallback: '🍥', gradient: 'from-orange-950 to-black' },
-  { id: 'raiplay',    name: 'RaiPlay',      tmdbId: 675, color: '#009246', logo: '/logos/raiplay.png',     logoFallback: '🇮🇹', gradient: 'from-green-950 to-black' },
+  { id: 'netflix',    name: 'Netflix',      tmdbId: 8,   color: '#E50914',
+    logo: 'https://upload.wikimedia.org/wikipedia/commons/0/08/Netflix_2015_logo.svg',
+    logoBg: '#E50914', logoFallback: '🔴', gradient: 'from-red-950 to-black' },
+  { id: 'disney',     name: 'Disney+',      tmdbId: 337, color: '#113CCF',
+    logo: 'https://upload.wikimedia.org/wikipedia/commons/3/3e/Disney%2B_logo.svg',
+    logoBg: '#113CCF', logoFallback: '✨', gradient: 'from-blue-950 to-black' },
+  { id: 'apple',      name: 'Apple TV+',    tmdbId: 350, color: '#1c1c1e',
+    logo: 'https://upload.wikimedia.org/wikipedia/commons/2/28/Apple_TV_Plus_Logo.svg',
+    logoBg: '#000000', logoFallback: '🍎', gradient: 'from-gray-900 to-black' },
+  { id: 'paramount',  name: 'Paramount+',   tmdbId: 531, color: '#0064FF',
+    logo: 'https://upload.wikimedia.org/wikipedia/commons/a/a5/Paramount_Plus_logo.svg',
+    logoBg: '#0064FF', logoFallback: '⛰️', gradient: 'from-blue-950 to-black' },
+  { id: 'amazon',     name: 'Prime Video',  tmdbId: 9,   color: '#00A8E1',
+    logo: 'https://upload.wikimedia.org/wikipedia/commons/1/11/Amazon_Prime_Video_logo.svg',
+    logoBg: '#00A8E1', logoFallback: '📦', gradient: 'from-cyan-950 to-black' },
+  { id: 'hbo',        name: 'Max',          tmdbId: 384, color: '#5822B4',
+    logo: 'https://upload.wikimedia.org/wikipedia/commons/1/17/HBO_Max_Logo.svg',
+    logoBg: '#5822B4', logoFallback: '💜', gradient: 'from-purple-950 to-black' },
+  { id: 'crunchyroll',name: 'Crunchyroll',  tmdbId: 283, color: '#F47521',
+    logo: 'https://upload.wikimedia.org/wikipedia/commons/0/08/Crunchyroll_logo_2024.svg',
+    logoBg: '#F47521', logoFallback: '🍥', gradient: 'from-orange-950 to-black' },
+  { id: 'raiplay',    name: 'RaiPlay',      tmdbId: 675, color: '#009246',
+    logo: 'https://upload.wikimedia.org/wikipedia/commons/5/5f/RaiPlay_-_Logo.svg',
+    logoBg: '#009246', logoFallback: '🇮🇹', gradient: 'from-green-950 to-black' },
 ];
 
 // ─── Discover ─────────────────────────────────────────────────────────────────
