@@ -9,7 +9,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useStore } from '../lib/store';
 import { upsertCW } from '../api/nuvio';
-import { streamMagnet, stopTorrent, formatSpeed, formatBytes, type TorrentProgress } from '../lib/torrent';
+import { stopTorrent } from '../lib/torrent';
 import {
   Play, Pause, Volume2, VolumeX, Maximize, Minimize, X,
   SkipForward, SkipBack, AlertCircle, ArrowLeft, Download, Users, ExternalLink,
@@ -38,7 +38,7 @@ function fmt(s: number) {
   return h > 0 ? `${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}` : `${m}:${String(sec).padStart(2,'0')}`;
 }
 
-type Mode = 'loading' | 'torrent_buffering' | 'playing' | 'mpv' | 'error';
+type Mode = 'loading' | 'playing' | 'mpv' | 'error';
 
 export default function VideoPlayer(props: VideoPlayerProps) {
   const { url, title, subtitle, contentId, contentType, poster, backdrop, season, episode, nextEpisode, onClose, onNext, initialProgress = 0 } = props;
@@ -50,7 +50,6 @@ export default function VideoPlayer(props: VideoPlayerProps) {
   const cwTimer = useRef<ReturnType<typeof setInterval>>();
   const mpvTimer = useRef<ReturnType<typeof setInterval>>();
   const torrentHash = useRef<string | null>(null);
-  const torrentStartTime = useRef<number>(Date.now());
 
   const { nuvioUser, upsertWatch, settings } = useStore();
   const [mode, setMode] = useState<Mode>('loading');
@@ -64,8 +63,6 @@ export default function VideoPlayer(props: VideoPlayerProps) {
   const [fullscreen, setFullscreen] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showNextEp, setShowNextEp] = useState(false);
-  const [torrentInfo, setTorrentInfo] = useState<TorrentProgress | null>(null);
-  const [torrentElapsed, setTorrentElapsed] = useState(0);
   const [mpvTime, setMpvTime] = useState(0);
   const [mpvDur, setMpvDur] = useState(0);
 
@@ -98,14 +95,6 @@ export default function VideoPlayer(props: VideoPlayerProps) {
     return () => clearInterval(mpvTimer.current);
   }, [mode, syncCW]);
 
-  // ── Elapsed timer per torrent ─────────────────────────────────────────────
-  useEffect(() => {
-    if (mode !== 'torrent_buffering') return;
-    torrentStartTime.current = Date.now();
-    const t = setInterval(() => setTorrentElapsed(Math.floor((Date.now() - torrentStartTime.current) / 1000)), 1000);
-    return () => clearInterval(t);
-  }, [mode]);
-
   // ── Init ──────────────────────────────────────────────────────────────────
   useEffect(() => {
     const isMagnet = url.startsWith('magnet:');
@@ -118,21 +107,9 @@ export default function VideoPlayer(props: VideoPlayerProps) {
   }, [url]);
 
   async function startTorrent(magnet: string) {
-    setMode('torrent_buffering');
-    setTorrentInfo(null);
-    try {
-      const result = await streamMagnet(magnet, setTorrentInfo);
-      torrentHash.current = result.infoHash;
-      const v = vidRef.current;
-      if (!v) return;
-      v.src = result.streamUrl;
-      v.load();
-      v.play().catch(() => {});
-      setMode('playing');
-    } catch (e: any) {
-      // Fallback a mpv
-      await startMpv(magnet, e.message);
-    }
+    // mpv gestisce i magnet nativamente (se configurato con Real-Debrid via Torrentio
+    // i magnet arrivano già come URL HTTP diretti e non entrano qui)
+    await startMpv(magnet);
   }
 
   function startHTML5(streamUrl: string) {
@@ -243,63 +220,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
         </div>
       )}
 
-      {/* ── Torrent buffering ─────────────────────────────────────────── */}
-      {mode === 'torrent_buffering' && (
-        <div className="relative z-10 flex flex-col items-center gap-5 w-full max-w-sm px-6">
-          {poster && <img src={poster} alt={title} className="h-32 rounded-xl shadow-2xl object-cover" />}
-          {title && <p className="text-white font-semibold text-center text-lg">{title}</p>}
-
-          {/* Info box */}
-          <div className="w-full bg-[#1a1a20] border border-white/[0.08] rounded-2xl p-4 space-y-3">
-            {torrentInfo ? (
-              <>
-                <div className="grid grid-cols-3 text-xs text-white/50 gap-2">
-                  <div className="flex flex-col items-center gap-0.5 bg-white/5 rounded-xl py-2">
-                    <Download size={13} className="text-green-400" />
-                    <span className="text-green-400 font-mono">{formatSpeed(torrentInfo.downloadSpeed)}</span>
-                    <span className="text-white/30 text-[10px]">Download</span>
-                  </div>
-                  <div className="flex flex-col items-center gap-0.5 bg-white/5 rounded-xl py-2">
-                    <Users size={13} className="text-blue-400" />
-                    <span className="text-blue-400 font-mono">{torrentInfo.numPeers}</span>
-                    <span className="text-white/30 text-[10px]">Peers</span>
-                  </div>
-                  <div className="flex flex-col items-center gap-0.5 bg-white/5 rounded-xl py-2">
-                    <span className="text-xs font-bold" style={{ color: 'var(--accent)' }}>{(torrentInfo.progress * 100).toFixed(1)}%</span>
-                    <span className="text-white/30 text-[10px]">Progresso</span>
-                  </div>
-                </div>
-                <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
-                  <div className="h-full rounded-full transition-all duration-500" style={{ width: `${torrentInfo.progress * 100}%`, backgroundColor: 'var(--accent)' }} />
-                </div>
-                <div className="flex justify-between text-[11px] text-white/30">
-                  <span>{formatBytes(torrentInfo.downloaded)}</span>
-                  <span>{torrentElapsed}s trascorsi</span>
-                  <span>{formatBytes(torrentInfo.total)}</span>
-                </div>
-                {torrentInfo.numPeers === 0 && torrentElapsed > 10 && (
-                  <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 text-xs text-amber-300 space-y-2">
-                    <p>⚡ <strong>Nessun peer trovato</strong>. Usa Real-Debrid per stream istantanei:</p>
-                    <button onClick={() => invoke('open_url', { url: 'https://torrentio.strem.fun/configure' })}
-                      className="flex items-center gap-1 text-amber-400 underline hover:text-amber-200">
-                      <ExternalLink size={10} />Configura Torrentio + Real-Debrid
-                    </button>
-                  </div>
-                )}
-              </>
-            ) : (
-              <div className="flex items-center justify-center gap-2 py-3 text-white/40 text-sm">
-                <div className="w-4 h-4 border-2 border-white/20 border-t-white/60 rounded-full animate-spin" />
-                Connessione alla rete P2P...
-              </div>
-            )}
-          </div>
-          <button onClick={handleClose} className="px-4 py-2 rounded-full bg-white/10 hover:bg-white/20 text-white/60 text-sm flex items-center gap-2">
-            <X size={13} />Annulla
-          </button>
-        </div>
-      )}
-
+      
       {/* ── MPV mode ─────────────────────────────────────────────────── */}
       {mode === 'mpv' && (
         <div className="relative z-10 flex flex-col items-center gap-5">
