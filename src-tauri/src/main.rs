@@ -99,6 +99,38 @@ async fn open_url(url: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Streama un magnet link via webtorrent-cli o aria2c come HTTP locale
+/// Restituisce l'URL HTTP locale da passare a mpv
+#[tauri::command]
+async fn stream_magnet(
+    state: State<'_, AppState>,
+    magnet: String,
+    title: Option<String>,
+) -> Result<String, String> {
+    // Strategia 1: prova webtorrent-cli (npm install -g webtorrent-cli)
+    let wt_cmd = if cfg!(target_os = "windows") { "webtorrent.cmd" } else { "webtorrent" };
+    if let Ok(out) = std::process::Command::new(wt_cmd).arg("--version").output() {
+        if out.status.success() {
+            // Trova porta libera
+            let port = 8888u16;
+            // Lancia webtorrent con output HTTP
+            let _ = std::process::Command::new(wt_cmd)
+                .args([&magnet, "--mpv", "--port", &port.to_string()])
+                .spawn()
+                .map_err(|e| e.to_string())?;
+            // Dai tempo per avviarsi
+            std::thread::sleep(std::time::Duration::from_millis(2000));
+            // Ritorna URL locale che mpv usa
+            return Ok(format!("http://localhost:{}", port));
+        }
+    }
+
+    // Strategia 2: passa magnet direttamente a mpv (funziona se il sistema ha un client torrent)
+    let mut mpv = state.mpv.lock().map_err(|e| e.to_string())?;
+    mpv.launch(&magnet, title.as_deref()).map_err(|e| e.to_string())?;
+    Ok("mpv".to_string()) // segnala che mpv è stato già avviato
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -108,7 +140,7 @@ pub fn run() {
             fetch_manifest, fetch_streams,
             launch_mpv, launch_mpv_embedded, launch_custom_player,
             mpv_command, mpv_stop, mpv_get_position, mpv_get_duration,
-            open_url,
+            open_url, stream_magnet,
         ])
         .run(tauri::generate_context!())
         .expect("error while running nuvio-desktop");

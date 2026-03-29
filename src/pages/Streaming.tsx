@@ -6,28 +6,33 @@ import { STREAMING_SERVICES, StreamingService, discoverByProvider, tmdbToMeta, h
 import { ArrowLeft, Film, Tv, Search, Loader2, AlertCircle, X, Star } from 'lucide-react';
 import clsx from 'clsx';
 
-// ─── Card servizio (grande, con backdrop) ─────────────────────────────────────
-function ServiceCard({ s, size }: { s: StreamingService; size: 'large' | 'small' }) {
+// ─── Card servizio — logo riempie il rettangolo ──────────────────────────────
+function ServiceCard({ s, large = false }: { s: StreamingService; large?: boolean }) {
   const [logoErr, setLogoErr] = useState(false);
   return (
     <Link to={`/streaming/${s.id}`}
-      className={clsx(
-        'group relative overflow-hidden rounded-2xl border border-white/[0.06] hover:border-white/25 transition-all duration-200 hover:scale-[1.02] cursor-pointer',
-        size === 'large' ? 'aspect-[16/9]' : 'aspect-[16/9]'
-      )}>
-      {/* Gradient background principale */}
-      <div className="absolute inset-0" style={{ background: `linear-gradient(135deg, ${s.color}60 0%, ${s.color}20 60%, #0a0a0f 100%)` }} />
-      {/* Overlay scuro per leggibilità */}
-      <div className="absolute inset-0 bg-black/30 group-hover:bg-black/10 transition-colors" />
-      {/* Logo centrato grande */}
-      <div className="absolute inset-0 flex items-center justify-center p-4">
-        {!logoErr && s.logo
-          ? <img src={s.logo} alt={s.name} className="max-h-14 max-w-[75%] object-contain drop-shadow-2xl group-hover:scale-105 transition-transform duration-200" onError={() => setLogoErr(true)} />
-          : <span className="text-5xl drop-shadow-2xl group-hover:scale-105 transition-transform">{s.logoFallback}</span>}
-      </div>
+      className="group relative overflow-hidden rounded-2xl border border-white/[0.06] hover:border-white/20 transition-all duration-200 hover:scale-[1.015] cursor-pointer block"
+      style={{ aspectRatio: '16/9' }}>
+      {/* Sfondo solido del brand */}
+      <div className="absolute inset-0" style={{ backgroundColor: s.color + '30', background: `linear-gradient(140deg, ${s.color}55, #0d0d14)` }} />
+      {/* Logo che riempie la card — object-cover per riempire, object-contain per mantenere proporzioni */}
+      {!logoErr && s.logo ? (
+        <img
+          src={s.logo}
+          alt={s.name}
+          className="absolute inset-0 w-full h-full object-contain p-8 group-hover:scale-105 transition-transform duration-300 drop-shadow-2xl"
+          onError={() => setLogoErr(true)}
+        />
+      ) : (
+        <div className="absolute inset-0 flex items-center justify-center">
+          <span className="text-7xl drop-shadow-2xl group-hover:scale-105 transition-transform duration-300">{s.logoFallback}</span>
+        </div>
+      )}
+      {/* Overlay scuro hover */}
+      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors rounded-2xl" />
       {/* Nome in basso */}
-      <div className="absolute bottom-0 left-0 right-0 px-4 py-3" style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.7) 0%, transparent 100%)' }}>
-        <p className="text-sm font-semibold text-white/80 group-hover:text-white transition-colors">{s.name}</p>
+      <div className="absolute bottom-0 left-0 right-0 px-4 py-3 opacity-0 group-hover:opacity-100 transition-opacity" style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.8) 0%, transparent 100%)' }}>
+        <p className="text-sm font-semibold text-white">{s.name}</p>
       </div>
     </Link>
   );
@@ -177,23 +182,33 @@ export default function Streaming() {
         </div>
       )}
 
-      {/* Layout stile screenshot: prima card grande, poi affiancate */}
+      {/* Layout identico screenshot: Netflix grande sx, 2 a dx, poi 4 in riga */}
       {visible.length >= 4 ? (
-        <div className="space-y-4">
-          {/* Prima riga: 1 grande + 2 medie */}
-          <div className="grid grid-cols-8 gap-4" style={{ gridTemplateColumns: '2fr 1.3fr 1.3fr' }}>
-            {visible[0] && <ServiceCard key={visible[0].id} s={visible[0]} size="large" />}
-            {visible[1] && <ServiceCard key={visible[1].id} s={visible[1]} size="small" />}
-            {visible[2] && <ServiceCard key={visible[2].id} s={visible[2]} size="small" />}
+        <div className="space-y-3">
+          {/* Riga 1: Netflix grande + 2 affiancate */}
+          <div className="grid gap-3" style={{ gridTemplateColumns: '1.5fr 1fr 1fr' }}>
+            {visible[0] && <ServiceCard key={visible[0].id} s={visible[0]} large />}
+            <div className="flex flex-col gap-3">
+              {visible[1] && <ServiceCard key={visible[1].id} s={visible[1]} />}
+            </div>
+            <div className="flex flex-col gap-3">
+              {visible[2] && <ServiceCard key={visible[2].id} s={visible[2]} />}
+            </div>
           </div>
-          {/* Seconda riga: le restanti uniformi */}
-          <div className="grid grid-cols-4 gap-4">
-            {visible.slice(3).map(s => <ServiceCard key={s.id} s={s} size="small" />)}
+          {/* Riga 2: 4 uniformi */}
+          <div className="grid grid-cols-4 gap-3">
+            {visible.slice(3, 7).map(s => <ServiceCard key={s.id} s={s} />)}
           </div>
+          {/* Riga 3: eventuali rimanenti */}
+          {visible.length > 7 && (
+            <div className="grid grid-cols-4 gap-3">
+              {visible.slice(7).map(s => <ServiceCard key={s.id} s={s} />)}
+            </div>
+          )}
         </div>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-          {visible.map(s => <ServiceCard key={s.id} s={s} size="small" />)}
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          {visible.map(s => <ServiceCard key={s.id} s={s} />)}
         </div>
       )}
     </div>

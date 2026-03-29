@@ -138,9 +138,27 @@ export default function VideoPlayer(props: VideoPlayerProps) {
   }
 
   async function initTorrent(magnetUri: string) {
-    // I magnet link vengono gestiti da mpv (supporto nativo se c'è un client torrent)
-    // oppure dall'utente che configura Real-Debrid in Torrentio per avere stream HTTP diretti
-    await tryMpv(magnetUri, undefined);
+    setMode('starting');
+    try {
+      // Prova a ottenere uno stream HTTP locale via webtorrent-cli/aria2c
+      const result = await invoke<string>('stream_magnet', {
+        magnet: magnetUri,
+        title: title ?? null,
+      });
+
+      if (result === 'mpv') {
+        // mpv è già stato avviato con il magnet
+        setMode('mpv');
+      } else if (result.startsWith('http')) {
+        // Abbiamo un URL HTTP locale → usa HTML5 player
+        initHTML5(result);
+      } else {
+        await tryMpv(magnetUri);
+      }
+    } catch {
+      // Fallback: prova mpv diretto (funziona se il sistema ha un client torrent registrato)
+      await tryMpv(magnetUri);
+    }
   }
 
   async function tryMpv(streamUrl: string, reason?: string) {
