@@ -8,9 +8,7 @@ import { MetaItem, Addon, AddonCatalog } from '../lib/types';
 import { Play, Clock, Plus, Zap, ChevronLeft, ChevronRight, Info } from 'lucide-react';
 import clsx from 'clsx';
 
-const SOURCE_LABEL: Record<string, string> = {
-  trakt: 'Trakt', simkl: 'Simkl', nuvio: 'Nuvio', local: 'Locale',
-};
+
 
 // ─── Hero featued (primo item del primo catalogo) ─────────────────────────────
 
@@ -175,7 +173,7 @@ interface Row { key: string; title: string; subtitle: string; items: MetaItem[];
 
 export default function Home() {
   const { addons } = useStore();
-  const { items: cwItems, loading: cwLoading, source: cwSource } = useContinueWatching();
+  const { items: cwItems, loading: cwLoading } = useContinueWatching();
   const [rows, setRows] = useState<Row[]>([]);
   const [heroItem, setHeroItem] = useState<MetaItem | null>(null);
   const addonsKey = addons.map(a => a.id).join('|');
@@ -229,7 +227,7 @@ export default function Home() {
         {(cwItems.length > 0 || cwLoading) && (
           <CatalogRow
             title="Continua a guardare"
-            subtitle={SOURCE_LABEL[cwSource]}
+            subtitle="In corso"
             items={cwItems as any}
             loading={cwLoading}
           />

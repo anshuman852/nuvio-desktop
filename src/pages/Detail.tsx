@@ -301,7 +301,11 @@ export default function Detail() {
         season={selectedVideo?.season}
         episode={selectedVideo?.episode}
         nextEpisode={nextEpisodeData ? { id: nextEpisodeData.id, title: nextEpisodeData.title, thumbnail: nextEpisodeData.thumbnail } : null}
-        onClose={() => setPlayerStream(null)}
+        onClose={() => {
+          setPlayerStream(null);
+          // Notifica Home di ricaricare il CW
+          window.dispatchEvent(new CustomEvent('nuvio:cw-updated'));
+        }}
         onNext={nextEpisodeData ? handleNext : undefined}
         initialProgress={0}
       />
@@ -411,29 +415,51 @@ export default function Detail() {
             <p className="text-xs text-white/25 flex items-center gap-1.5"><ExternalLink size={11} />Aggiungi la chiave TMDB nelle impostazioni per vedere cast e trame tradotte.</p>
           )}
 
-          {/* Episodes */}
-          {isSeries && meta?.videos && meta.videos.length > 0 && (
-            <div>
-              {/* Sort controls */}
-              {streamGroups.length > 0 && (
-                <div className="flex gap-2 mb-4 flex-wrap">
-                  {(['default','quality','size'] as const).map(s => {
-                    const labels = { default: '⚡ Default', quality: '🎬 Qualità', size: '💾 Dimensione' };
-                    return (
-                      <button key={s} onClick={() => setStreamSort(s)}
-                        className={clsx('text-xs px-3 py-1.5 rounded-full border transition-colors',
-                          streamSort === s ? 'border-[color:var(--accent)] bg-[color:var(--accent-bg)] text-[color:var(--accent)]' : 'border-white/10 text-white/50 hover:text-white hover:border-white/20')}>
-                        {labels[s]}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-
-              <h2 className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-3">Episodi · {meta.videos.length}</h2>
-              <EpisodeList videos={meta.videos} selectedId={selectedVideo?.id ?? null} onSelect={handleEpisodeSelect} />
-            </div>
-          )}
+          {/* Episodes — usa meta.videos (addon) oppure genera da TMDB seasons */}
+          {isSeries && (() => {
+            // Usa videos dall'addon se disponibili
+            const addonVideos = meta?.videos ?? [];
+            // Fallback: genera episodi dalle stagioni TMDB
+            const tmdbVideos: Video[] = [];
+            if (addonVideos.length === 0 && tmdb?.seasons) {
+              for (const season of tmdb.seasons) {
+                if (!season.season_number) continue;
+                for (let ep = 1; ep <= (season.episode_count ?? 0); ep++) {
+                  const imdbBase = meta?.id?.startsWith('tt') ? meta.id : (decodedId.startsWith('tt') ? decodedId : null);
+                  tmdbVideos.push({
+                    id: imdbBase ? `${imdbBase}:${season.season_number}:${ep}` : `${meta?.id}:${season.season_number}:${ep}`,
+                    title: `Episodio ${ep}`,
+                    season: season.season_number,
+                    episode: ep,
+                  });
+                }
+              }
+            }
+            const videos = addonVideos.length > 0 ? addonVideos : tmdbVideos;
+            if (videos.length === 0) return null;
+            return (
+              <div>
+                {streamGroups.length > 0 && (
+                  <div className="flex gap-2 mb-4 flex-wrap">
+                    {(['default','quality','size'] as const).map(s => {
+                      const labels = { default: '⚡ Default', quality: '🎬 Qualità', size: '💾 Dimensione' };
+                      return (
+                        <button key={s} onClick={() => setStreamSort(s)}
+                          className={clsx('text-xs px-3 py-1.5 rounded-full border transition-colors',
+                            streamSort === s ? 'border-[color:var(--accent)] bg-[color:var(--accent-bg)] text-[color:var(--accent)]' : 'border-white/10 text-white/50 hover:text-white hover:border-white/20')}>
+                          {labels[s]}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                <h2 className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-3">
+                  Episodi · {videos.length}
+                </h2>
+                <EpisodeList videos={videos} selectedId={selectedVideo?.id ?? null} onSelect={handleEpisodeSelect} />
+              </div>
+            );
+          })()}
 
           {/* Streams */}
           {(streamsLoading || streamGroups.length > 0 || streamError) && (

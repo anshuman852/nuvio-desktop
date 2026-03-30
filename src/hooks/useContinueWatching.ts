@@ -31,6 +31,13 @@ export function useContinueWatching() {
   // Reload quando cambia la storia locale (guardando qualcosa di nuovo)
   useEffect(() => { load(); }, [traktAuth?.token, simklAuth?.token, nuvioUser?.token, localHistory.length, localHistory[0]?.watchedAt]);
 
+  // Reload immediato quando il player chiude
+  useEffect(() => {
+    const handler = () => setTimeout(load, 300); // breve delay per lasciare scrivere allo store
+    window.addEventListener('nuvio:cw-updated', handler);
+    return () => window.removeEventListener('nuvio:cw-updated', handler);
+  }, []);
+
   async function load() {
     setLoading(true);
     const all: CWItem[] = [];
