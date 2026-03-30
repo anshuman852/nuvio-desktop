@@ -209,7 +209,7 @@ function AccountPage() {
 function ProfilesPage() {
   const { profiles, updateProfile, removeProfile, addProfile, activeProfileId } = useStore();
   const [editId, setEditId] = useState<string|null>(null);
-  const [cat, setCat] = useState('All');
+  
   const ep = profiles.find(p => p.id === editId);
 
   return (
@@ -219,7 +219,7 @@ function ProfilesPage() {
           {profiles.map(p => (
             <button key={p.id} onClick={() => setEditId(p.id)}
               className="w-full flex items-center gap-4 px-5 py-4 rounded-2xl bg-[#1e1e24] border border-white/[0.06] hover:border-white/20 text-left transition-colors">
-              <div className="w-12 h-12 rounded-full overflow-hidden flex-shrink-0"><AvatarImg url={p.avatarUrl} label={p.name} size={48} /></div>
+              <div className="w-12 h-12 rounded-full overflow-hidden flex-shrink-0"><AvatarImg url={p.avatarUrl} label={p.name} label={p.name} size={48} /></div>
               <div className="flex-1">
                 <p className="font-semibold text-white">{p.name}</p>
                 <p className="text-xs text-white/40">{p.isKids ? '🧸 Bambini' : 'Adulti'}{p.pin ? ' · 🔒 PIN' : ''}{p.id === activeProfileId ? ' · Attivo' : ''}</p>
@@ -228,7 +228,7 @@ function ProfilesPage() {
             </button>
           ))}
           {profiles.length < 5 && (
-            <button onClick={() => addProfile({ name: `Profilo ${profiles.length + 1}`, avatar: AVATARS[0].id, color: '#7c3aed', isKids: false })}
+            <button onClick={() => addProfile({ name: `Profilo ${profiles.length + 1}`, avatar: 'default', color: '#7c3aed', isKids: false })}
               className="w-full flex items-center gap-3 px-5 py-4 rounded-2xl border-2 border-dashed border-white/10 hover:border-white/25 transition-colors text-white/40 hover:text-white/60 text-sm">
               + Aggiungi profilo
             </button>
@@ -248,21 +248,9 @@ function ProfilesPage() {
                 className={ic + ' text-center text-xs py-2'} />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-xs text-white/40 uppercase tracking-wider mb-2">Scegli Avatar</p>
-              <div className="flex gap-1.5 flex-wrap mb-3">
-                {/* AVATAR_CATEGORIES removed */>
-                    {c}
-                  </button>
-                ))}
-              </div>
-              <div className="grid grid-cols-7 gap-1.5 max-h-40 overflow-y-auto">
-                {(cat === 'All' ? AVATARS : AVATARS.filter(a => a.category === cat)).map(av => (
-                  <button key={av.id} onClick={() => updateProfile(ep.id, { avatar: av.id })} title={av.label}
-                    className={clsx('w-11 h-11 rounded-full overflow-hidden border-2 transition-all hover:scale-105',
-                      ep.avatar === av.id ? 'border-white scale-105' : 'border-transparent opacity-70')}>
-                    <AvatarImg id={av.id} size={44} />
-                  </button>
-                ))}
+              <p className="text-xs text-white/40 uppercase tracking-wider mb-2">Avatar</p>
+              <div className="bg-white/5 rounded-xl px-4 py-3 text-xs text-white/40">
+                Modifica l'avatar dalla schermata principale Profili.
               </div>
             </div>
           </div>
@@ -710,7 +698,7 @@ export default function Settings() {
             <p className="text-sm text-white/40 mb-6">Seleziona una voce dal menu.</p>
             {activeProfile && (
               <div className="flex items-center gap-3 p-4 rounded-2xl bg-[#1e1e24] border border-white/[0.06] w-fit">
-                <div className="w-12 h-12 rounded-full overflow-hidden"><AvatarImg id={activeProfile.avatar ?? AVATARS[0].id} size={48} /></div>
+                <div className="w-12 h-12 rounded-full overflow-hidden"><AvatarImg id={activeProfile.avatar ?? AVATARS[0].id} label={p.name} size={48} /></div>
                 <div><p className="font-semibold text-white">{activeProfile.name}</p><p className="text-xs text-white/40">Profilo attivo</p></div>
               </div>
             )}
