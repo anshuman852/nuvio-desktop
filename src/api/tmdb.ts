@@ -75,12 +75,14 @@ export const STREAMING_SERVICES: StreamingService[] = [
 export async function discoverByProvider(
   providerId: number,
   type: 'movie' | 'tv',
-  page = 1
+  page = 1,
+  region = 'US'  // US ha più contenuti; IT limita troppo alcuni provider
 ): Promise<{ results: any[]; total_pages: number }> {
   return get(`/discover/${type}`, {
     with_watch_providers: String(providerId),
-    watch_region: 'IT',
+    watch_region: region,
     sort_by: 'popularity.desc',
+    include_adult: 'false',
     page: String(page),
   });
 }

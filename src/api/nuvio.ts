@@ -158,3 +158,68 @@ export async function getAllWatchedItems(userId: string): Promise<{ id: string; 
     name: r.name, poster: r.poster, watchedAt: r.watched_at,
   }));
 }
+
+// ─── Account Stats ────────────────────────────────────────────────────────────
+
+export interface AccountStats {
+  totalMovies: number;
+  totalEpisodes: number;
+  totalWatched: number;
+  librarySize: number;
+  watchTimeHours: number;
+}
+
+export async function getAccountStats(userId: string): Promise<AccountStats> {
+  if (!_userToken || !userId) return { totalMovies: 0, totalEpisodes: 0, totalWatched: 0, librarySize: 0, watchTimeHours: 0 };
+  try {
+    const [cwRes, watchedRes, libRes] = await Promise.all([
+      fetch(`${SUPABASE_URL}/rest/v1/continue_watching?select=content_type,duration,progress_pct&user_id=eq.${userId}`, { headers: sbH(true) }),
+      fetch(`${SUPABASE_URL}/rest/v1/watched_items?select=content_type&user_id=eq.${userId}`, { headers: sbH(true) }),
+      fetch(`${SUPABASE_URL}/rest/v1/library_items?select=content_type&user_id=eq.${userId}`, { headers: sbH(true) }),
+    ]);
+    const cw = cwRes.ok ? await cwRes.json() : [];
+    const watched = watchedRes.ok ? await watchedRes.json() : [];
+    const lib = libRes.ok ? await libRes.json() : [];
+
+    const movies = watched.filter((w: any) => w.content_type === 'movie').length;
+    const episodes = watched.filter((w: any) => w.content_type !== 'movie').length;
+    const watchTimeHours = cw.reduce((acc: number, w: any) => {
+      return acc + ((w.duration ?? 0) * (w.progress_pct ?? 0)) / 3600;
+    }, 0);
+
+    return { totalMovies: movies, totalEpisodes: episodes, totalWatched: watched.length, librarySize: lib.length, watchTimeHours: Math.round(watchTimeHours) };
+  } catch { return { totalMovies: 0, totalEpisodes: 0, totalWatched: 0, librarySize: 0, watchTimeHours: 0 }; }
+}
+
+// ─── Avatar Catalog da Supabase ───────────────────────────────────────────────
+
+export interface SupabaseAvatar {
+  id: string;
+  displayName: string;
+  imageUrl: string;
+  category: string;
+  sortOrder: number;
+  bgColor?: string;
+}
+
+export async function getAvatarCatalog(): Promise<SupabaseAvatar[]> {
+  const AVATAR_BASE = import.meta.env.VITE_SUPABASE_URL?.replace('//', '//') ?? '';
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_avatar_catalog`, {
+      method: 'POST',
+      headers: { ...sbH(), 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    if (!res.ok) return [];
+    const data: any[] = await res.json();
+    return data.map(item => ({
+      id: item.id,
+      displayName: item.display_name,
+      imageUrl: item.storage_path?.startsWith('http') ? item.storage_path
+        : `${AVATAR_BASE}/storage/v1/object/public/avatars/${item.storage_path}`,
+      category: item.category,
+      sortOrder: item.sort_order ?? 0,
+      bgColor: item.bg_color,
+    }));
+  } catch { return []; }
+}

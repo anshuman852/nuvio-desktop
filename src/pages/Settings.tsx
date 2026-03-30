@@ -1,9 +1,9 @@
 /// <reference types="vite/client" />
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useStore } from '../lib/store';
 import { openExternal } from '../api/stremio';
 import { validateTMDBKey, STREAMING_SERVICES } from '../api/tmdb';
-import { nuvioLogin, nuvioLogout, setAuthToken, getNuvioAddons, getContinueWatching, getAllWatchedItems } from '../api/nuvio';
+import { nuvioLogin, nuvioLogout, setAuthToken, getNuvioAddons, getContinueWatching, getAllWatchedItems, getAccountStats, getAvatarCatalog, type AccountStats, type SupabaseAvatar } from '../api/nuvio';
 import { getTraktDeviceCode, pollTraktToken, getTraktProfile } from '../api/trakt';
 import { getSimklPin, pollSimklToken, getSimklProfile } from '../api/simkl';
 import { getAvatar, getAvatarUrl, AVATARS, AVATAR_CATEGORIES, type AvatarCategory } from './ProfileSelect';
@@ -98,6 +98,13 @@ function AccountPage() {
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string|null>(null);
   const [syncMsg, setSyncMsg] = useState<string|null>(null);
+  const [stats, setStats] = useState<AccountStats | null>(null);
+
+  useEffect(() => {
+    if (nuvioUser?.id) {
+      getAccountStats(nuvioUser.id).then(setStats).catch(() => {});
+    }
+  }, [nuvioUser?.id]);
 
   async function login() {
     if (!email || !pw) return;
@@ -114,65 +121,83 @@ function AccountPage() {
     if (!nuvioUser) return;
     setSyncing(true); setSyncMsg(null);
     try {
-      // Importa addon
       const cloudAddons = await getNuvioAddons(nuvioUser.id);
       if (cloudAddons.length > 0) {
-        // Merge: aggiungi addon cloud che non sono già installati
         const currentIds = new Set(addons.map((a: any) => a.id));
         const newAddons = cloudAddons.filter((a: any) => !currentIds.has(a.id));
         if (newAddons.length > 0) setAddons([...addons, ...newAddons]);
       }
-      setSyncMsg(`✓ Sync completato`);
+      const s = await getAccountStats(nuvioUser.id);
+      setStats(s);
+      setSyncMsg('✓ Sync completato');
       setTimeout(() => setSyncMsg(null), 3000);
     } catch (e: any) { setSyncMsg(`Errore: ${e.message}`); }
     finally { setSyncing(false); }
   }
 
-  return (
+  if (nuvioUser) return (
     <div className="space-y-4">
-      {nuvioUser ? (
-        <>
-          <div className="rounded-2xl bg-[#1e1e24] border border-white/[0.06] p-5">
-            <div className="flex items-center gap-4 mb-4">
-              <div className="w-14 h-14 rounded-full overflow-hidden bg-[color:var(--accent)] flex items-center justify-center">
-                {nuvioUser.avatar
-                  ? <img src={nuvioUser.avatar} className="w-full h-full object-cover" />
-                  : <User size={24} className="text-white" />}
-              </div>
-              <div>
-                <p className="text-lg font-bold text-white">{nuvioUser.name}</p>
-                <p className="text-xs text-white/40">{nuvioUser.email}</p>
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <button onClick={syncAll} disabled={syncing}
-                className="flex items-center gap-2 px-4 py-2 text-sm text-white rounded-xl disabled:opacity-50" style={{ backgroundColor: 'var(--accent,#7c3aed)' }}>
-                {syncing ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} />}
-                Importa da Nuvio
-              </button>
-              <button onClick={() => { nuvioLogout(); setAuthToken(null); setNuvioUser(null); }}
-                className="flex items-center gap-2 px-4 py-2 text-sm text-red-400 bg-red-500/10 rounded-xl">
-                <LogOut size={14} />Esci
-              </button>
-            </div>
-            {syncMsg && <p className="text-xs text-green-400 mt-2">{syncMsg}</p>}
+      {/* Header account */}
+      <div className="rounded-2xl bg-[#1e1e24] border border-white/[0.06] overflow-hidden">
+        <div className="p-5 flex items-center gap-4">
+          <div className="w-16 h-16 rounded-full overflow-hidden bg-[color:var(--accent)] flex items-center justify-center flex-shrink-0">
+            {nuvioUser.avatar
+              ? <img src={nuvioUser.avatar} className="w-full h-full object-cover" alt={nuvioUser.name} />
+              : <User size={28} className="text-white" />}
           </div>
-          <p className="text-xs text-white/30 px-1">Il sync importa addon, CW e libreria dal tuo account Nuvio cloud.</p>
-        </>
-      ) : (
-        <div className="rounded-2xl bg-[#1e1e24] border border-white/[0.06] p-5 space-y-3">
-          <p className="text-base font-semibold text-white">Accedi a Nuvio</p>
-          <p className="text-xs text-white/40">Sincronizza CW, libreria e addon con il tuo account Nuvio.</p>
-          <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" className={ic} />
-          <input type="password" value={pw} onChange={e => setPw(e.target.value)} onKeyDown={e => e.key === 'Enter' && login()} placeholder="Password" className={ic} />
-          {error && <p className="text-xs text-red-400 flex items-center gap-1"><AlertCircle size={12} />{error}</p>}
-          <button onClick={login} disabled={loading || !email || !pw}
-            className="w-full flex items-center gap-2 justify-center py-3 text-white rounded-2xl text-sm font-medium disabled:opacity-50"
-            style={{ backgroundColor: 'var(--accent,#7c3aed)' }}>
-            {loading ? <RefreshCw size={15} className="animate-spin" /> : <LogIn size={15} />}Accedi
+          <div className="flex-1 min-w-0">
+            <p className="text-xl font-bold text-white">{nuvioUser.name}</p>
+            <p className="text-xs text-white/40 mt-0.5">{nuvioUser.email}</p>
+            <p className="text-xs text-white/25 mt-0.5 font-mono">{nuvioUser.id?.slice(0,8)}…</p>
+          </div>
+        </div>
+
+        {/* Stats */}
+        {stats && (
+          <div className="grid grid-cols-4 border-t border-white/[0.06]">
+            {[
+              { label: 'Film visti', value: stats.totalMovies, icon: '🎬' },
+              { label: 'Episodi', value: stats.totalEpisodes, icon: '📺' },
+              { label: 'In libreria', value: stats.librarySize, icon: '📚' },
+              { label: 'Ore viste', value: stats.watchTimeHours, icon: '⏱️' },
+            ].map(s => (
+              <div key={s.label} className="flex flex-col items-center py-4 border-r border-white/[0.06] last:border-r-0">
+                <span className="text-lg">{s.icon}</span>
+                <span className="text-xl font-bold text-white mt-1">{s.value}</span>
+                <span className="text-xs text-white/35 mt-0.5">{s.label}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="flex gap-2 p-4 border-t border-white/[0.06]">
+          <button onClick={syncAll} disabled={syncing}
+            className="flex items-center gap-2 px-4 py-2 text-sm text-white rounded-xl disabled:opacity-50 flex-1 justify-center" style={{ backgroundColor: 'var(--accent,#7c3aed)' }}>
+            {syncing ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} />}
+            Sincronizza da cloud
+          </button>
+          <button onClick={() => { nuvioLogout(); setAuthToken(null); setNuvioUser(null); }}
+            className="flex items-center gap-2 px-4 py-2 text-sm text-red-400 bg-red-500/10 rounded-xl">
+            <LogOut size={14} />Esci
           </button>
         </div>
-      )}
+        {syncMsg && <p className="text-xs text-green-400 px-5 pb-3">{syncMsg}</p>}
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="rounded-2xl bg-[#1e1e24] border border-white/[0.06] p-5 space-y-3">
+      <p className="text-base font-semibold text-white">Accedi a Nuvio</p>
+      <p className="text-xs text-white/40">Sincronizza CW, libreria e addon con il tuo account Nuvio.</p>
+      <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" className={ic} />
+      <input type="password" value={pw} onChange={e => setPw(e.target.value)} onKeyDown={e => e.key === 'Enter' && login()} placeholder="Password" className={ic} />
+      {error && <p className="text-xs text-red-400 flex items-center gap-1"><AlertCircle size={12} />{error}</p>}
+      <button onClick={login} disabled={loading || !email || !pw}
+        className="w-full flex items-center gap-2 justify-center py-3 text-white rounded-2xl text-sm font-medium disabled:opacity-50"
+        style={{ backgroundColor: 'var(--accent,#7c3aed)' }}>
+        {loading ? <RefreshCw size={15} className="animate-spin" /> : <LogIn size={15} />}Accedi
+      </button>
     </div>
   );
 }
