@@ -2,10 +2,11 @@
 import { useEffect, useState, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useStore } from '../lib/store';
+import { removeCW } from '../api/nuvio';
 import { fetchCatalog } from '../api/stremio';
 import { useContinueWatching } from '../hooks/useContinueWatching';
 import { MetaItem, Addon, AddonCatalog } from '../lib/types';
-import { Play, Clock, Plus, Zap, ChevronLeft, ChevronRight, Info } from 'lucide-react';
+import { Play, X, Clock, Plus, Zap, ChevronLeft, ChevronRight, Info } from 'lucide-react';
 import clsx from 'clsx';
 
 
@@ -61,7 +62,7 @@ function HeroSection({ item }: { item: MetaItem }) {
 
 // ─── Poster card ──────────────────────────────────────────────────────────────
 
-function PosterCard({ item }: { item: any }) {
+function PosterCard({ item, onRemove }: { item: any; onRemove?: (id: string) => void }) {
   const [imgErr, setImgErr] = useState(false);
   const [tmdbPoster, setTmdbPoster] = useState<string|null>(null);
   const { settings } = useStore();
@@ -173,7 +174,9 @@ interface Row { key: string; title: string; subtitle: string; items: MetaItem[];
 
 export default function Home() {
   const { addons } = useStore();
-  const { items: cwItems, loading: cwLoading } = useContinueWatching();
+  const { items: cwItems, loading: cwLoading, reload: reloadCW } = useContinueWatching();
+  const { nuvioUser, removeWatch } = useStore();
+  const dispatch = () => { window.dispatchEvent(new CustomEvent('nuvio:cw-updated')); };
   const [rows, setRows] = useState<Row[]>([]);
   const [heroItem, setHeroItem] = useState<MetaItem | null>(null);
   const addonsKey = addons.map(a => a.id).join('|');
@@ -229,6 +232,7 @@ export default function Home() {
             title="Continua a guardare"
             subtitle="In corso"
             items={cwItems as any}
+            onRemoveItem={async (id: string) => { removeWatch(id); if (nuvioUser?.id) removeCW(nuvioUser.id, id).catch(()=>{}); dispatch(); }}
             loading={cwLoading}
           />
         )}

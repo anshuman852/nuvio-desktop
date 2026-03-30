@@ -61,16 +61,35 @@ export interface NuvioCW {
 
 export async function getContinueWatching(userId: string): Promise<NuvioCW[]> {
   if (!_userToken || !userId) return [];
-  const res = await fetch(
-    `${SUPABASE_URL}/rest/v1/continue_watching?select=*&user_id=eq.${userId}&order=updated_at.desc&limit=50`,
-    { headers: sbH(true) }
-  );
-  if (!res.ok) return [];
-  return ((await res.json()) ?? []).map((r: any): NuvioCW => ({
-    id: r.content_id, type: r.content_type, name: r.name ?? '',
-    poster: r.poster, videoId: r.video_id, season: r.season, episode: r.episode,
-    progress: r.progress_pct ?? 0, duration: r.duration ?? 0, updatedAt: r.updated_at,
-  }));
+  // Prova prima con watch_progress (schema Kotlin), fallback a continue_watching
+  const tables = ['watch_progress', 'continue_watching'];
+  for (const table of tables) {
+    try {
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/${table}?select=*&user_id=eq.${userId}&order=last_watched.desc,updated_at.desc&limit=50`,
+        { headers: sbH(true) }
+      );
+      if (!res.ok) continue;
+      const data = await res.json();
+      if (!Array.isArray(data) || data.length === 0) continue;
+      return data.map((r: any): NuvioCW => {
+        // Supporta sia schema Kotlin (position/duration in ms) che legacy (progress_pct/duration in sec)
+        const durationSec = r.duration ? (r.duration > 3600000 ? r.duration / 1000 : r.duration) : 0;
+        const progress = r.progress_pct ?? (r.position && r.duration ? r.position / r.duration : 0);
+        return {
+          id: r.content_id, type: r.content_type,
+          name: r.name ?? r.title ?? '',
+          poster: r.poster,
+          videoId: r.video_id ?? r.progress_key?.split(':').slice(0, -2).join(':'),
+          season: r.season,
+          episode: r.episode,
+          progress, duration: durationSec,
+          updatedAt: r.updated_at ?? new Date(r.last_watched ?? 0).toISOString(),
+        };
+      });
+    } catch { continue; }
+  }
+  return [];
 }
 
 export async function upsertCW(userId: string, item: {
@@ -79,17 +98,60 @@ export async function upsertCW(userId: string, item: {
   progress: number; duration: number;
 }): Promise<void> {
   if (!_userToken || !userId) return;
-  await fetch(`${SUPABASE_URL}/rest/v1/continue_watching`, {
+  const now = Date.now();
+  const progressKey = item.videoId
+    ? `${item.id}:${item.season ?? 0}:${item.episode ?? 0}`
+    : item.id;
+
+  // Scrivi in watch_progress (schema Kotlin ufficiale)
+  const wpBody = {
+    user_id: userId,
+    content_id: item.id,
+    content_type: item.type,
+    video_id: item.videoId ?? item.id,
+    season: item.season ?? null,
+    episode: item.episode ?? null,
+    position: Math.round((item.progress * item.duration) * 1000), // ms
+    duration: Math.round(item.duration * 1000), // ms
+    last_watched: now,
+    progress_key: progressKey,
+    profile_id: 1,
+    name: item.name,
+    poster: item.poster ?? null,
+  };
+  await fetch(`${SUPABASE_URL}/rest/v1/watch_progress`, {
     method: 'POST',
     headers: { ...sbH(true), Prefer: 'resolution=merge-duplicates' },
-    body: JSON.stringify({
-      user_id: userId, content_id: item.id, content_type: item.type,
-      name: item.name, poster: item.poster, video_id: item.videoId,
-      season: item.season, episode: item.episode,
-      progress_pct: item.progress, duration: item.duration,
-      updated_at: new Date().toISOString(),
-    }),
+    body: JSON.stringify(wpBody),
+  }).catch(() => {
+    // Fallback a continue_watching
+    return fetch(`${SUPABASE_URL}/rest/v1/continue_watching`, {
+      method: 'POST',
+      headers: { ...sbH(true), Prefer: 'resolution=merge-duplicates' },
+      body: JSON.stringify({
+        user_id: userId, content_id: item.id, content_type: item.type,
+        name: item.name, poster: item.poster, video_id: item.videoId,
+        season: item.season, episode: item.episode,
+        progress_pct: item.progress, duration: item.duration,
+        updated_at: new Date(now).toISOString(),
+      }),
+    });
   });
+}
+
+// ─── Rimuovi da CW ───────────────────────────────────────────────────────────
+export async function removeCW(userId: string, contentId: string): Promise<void> {
+  if (!_userToken || !userId) return;
+  await Promise.allSettled([
+    fetch(`${SUPABASE_URL}/rest/v1/watch_progress?user_id=eq.${userId}&content_id=eq.${contentId}`, { method: 'DELETE', headers: sbH(true) }),
+    fetch(`${SUPABASE_URL}/rest/v1/continue_watching?user_id=eq.${userId}&content_id=eq.${contentId}`, { method: 'DELETE', headers: sbH(true) }),
+  ]);
+}
+
+// ─── Rimuovi da Library ───────────────────────────────────────────────────────
+export async function removeFromLibrary(userId: string, contentId: string): Promise<void> {
+  if (!_userToken || !userId) return;
+  await fetch(`${SUPABASE_URL}/rest/v1/library_items?user_id=eq.${userId}&content_id=eq.${contentId}`, { method: 'DELETE', headers: sbH(true) });
 }
 
 // ─── Addons sync ──────────────────────────────────────────────────────────────
@@ -173,7 +235,7 @@ export async function getAccountStats(userId: string): Promise<AccountStats> {
   if (!_userToken || !userId) return { totalMovies: 0, totalEpisodes: 0, totalWatched: 0, librarySize: 0, watchTimeHours: 0 };
   try {
     const [cwRes, watchedRes, libRes] = await Promise.all([
-      fetch(`${SUPABASE_URL}/rest/v1/continue_watching?select=content_type,duration,progress_pct&user_id=eq.${userId}`, { headers: sbH(true) }),
+      fetch(`${SUPABASE_URL}/rest/v1/watch_progress?select=content_type,duration,position&user_id=eq.${userId}`, { headers: sbH(true) }).catch(() => fetch(`${SUPABASE_URL}/rest/v1/continue_watching?select=content_type,duration,progress_pct&user_id=eq.${userId}`, { headers: sbH(true) })),
       fetch(`${SUPABASE_URL}/rest/v1/watched_items?select=content_type&user_id=eq.${userId}`, { headers: sbH(true) }),
       fetch(`${SUPABASE_URL}/rest/v1/library_items?select=content_type&user_id=eq.${userId}`, { headers: sbH(true) }),
     ]);

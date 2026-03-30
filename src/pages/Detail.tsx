@@ -503,6 +503,13 @@ export default function Detail() {
                             const quality = ((stream.name ?? '') + ' ' + (stream.title ?? '')).match(/(4K|2160p|1080p|720p|480p|HDR|HEVC)/gi)?.slice(0,2).join(' ') ?? '';
                             const size = stream.behaviorHints?.videoSize ? `${(stream.behaviorHints.videoSize / 1e9).toFixed(1)} GB` : '';
                             const isActive = activeGroupIdx === gi && activeStreamIdx === si;
+                            // Estrai info dalla description/title dello stream
+                            const desc = stream.description ?? stream.title ?? '';
+                            const seeds = desc.match(/👤\s*(\d+)/)?.[1];
+                            const langs = desc.match(/[🇮🇹🇬🇧🇺🇸🏴󠁧󠁢󠁥󠁮󠁧󠁿]+/g)?.slice(0,3).join(' ') ?? '';
+                            const source = stream.behaviorHints?.filename
+                              ? stream.behaviorHints.filename.replace(/\.[^.]+$/, '').slice(0,30)
+                              : desc.split('\n').find((l: string) => l.includes('from') || l.includes('⚙️'))?.slice(0,30) ?? '';
                             return (
                               <button key={si} type="button"
                                 onClick={() => handlePlay(stream, gi, si)}
@@ -510,22 +517,22 @@ export default function Detail() {
                                   'w-full text-left px-3 py-2.5 rounded-xl border transition-all duration-150 group/s',
                                   isActive
                                     ? 'border-[color:var(--accent)] bg-[color:var(--accent-bg)]'
-                                    : 'border-white/[0.07] bg-white/[0.02] hover:border-[color:var(--accent)] hover:bg-[color:var(--accent-bg)] cursor-pointer'
+                                    : 'border-white/[0.07] bg-white/[0.03] hover:border-[color:var(--accent)] hover:bg-[color:var(--accent-bg)] cursor-pointer'
                                 )}>
-                                <div className="flex items-center justify-between gap-2">
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
-                                      {quality && <span className="text-xs font-bold" style={{ color: isActive ? 'var(--accent)' : 'rgba(255,255,255,0.8)' }}>{quality}</span>}
-                                      {hasMagnet && !hasUrl && <span className="text-xs text-amber-400">🧲</span>}
-                                      {size && <span className="text-xs text-white/40">{size}</span>}
-                                    </div>
-                                    {stream.title && <p className="text-xs text-white/40 line-clamp-1">{stream.title}</p>}
+                                <div className="flex items-start justify-between gap-2 mb-1">
+                                  <div className="flex items-center gap-1.5 flex-wrap flex-1 min-w-0">
+                                    {quality && <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-white/10" style={{ color: isActive ? 'var(--accent)' : 'white' }}>{quality}</span>}
+                                    {hasMagnet && !hasUrl && <span className="text-[10px] px-1 py-0.5 rounded bg-amber-500/20 text-amber-400">🧲 P2P</span>}
+                                    {langs && <span className="text-[10px] text-white/50">{langs}</span>}
                                   </div>
-                                  <div className={clsx('w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 transition-colors',
+                                  <div className={clsx('w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 transition-colors mt-0.5',
                                     isActive ? 'bg-[color:var(--accent)]' : 'bg-white/10 group-hover/s:bg-[color:var(--accent)]')}>
-                                    <Play size={9} className="ml-0.5 fill-white text-white" />
+                                    <Play size={10} className="ml-0.5 fill-white text-white" />
                                   </div>
                                 </div>
+                                {size && <p className="text-xs text-white/60 font-mono">{size}</p>}
+                                {source && <p className="text-[10px] text-white/30 line-clamp-1 mt-0.5">{source}</p>}
+                                {seeds && <p className="text-[10px] text-green-400/70">👤 {seeds}</p>}
                               </button>
                             );
                           })}
@@ -587,20 +594,43 @@ export default function Detail() {
             </div>
           )}
 
-          {/* Provider TMDB */}
-          {tmdb?.['watch/providers']?.results?.IT && (
-            <div>
-              <h2 className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-3">Disponibile su</h2>
-              <div className="flex gap-2 flex-wrap">
-                {[...(tmdb['watch/providers'].results.IT?.flatrate ?? []), ...(tmdb['watch/providers'].results.IT?.rent ?? [])].slice(0, 6).map((p: any) => (
-                  <div key={p.provider_id} className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/[0.05] border border-white/[0.07]">
-                    {p.logo_path && <img src={tmdbImg(p.logo_path, 'w45')} alt={p.provider_name} className="w-5 h-5 rounded" />}
-                    <span className="text-xs text-white/60">{p.provider_name}</span>
-                  </div>
-                ))}
+          {/* Where to watch — cliccabile → sezione streaming */}
+          {tmdb?.['watch/providers']?.results && (() => {
+            const regions = ['IT', 'US', 'GB'];
+            const providers: any[] = [];
+            const seen = new Set<number>();
+            for (const r of regions) {
+              const region = tmdb['watch/providers'].results[r];
+              if (!region) continue;
+              for (const p of [...(region.flatrate ?? []), ...(region.free ?? []), ...(region.ads ?? [])]) {
+                if (!seen.has(p.provider_id)) { seen.add(p.provider_id); providers.push(p); }
+              }
+              if (providers.length >= 6) break;
+            }
+            if (providers.length === 0) return null;
+            return (
+              <div>
+                <h2 className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-3">Disponibile su</h2>
+                <div className="flex gap-2 flex-wrap">
+                  {providers.slice(0, 8).map((p: any) => {
+                    const pname = p.provider_name?.toLowerCase() ?? '';
+                    const service = STREAMING_SERVICES.find(s =>
+                      pname.includes(s.id) || pname.includes(s.name.toLowerCase().split(' ')[0])
+                    );
+                    const inner = (
+                      <div key={p.provider_id} className="flex items-center gap-2 px-3 py-2 rounded-xl border transition-all duration-150 bg-white/[0.05] border-white/[0.07] hover:border-white/20 hover:bg-white/[0.08]">
+                        {p.logo_path && <img src={tmdbImg(p.logo_path, 'w45')} alt={p.provider_name} className="w-6 h-6 rounded-lg" />}
+                        <span className="text-xs text-white/70 font-medium">{p.provider_name}</span>
+                      </div>
+                    );
+                    return service
+                      ? <Link key={p.provider_id} to={`/streaming/${service.id}`}>{inner}</Link>
+                      : <div key={p.provider_id}>{inner}</div>;
+                  })}
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* Simili */}
           {(tmdb?.recommendations?.results ?? tmdb?.similar?.results)?.length > 0 && (

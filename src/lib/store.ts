@@ -57,6 +57,7 @@ interface Store {
   watchHistory: Record<string, WatchEntry[]>;
   upsertWatch: (e: Omit<WatchEntry, 'watchedAt'>) => void;
   clearHistory: () => void;
+  removeWatch: (id: string) => void;
 
   // Auth
   nuvioUser: NuvioUser | null;
@@ -132,6 +133,10 @@ export const useStore = create<Store>()(
       clearHistory: () => set((s) => ({
         watchHistory: { ...s.watchHistory, [s.activeProfileId]: [] },
       })),
+      removeWatch: (id: string) => set((s) => {
+        const pid = s.activeProfileId;
+        return { watchHistory: { ...s.watchHistory, [pid]: (s.watchHistory[pid] ?? []).filter(h => h.id !== id) } };
+      }),
 
       // ── Auth ─────────────────────────────────────────────────────────────────
       nuvioUser: null,

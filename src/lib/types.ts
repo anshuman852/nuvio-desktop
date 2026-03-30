@@ -115,12 +115,14 @@ export interface NuvioUser {
   token: string;
   name?: string;
   avatar?: string;
+  avatarUrl?: string;
 }
 
 export interface TraktAuth {
   username: string;
   name: string;
   avatar?: string;
+  avatarUrl?: string;
   token: string;
   refreshToken: string;
   expiresAt: number;
@@ -131,6 +133,7 @@ export interface SimklAuth {
   username: string;
   name: string;
   avatar?: string;
+  avatarUrl?: string;
   token: string;
 }
 
