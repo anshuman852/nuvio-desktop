@@ -232,7 +232,7 @@ export default function Home() {
             title="Continua a guardare"
             subtitle="In corso"
             items={cwItems as any}
-            onRemoveItem={async (id: string) => { removeWatch(id); if (nuvioUser?.id) removeCW(nuvioUser.id, id).catch(()=>{}); dispatch(); }}
+
             loading={cwLoading}
           />
         )}

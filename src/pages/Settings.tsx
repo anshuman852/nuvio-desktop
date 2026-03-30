@@ -1,3 +1,4 @@
+import React from 'react';
 /// <reference types="vite/client" />
 import { useState, useRef, useEffect } from 'react';
 import { useStore } from '../lib/store';
@@ -6,7 +7,7 @@ import { validateTMDBKey, STREAMING_SERVICES } from '../api/tmdb';
 import { nuvioLogin, nuvioLogout, setAuthToken, getNuvioAddons, getContinueWatching, getAllWatchedItems, getAccountStats, getAvatarCatalog, type AccountStats, type SupabaseAvatar } from '../api/nuvio';
 import { getTraktDeviceCode, pollTraktToken, getTraktProfile } from '../api/trakt';
 import { getSimklPin, pollSimklToken, getSimklProfile } from '../api/simkl';
-import { getAvatar, getAvatarUrl, AVATARS, AVATAR_CATEGORIES, type AvatarCategory } from './ProfileSelect';
+// avatar imports removed - use avatarUrl directly
 import {
   User, Users, Palette, Grid, Link2, Play, Info, ChevronRight, ChevronDown, ChevronUp,
   LogIn, LogOut, RefreshCw, ExternalLink, Save, Trash2, Key, AlertCircle,
@@ -19,9 +20,12 @@ const ic = 'w-full px-4 py-3 rounded-2xl bg-white/5 border border-white/[0.08] f
 
 // ─── Componenti base ──────────────────────────────────────────────────────────
 
-function AvatarImg({ id, size = 40 }: { id: string; size?: number }) {
-  const av = getAvatar(id);
-  return <img src={getAvatarUrl(av.seed, av.style, size * 2)} alt={av.label} className="w-full h-full object-cover" loading="lazy" />;
+function AvatarImg({ url, label, size = 40 }: { url?: string; label?: string; size?: number }) {
+  const [err, setErr] = React.useState(false);
+  if (!url || err) {
+    return <div className="w-full h-full flex items-center justify-center font-bold text-white rounded-full text-lg" style={{ background: 'var(--accent,#7c3aed)' }}>{(label ?? 'U').charAt(0)}</div>;
+  }
+  return <img src={url} alt={label ?? ''} className="w-full h-full object-cover" onError={() => setErr(true)} loading="lazy" />;
 }
 
 function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
@@ -205,7 +209,7 @@ function AccountPage() {
 function ProfilesPage() {
   const { profiles, updateProfile, removeProfile, addProfile, activeProfileId } = useStore();
   const [editId, setEditId] = useState<string|null>(null);
-  const [cat, setCat] = useState<AvatarCategory>('All');
+  const [cat, setCat] = useState('All');
   const ep = profiles.find(p => p.id === editId);
 
   return (
@@ -215,7 +219,7 @@ function ProfilesPage() {
           {profiles.map(p => (
             <button key={p.id} onClick={() => setEditId(p.id)}
               className="w-full flex items-center gap-4 px-5 py-4 rounded-2xl bg-[#1e1e24] border border-white/[0.06] hover:border-white/20 text-left transition-colors">
-              <div className="w-12 h-12 rounded-full overflow-hidden flex-shrink-0"><AvatarImg id={p.avatar ?? AVATARS[0].id} size={48} /></div>
+              <div className="w-12 h-12 rounded-full overflow-hidden flex-shrink-0"><AvatarImg url={p.avatarUrl} label={p.name} size={48} /></div>
               <div className="flex-1">
                 <p className="font-semibold text-white">{p.name}</p>
                 <p className="text-xs text-white/40">{p.isKids ? '🧸 Bambini' : 'Adulti'}{p.pin ? ' · 🔒 PIN' : ''}{p.id === activeProfileId ? ' · Attivo' : ''}</p>
@@ -239,16 +243,14 @@ function ProfilesPage() {
           </div>
           <div className="flex gap-5">
             <div className="flex flex-col items-center gap-2 w-32 flex-shrink-0">
-              <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-[color:var(--accent,#7c3aed)]"><AvatarImg id={ep.avatar ?? AVATARS[0].id} size={96} /></div>
+              <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-[color:var(--accent,#7c3aed)]"><AvatarImg url={ep.avatarUrl} label={ep.name} size={96} /></div>
               <input defaultValue={ep.name} onBlur={e => updateProfile(ep.id, { name: e.target.value })}
                 className={ic + ' text-center text-xs py-2'} />
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-xs text-white/40 uppercase tracking-wider mb-2">Scegli Avatar</p>
               <div className="flex gap-1.5 flex-wrap mb-3">
-                {AVATAR_CATEGORIES.map(c => (
-                  <button key={c} onClick={() => setCat(c)}
-                    className={clsx('px-3 py-1 rounded-full text-xs border', cat === c ? 'bg-white text-black border-white' : 'border-white/20 text-white/50')}>
+                {/* AVATAR_CATEGORIES removed */>
                     {c}
                   </button>
                 ))}

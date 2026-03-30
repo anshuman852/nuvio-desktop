@@ -39,7 +39,7 @@ interface Store {
   profiles: Profile[];
   activeProfileId: string;
   profileSelected: boolean;
-  addProfile: (p: Omit<Profile, 'id' | 'createdAt'>) => void;
+  addProfile: (p: Omit<Profile, 'id' | 'createdAt'>) => void;  // avatarUrl opzionale
   updateProfile: (id: string, patch: Partial<Profile>) => void;
   removeProfile: (id: string) => void;
   setActiveProfile: (id: string) => void;

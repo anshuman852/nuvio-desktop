@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { Home, Search as SearchIcon, Library, Package, Settings, X, Tv } from 'lucide-react';
 import clsx from 'clsx';
 import { useStore } from './lib/store';
-import { getAvatar, getAvatarUrl, AVATARS } from './pages/ProfileSelect';
+// avatar helpers rimossi - ora avatarUrl è diretto nel profilo
 
 import HomePage from './pages/Home';
 import DetailPage from './pages/Detail';
@@ -38,7 +38,7 @@ const NAV = [
 function Sidebar({ collapsed }: { collapsed: boolean }) {
   const { profiles, activeProfileId, setProfileSelected } = useStore();
   const activeProfile = profiles.find(p => p.id === activeProfileId) ?? profiles[0];
-  const av = getAvatar(activeProfile?.avatar ?? AVATARS[0].id);
+  
 
   return (
     <aside className={clsx(
@@ -73,7 +73,7 @@ function Sidebar({ collapsed }: { collapsed: boolean }) {
           className="flex items-center gap-2.5 px-4 py-3 border-t border-white/[0.05] hover:bg-white/5 transition-colors">
           <div className="w-7 h-7 rounded-xl flex items-center justify-center text-base flex-shrink-0"
             style={{ backgroundColor: '#7c3aed26' }}>
-            <img src={getAvatarUrl(av.seed, av.style, 28)} alt="" className="w-full h-full object-cover" />
+            <img src={profile?.avatarUrl ?? ''} alt="" className="w-full h-full object-cover" />
           </div>
           <div className="flex-1 min-w-0 text-left">
             <p className="text-xs font-medium text-white/60 truncate">{activeProfile?.name}</p>
@@ -83,7 +83,7 @@ function Sidebar({ collapsed }: { collapsed: boolean }) {
       )}
       {collapsed && (
         <button onClick={() => setProfileSelected(false)} className="flex justify-center py-3 border-t border-white/[0.05] hover:bg-white/5 transition-colors">
-          <div className="w-7 h-7 rounded-xl flex items-center justify-center text-base" style={{ backgroundColor: 'var(--accent-bg)' }}><img src={getAvatarUrl(av.seed, av.style, 28)} alt="" className="w-full h-full object-cover" /></div>
+          <div className="w-7 h-7 rounded-xl flex items-center justify-center text-base" style={{ backgroundColor: 'var(--accent-bg)' }}><img src={profile?.avatarUrl ?? ''} alt="" className="w-full h-full object-cover" /></div>
         </button>
       )}
     </aside>

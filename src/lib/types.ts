@@ -85,7 +85,8 @@ export interface StreamGroup {
 export interface Profile {
   id: string;
   name: string;
-  avatar: string;          // avatar id (es. 'red', 'blue'…)
+  avatar: string;          // avatar id
+  avatarUrl?: string;      // URL immagine avatar (Supabase storage)
   color: string;
   isKids: boolean;
   pin?: string;
