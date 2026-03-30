@@ -219,7 +219,7 @@ function ProfilesPage() {
           {profiles.map(p => (
             <button key={p.id} onClick={() => setEditId(p.id)}
               className="w-full flex items-center gap-4 px-5 py-4 rounded-2xl bg-[#1e1e24] border border-white/[0.06] hover:border-white/20 text-left transition-colors">
-              <div className="w-12 h-12 rounded-full overflow-hidden flex-shrink-0"><AvatarImg url={p.avatarUrl} label={p.name} label={p.name} size={48} /></div>
+              <div className="w-12 h-12 rounded-full overflow-hidden flex-shrink-0"><AvatarImg url={p.avatarUrl} label={p.name} size={48} /></div>
               <div className="flex-1">
                 <p className="font-semibold text-white">{p.name}</p>
                 <p className="text-xs text-white/40">{p.isKids ? '🧸 Bambini' : 'Adulti'}{p.pin ? ' · 🔒 PIN' : ''}{p.id === activeProfileId ? ' · Attivo' : ''}</p>
@@ -698,7 +698,7 @@ export default function Settings() {
             <p className="text-sm text-white/40 mb-6">Seleziona una voce dal menu.</p>
             {activeProfile && (
               <div className="flex items-center gap-3 p-4 rounded-2xl bg-[#1e1e24] border border-white/[0.06] w-fit">
-                <div className="w-12 h-12 rounded-full overflow-hidden"><AvatarImg id={activeProfile.avatar ?? AVATARS[0].id} label={p.name} size={48} /></div>
+                <div className="w-12 h-12 rounded-full overflow-hidden"><AvatarImg url={activeProfile.avatarUrl} label={activeProfile.name} size={48} /></div>
                 <div><p className="font-semibold text-white">{activeProfile.name}</p><p className="text-xs text-white/40">Profilo attivo</p></div>
               </div>
             )}
