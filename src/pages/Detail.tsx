@@ -378,7 +378,11 @@ export default function Detail() {
 
       {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto" style={{ overflowY: "auto" }}>
-        <div className="px-5 py-5 space-y-7 max-w-5xl">
+        <div className="px-5 py-5 max-w-6xl">
+        {/* Layout 2 colonne: info+episodi a sinistra, stream a destra */}
+        <div className="flex gap-6">
+        {/* Colonna sinistra */}
+        <div className="flex-1 min-w-0 space-y-6">
 
           {/* Description */}
           {(meta?.description ?? tmdb?.overview) && (
@@ -408,9 +412,9 @@ export default function Detail() {
             return (
               <div>
                 <h2 className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-3">Trailer</h2>
-                <div className="relative rounded-2xl overflow-hidden" style={{ aspectRatio: '16/9', maxWidth: 480 }}>
+                <div className="relative rounded-2xl overflow-hidden w-full" style={{ aspectRatio: '16/9', maxWidth: 560 }}>
                   <iframe
-                    src={`https://www.youtube.com/embed/${trailer.key}?autoplay=0&rel=0&modestbranding=1`}
+                    src={`https://www.youtube.com/embed/${trailer.key}?autoplay=1&mute=1&rel=0&modestbranding=1&controls=1&loop=1&playlist=${trailer.key}`}
                     title={trailer.name}
                     className="w-full h-full border-0"
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
@@ -421,7 +425,7 @@ export default function Detail() {
             );
           })()}
 
-          {/* Cast */}
+          {/* Cast — sempre presente se disponibile (TMDB o addon) */}
           {cast.length > 0 && (
             <div>
               <div className="flex items-center justify-between mb-3">
@@ -494,7 +498,10 @@ export default function Detail() {
             );
           })()}
 
-          {/* Streams */}
+        </div>{/* fine colonna sinistra */}
+
+        {/* Colonna destra: STREAM */}
+        <div className="w-[420px] flex-shrink-0">
           {(streamsLoading || streamGroups.length > 0 || streamError) && (
             <div>
               <h2 className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-3">
@@ -687,7 +694,9 @@ export default function Detail() {
               </div>
             </div>
           )}
-        </div>
+        </div>{/* fine col destra */}
+        </div>{/* fine flex 2col */}
+        </div>{/* fine max-w-6xl */}
       </div>
     </div>
   );

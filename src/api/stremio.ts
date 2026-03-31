@@ -77,19 +77,36 @@ export async function fetchStreams(addonUrl: string, type: string, id: string): 
   } catch { return []; }
 }
 
-export async function fetchAllStreams(addons: Addon[], type: string, id: string): Promise<StreamGroup[]> {
+// Cache stream per 5 minuti
+const _streamCache = new Map<string, { data: StreamGroup[]; ts: number }>();
+
+export async function fetchAllStreams(addons: Addon[], type: string, id: string, onGroup?: (g: StreamGroup) => void): Promise<StreamGroup[]> {
+  const cacheKey = `${type}:${id}`;
+  const cached = _streamCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < 300_000) return cached.data;
+
   const eligible = addons.filter(a => a.resources.some(r => r === 'stream' || r.startsWith('stream')));
-  const results = await Promise.allSettled(
-    eligible.map(async addon => ({
-      addonName: addon.name,
-      addonUrl: addon.url,
-      streams: await fetchStreams(addon.url, type, id),
-    }))
+  const groups: StreamGroup[] = [];
+
+  // Fetch in parallelo con timeout 10s per addon
+  await Promise.allSettled(
+    eligible.map(async addon => {
+      try {
+        const streams = await Promise.race([
+          fetchStreams(addon.url, type, id),
+          new Promise<never>((_, rej) => setTimeout(() => rej(new Error('timeout')), 10000)),
+        ]);
+        if (streams.length > 0) {
+          const group: StreamGroup = { addonName: addon.name, addonUrl: addon.url, streams };
+          groups.push(group);
+          onGroup?.(group); // callback progressivo
+        }
+      } catch { /* timeout o errore addon */ }
+    })
   );
-  return results
-    .filter((r): r is PromiseFulfilledResult<StreamGroup> => r.status === 'fulfilled')
-    .map(r => r.value)
-    .filter(r => r.streams.length > 0);
+
+  _streamCache.set(cacheKey, { data: groups, ts: Date.now() });
+  return groups;
 }
 
 // ─── Player (invoke Rust) ─────────────────────────────────────────────────────

@@ -43,7 +43,7 @@ export function useContinueWatching() {
     const all: CWItem[] = [];
 
     // 1. LOCALE — sempre per primo, aggiornato in tempo reale
-    for (const h of localHistory.slice(0, 50)) {
+    for (const h of localHistory.slice(0, 20)) {
       if (!h.progress || h.progress < 0.01) continue; // solo items con progresso
       all.push({
         id: h.id, type: h.type, name: h.name, poster: h.poster,
@@ -109,7 +109,7 @@ export function useContinueWatching() {
       } catch { /* fallback */ }
     }
 
-    const deduped = dedup(all).slice(0, 30);
+    const deduped = dedup(all).slice(0, 20);
     setItems(deduped);
     setLoading(false);
   }

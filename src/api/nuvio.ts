@@ -92,7 +92,7 @@ export async function getContinueWatching(userId: string): Promise<NuvioCW[]> {
         return pct >= 0.03 && pct <= 0.95;
       })
       .sort((a: any, b: any) => (b.last_watched ?? 0) - (a.last_watched ?? 0))
-      .slice(0, 50)
+      .slice(0, 20)
       .map((r: any): NuvioCW => {
         // position e duration sono in ms (schema Kotlin)
         const durSec = r.duration > 3600000 ? r.duration / 1000 : (r.duration ?? 0);

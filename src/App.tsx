@@ -23,7 +23,10 @@ function AccentApplier() {
     document.documentElement.style.setProperty('--accent', c);
     document.documentElement.style.setProperty('--accent-bg', c + '26');
     document.documentElement.style.setProperty('--accent-border', c + '55');
-  }, [settings.accentColor]);
+    // Applica tutte le impostazioni CSS/layout
+    const s = settings as any;
+    if (s.fontScale) document.documentElement.style.fontSize = `${s.fontScale * 16}px`;
+  }, [settings]);
   return null;
 }
 
@@ -114,14 +117,16 @@ function SearchBar() {
 
 function Layout() {
   const { settings } = useStore();
-  const [collapsed, setCollapsed] = useState(!!(settings as any).reduceSidebar);
+  const reduceSidebar = !!(settings as any).reduceSidebar;
+  const [manualCollapsed, setManualCollapsed] = useState(reduceSidebar);
+  const collapsed = manualCollapsed;
   return (
     <div className="flex h-screen bg-[#0f0f13] overflow-hidden">
       <Sidebar collapsed={collapsed} />
       <div className="flex flex-col flex-1 min-w-0">
         {/* Topbar */}
         <header className="flex items-center gap-3 h-14 px-4 border-b border-white/[0.05] flex-shrink-0">
-          <button onClick={() => setCollapsed(v => !v)}
+          <button onClick={() => { setManualCollapsed(v => !v); }}
             className="p-1.5 rounded-lg hover:bg-white/10 text-white/30 hover:text-white transition-colors">
             <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
               <line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" />

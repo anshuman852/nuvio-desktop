@@ -154,12 +154,12 @@ function CatalogRow({ title, subtitle, items, loading, onRemoveItem }: {
         <div className="absolute right-0 top-0 bottom-4 w-8 bg-gradient-to-l from-[#0f0f13] to-transparent z-[5] pointer-events-none" />
 
         <div ref={rowRef} 
-          className="flex gap-3 overflow-x-auto px-6 pb-2 scrollbar-hide scroll-smooth"
+          className="flex gap-4 overflow-x-auto px-6 pb-2 scrollbar-hide scroll-smooth"
           onWheel={e => { e.preventDefault(); if (rowRef.current) rowRef.current.scrollLeft += e.deltaY; }}
         >
           {loading
             ? Array.from({ length: 8 }).map((_, i) => (
-                <div key={i} className="flex-shrink-0 w-[120px] h-[180px] rounded-xl bg-white/5 animate-pulse" />
+                <div key={i} className="flex-shrink-0 w-[140px] h-[210px] rounded-xl bg-white/5 animate-pulse" />
               ))
             : items.map(item => <PosterCard key={item.id} item={item} onRemove={onRemoveItem} />)}
         </div>
