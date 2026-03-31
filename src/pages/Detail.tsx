@@ -301,14 +301,20 @@ export default function Detail() {
         contentId={meta?.id ?? decodedId}
         contentType={type}
         poster={meta?.poster}
+        cast={(tmdb?.credits?.cast ?? []).slice(0, 15).map((p: any) => ({
+          name: p.name,
+          character: p.character,
+          photo: p.profile_path ? `https://image.tmdb.org/t/p/w185${p.profile_path}` : undefined,
+        }))}
         season={selectedVideo?.season}
         episode={selectedVideo?.episode}
         nextEpisode={nextEpisodeData ? { id: nextEpisodeData.id, title: nextEpisodeData.title, thumbnail: nextEpisodeData.thumbnail } : null}
         onClose={() => {
           setPlayerStream(null);
-          // Notifica Home di ricaricare il CW
           window.dispatchEvent(new CustomEvent('nuvio:cw-updated'));
         }}
+        onPrev={isSeries && prevEpData ? () => handleEpisodeSelect(prevEpData) : undefined}
+        prevEpisode={isSeries && prevEpData ? { id: prevEpData.id, title: prevEpData.title ?? '' } : null}
         onNext={nextEpisodeData ? handleNext : undefined}
         initialProgress={0}
       />
