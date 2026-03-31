@@ -513,7 +513,7 @@ export default function Library() {
     if (nuvioUser?.token && nuvioUser.id) {
       try {
         if (nowWatched) {
-          await markNuvioWatched(nuvioUser.id, { id: item.id, type: item.type, name: item.name, poster: item.poster });
+          await markNuvioWatched(nuvioUser.id, item.id, item.type);
         } else {
           await removeNuvioWatched(nuvioUser.id, item.id);
         }
