@@ -136,6 +136,7 @@ export default function Detail() {
   const [streamsLoading, setStreamsLoading] = useState(false);
   const [streamError, setStreamError] = useState<string | null>(null);
   const [selectedVideo, setSelectedVideo] = useState<Video | null>(null);
+  const [prevEpData, setPrevEpData] = useState<Video | null>(null);
   const [descExpanded, setDescExpanded] = useState(false);
   const [castExpanded, setCastExpanded] = useState(false);
   const [playError, setPlayError] = useState<string | null>(null);
@@ -230,6 +231,9 @@ export default function Detail() {
     setStreamGroups([]);
     setStreamError(null);
     setPlayError(null);
+    const allVids = meta?.videos ?? [];
+    const idx = allVids.findIndex(v => v.id === video.id);
+    setPrevEpData(idx > 0 ? allVids[idx - 1] : null);
     // L'ID video per Stremio è nel formato: tt1234567:1:2 (imdbId:season:episode)
     const imdbBase = meta?.id?.startsWith('tt') ? meta.id : (decodedId.startsWith('tt') ? decodedId : null);
     const streamId = imdbBase && video.season && video.episode
