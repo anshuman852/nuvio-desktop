@@ -20,7 +20,10 @@ function StreamCard({ stream, onPlay, active }: { stream: Stream; onPlay: () => 
   const hasMagnet = Boolean(stream.infoHash);
   const canPlay = hasUrl || hasMagnet; // entrambi cliccabili
   const quality = ((stream.name ?? '') + ' ' + (stream.title ?? '')).match(/\b(4K|2160p|1080p|720p|480p|HDR|HEVC|x265|x264)\b/gi)?.join(' ') ?? '';
-  const size = stream.behaviorHints?.videoSize ? `${(stream.behaviorHints.videoSize / 1e9).toFixed(1)} GB` : '';
+  const size = stream.behaviorHints?.videoSize ? `${(stream.behaviorHints.videoSize / 1e9).toFixed(1)} GB`
+                              : stream.behaviorHints?.filename ? `${Math.round((stream.behaviorHints.videoSize ?? 0) / 1e9 * 10) / 10} GB` : '';
+                            // Estrai il nome file per mostrarlo come info
+                            const fname = stream.behaviorHints?.filename?.replace(/\.mkv|\.[a-z0-9]{2,4}$/i, '').slice(0, 40) ?? '';
 
   return (
     <button type="button" onClick={onPlay}
@@ -73,25 +76,25 @@ function EpisodeList({ videos, selectedId, onSelect, watchedIds }: {
           ))}
         </div>
       )}
-      <div className="space-y-1.5">
+      <div className="space-y-1 max-h-[480px] overflow-y-auto pr-1">
         {episodes.map(ep => (
-          <button key={ep.id} onClick={() => onSelect(ep)}
-            className={clsx('w-full text-left px-4 py-3 rounded-xl border transition-all flex items-center gap-3',
+          <button key={ep.id} type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); onSelect(ep); }}
+            className={clsx('w-full text-left px-4 py-3 rounded-xl border transition-all flex items-center gap-3 cursor-pointer',
               selectedId === ep.id
                 ? 'border-[color:var(--accent)] bg-[color:var(--accent-bg)]'
-                : 'bg-white/[0.04] hover:bg-white/[0.07] border-white/[0.06] hover:border-white/20')}>
+                : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.06] hover:border-[color:var(--accent)]')}>
             {ep.thumbnail && <img src={ep.thumbnail} alt="" className="w-20 h-12 rounded-lg object-cover flex-shrink-0" />}
             <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
-                <p className="text-sm font-medium text-white">
-                  {ep.season !== undefined && ep.episode !== undefined ? `${ep.season}×${String(ep.episode).padStart(2, '0')} · ` : ''}
-                  {ep.title}
-                </p>
-                {watchedIds?.has(ep.id) && <Check size={13} className="text-green-400 flex-shrink-0" />}
-              </div>
-              {ep.overview && <p className="text-xs text-white/40 mt-0.5 line-clamp-2">{ep.overview}</p>}
+              <p className="text-sm font-semibold text-white">
+                {ep.season !== undefined && ep.episode !== undefined ? `${ep.season}×${String(ep.episode).padStart(2, '0')} · ` : ''}
+                {ep.title}
+              </p>
+              {ep.overview && <p className="text-xs text-white/40 mt-0.5 line-clamp-1">{ep.overview}</p>}
             </div>
-            <Play size={14} className="text-white/20 flex-shrink-0" />
+            <div className={clsx('w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 transition-colors',
+              selectedId === ep.id ? 'bg-[color:var(--accent)]' : 'bg-white/10')}>
+              <Play size={10} className="fill-white text-white ml-0.5" />
+            </div>
           </button>
         ))}
       </div>
@@ -388,6 +391,26 @@ export default function Detail() {
             </div>
           )}
 
+          {/* Trailer YouTube */}
+          {tmdb?.videos?.results?.length > 0 && (() => {
+            const trailer = tmdb.videos.results.find((v: any) => v.site === 'YouTube' && (v.type === 'Trailer' || v.type === 'Teaser'));
+            if (!trailer) return null;
+            return (
+              <div>
+                <h2 className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-3">Trailer</h2>
+                <div className="relative rounded-2xl overflow-hidden" style={{ aspectRatio: '16/9', maxWidth: 480 }}>
+                  <iframe
+                    src={`https://www.youtube.com/embed/${trailer.key}?autoplay=0&rel=0&modestbranding=1`}
+                    title={trailer.name}
+                    className="w-full h-full border-0"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                  />
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Cast */}
           {cast.length > 0 && (
             <div>
@@ -501,7 +524,10 @@ export default function Detail() {
                             const hasUrl = Boolean(stream.url);
                             const hasMagnet = Boolean(stream.infoHash);
                             const quality = ((stream.name ?? '') + ' ' + (stream.title ?? '')).match(/(4K|2160p|1080p|720p|480p|HDR|HEVC)/gi)?.slice(0,2).join(' ') ?? '';
-                            const size = stream.behaviorHints?.videoSize ? `${(stream.behaviorHints.videoSize / 1e9).toFixed(1)} GB` : '';
+                            const size = stream.behaviorHints?.videoSize ? `${(stream.behaviorHints.videoSize / 1e9).toFixed(1)} GB`
+                              : stream.behaviorHints?.filename ? `${Math.round((stream.behaviorHints.videoSize ?? 0) / 1e9 * 10) / 10} GB` : '';
+                            // Estrai il nome file per mostrarlo come info
+                            const fname = stream.behaviorHints?.filename?.replace(/\.mkv|\.[a-z0-9]{2,4}$/i, '').slice(0, 40) ?? '';
                             const isActive = activeGroupIdx === gi && activeStreamIdx === si;
                             // Estrai info dalla description/title dello stream
                             const desc = stream.description ?? stream.title ?? '';
@@ -531,7 +557,7 @@ export default function Detail() {
                                   </div>
                                 </div>
                                 {size && <p className="text-xs text-white/60 font-mono">{size}</p>}
-                                {source && <p className="text-[10px] text-white/30 line-clamp-1 mt-0.5">{source}</p>}
+                                {(fname || source) && <p className="text-[10px] text-white/30 line-clamp-1 mt-0.5">{fname || source}</p>}
                                 {seeds && <p className="text-[10px] text-green-400/70">👤 {seeds}</p>}
                               </button>
                             );

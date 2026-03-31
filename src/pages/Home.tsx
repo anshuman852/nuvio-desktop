@@ -120,8 +120,8 @@ function PosterCard({ item, onRemove }: { item: any; onRemove?: (id: string) => 
 
 // ─── Catalog row ──────────────────────────────────────────────────────────────
 
-function CatalogRow({ title, subtitle, items, loading }: {
-  title: string; subtitle?: string; items: any[]; loading: boolean;
+function CatalogRow({ title, subtitle, items, loading, onRemoveItem }: {
+  title: string; subtitle?: string; items: any[]; loading: boolean; onRemoveItem?: (id: string) => void;
 }) {
   const rowRef = useRef<HTMLDivElement>(null);
 
@@ -161,7 +161,7 @@ function CatalogRow({ title, subtitle, items, loading }: {
             ? Array.from({ length: 8 }).map((_, i) => (
                 <div key={i} className="flex-shrink-0 w-[120px] h-[180px] rounded-xl bg-white/5 animate-pulse" />
               ))
-            : items.map(item => <PosterCard key={item.id} item={item} />)}
+            : items.map(item => <PosterCard key={item.id} item={item} onRemove={onRemoveItem} />)}
         </div>
       </div>
     </section>
@@ -232,8 +232,12 @@ export default function Home() {
             title="Continua a guardare"
             subtitle="In corso"
             items={cwItems as any}
-
             loading={cwLoading}
+            onRemoveItem={async (id) => {
+              removeWatch(id);
+              if (nuvioUser?.id) removeCW(nuvioUser.id, id).catch(() => {});
+              window.dispatchEvent(new CustomEvent('nuvio:cw-updated'));
+            }}
           />
         )}
 

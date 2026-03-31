@@ -49,57 +49,46 @@ function QRLoginModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: 
   async function startTvLogin() {
     setStep('loading');
     try {
-      // Genera un codice di login TV tramite RPC Supabase
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/tv_login_start`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON, Authorization: `Bearer ${SUPABASE_ANON}` },
-        body: JSON.stringify({ device_name: 'Nuvio Desktop' }),
-      });
-      if (!res.ok) throw new Error('RPC non disponibile');
-      const data = await res.json();
-      setCode(data.code);
-      setWebUrl(data.web_url ?? `https://web.nuvioapp.space/tv-login?code=${data.code}`);
+      // Genera un UUID univoco come codice sessione
+      const sessionId = crypto.randomUUID();
+      const loginUrl = `https://web.nuvioapp.space/tv-login?session=${sessionId}&app=desktop`;
+      setCode(sessionId.split('-')[0].toUpperCase()); // mostra solo i primi 8 char
+      setWebUrl(loginUrl);
 
-      // Genera QR code SVG inline (usa api.qrserver.com)
-      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(data.web_url ?? `https://web.nuvioapp.space/tv-login?code=${data.code}`)}&size=200x200&bgcolor=1a1a1f&color=ffffff&margin=10&format=svg`;
+      // QR code tramite api.qrserver.com
+      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(loginUrl)}&size=200x200&bgcolor=141418&color=ffffff&margin=8`;
       setQrSvg(qrUrl);
       setStep('show');
 
-      // Poll per il completamento
-      const interval = data.poll_interval_seconds ?? 3;
+      // Poll: ogni 3s controlla se l'utente ha completato il login sul web
+      // La sessione viene salvata in Supabase tramite il sito web
+      let attempts = 0;
       pollRef.current = setInterval(async () => {
+        attempts++;
+        if (attempts > 60) { clearInterval(pollRef.current); setStep('error'); return; } // 3 minuti timeout
+
         try {
-          const pollRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/tv_login_poll`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON, Authorization: `Bearer ${SUPABASE_ANON}` },
-            body: JSON.stringify({ code: data.code }),
+          const res = await fetch(`${SUPABASE_URL}/rest/v1/tv_login_sessions?session_id=eq.${sessionId}&select=access_token,status`, {
+            headers: { apikey: SUPABASE_ANON, Authorization: `Bearer ${SUPABASE_ANON}` },
           });
-          if (!pollRes.ok) return;
-          const pollData = await pollRes.json();
-          if (pollData.status === 'completed') {
+          if (!res.ok) return;
+          const rows = await res.json();
+          const session = rows?.[0];
+          if (session?.status === 'completed' && session?.access_token) {
             clearInterval(pollRef.current);
-            // Scambia per token
-            const exchRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/tv_login_exchange`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON, Authorization: `Bearer ${SUPABASE_ANON}` },
-              body: JSON.stringify({ code: data.code }),
+            setAuthToken(session.access_token);
+            const userRes = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+              headers: { apikey: SUPABASE_ANON, Authorization: `Bearer ${session.access_token}` },
             });
-            if (exchRes.ok) {
-              const tokens = await exchRes.json();
-              setAuthToken(tokens.access_token);
-              // Carica profilo utente
-              const userRes = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
-                headers: { apikey: SUPABASE_ANON, Authorization: `Bearer ${tokens.access_token}` },
-              });
-              const user = await userRes.json();
-              onSuccess({ id: user.id, email: user.email, token: tokens.access_token, name: user.user_metadata?.username ?? user.email?.split('@')[0], avatar: user.user_metadata?.avatar_url });
-            }
-          } else if (pollData.status === 'expired') {
-            clearInterval(pollRef.current);
-            setStep('error');
+            const user = await userRes.json();
+            onSuccess({
+              id: user.id, email: user.email, token: session.access_token,
+              name: user.user_metadata?.username ?? user.email?.split('@')[0],
+              avatar: user.user_metadata?.avatar_url,
+            });
           }
-        } catch { /* continua polling */ }
-      }, interval * 1000);
+        } catch { /* continua */ }
+      }, 3000);
     } catch {
       setStep('error');
     }
