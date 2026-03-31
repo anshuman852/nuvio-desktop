@@ -66,7 +66,7 @@ function PosterCard({ item, onRemove }: { item: any; onRemove?: (id: string) => 
   const [imgErr, setImgErr] = useState(false);
   const [tmdbPoster, setTmdbPoster] = useState<string|null>(null);
   const { settings } = useStore();
-  const progress = item.progress;
+  const progress = typeof item.progress === 'number' ? item.progress : (item.progressPct ? item.progressPct / 100 : undefined);
 
   // Carica poster da TMDB se mancante
   useEffect(() => {
@@ -86,7 +86,7 @@ function PosterCard({ item, onRemove }: { item: any; onRemove?: (id: string) => 
 
   return (
     <Link to={`/detail/${item.type}/${encodeURIComponent(item.id)}`} className="flex-shrink-0 group">
-      <div className="relative w-[120px] h-[180px] rounded-xl overflow-hidden bg-white/5 border border-white/[0.06] group-hover:border-white/20 transition-all duration-200 group-hover:scale-[1.04] shadow-lg">
+      <div className="relative w-[150px] h-[225px] rounded-xl overflow-hidden bg-white/5 border border-white/[0.06] group-hover:border-white/20 transition-all duration-200 group-hover:scale-[1.04] shadow-lg">
         {posterSrc && !imgErr
           ? <img src={posterSrc} alt={item.name} className="w-full h-full object-cover" onError={() => setImgErr(true)} />
           : <div className="w-full h-full flex items-center justify-center text-white/10"><Play size={28} /></div>}
@@ -112,7 +112,7 @@ function PosterCard({ item, onRemove }: { item: any; onRemove?: (id: string) => 
           </div>
         )}
       </div>
-      <p className="mt-2 text-xs text-white/70 group-hover:text-white truncate w-[120px] transition-colors">{item.name}</p>
+      <p className="mt-2 text-xs text-white/70 group-hover:text-white truncate w-[150px] transition-colors">{item.name}</p>
       {item.releaseInfo && <p className="text-xs text-white/30">{item.releaseInfo}</p>}
     </Link>
   );
@@ -159,7 +159,7 @@ function CatalogRow({ title, subtitle, items, loading, onRemoveItem }: {
         >
           {loading
             ? Array.from({ length: 8 }).map((_, i) => (
-                <div key={i} className="flex-shrink-0 w-[140px] h-[210px] rounded-xl bg-white/5 animate-pulse" />
+                <div key={i} className="flex-shrink-0 w-[150px] h-[225px] rounded-xl bg-white/5 animate-pulse" />
               ))
             : items.map(item => <PosterCard key={item.id} item={item} onRemove={onRemoveItem} />)}
         </div>

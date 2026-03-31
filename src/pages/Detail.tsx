@@ -537,45 +537,57 @@ export default function Detail() {
                           <span className="text-xs text-white/25">({sortedStreams.length})</span>
                         </div>
                         <div className="space-y-1.5">
-                          {sortedStreams.slice(0, 15).map((stream, si) => {
+                          {sortedStreams.slice(0, 20).map((stream, si) => {
                             const hasUrl = Boolean(stream.url);
-                            const hasMagnet = Boolean(stream.infoHash);
-                            const quality = ((stream.name ?? '') + ' ' + (stream.title ?? '')).match(/(4K|2160p|1080p|720p|480p|HDR|HEVC)/gi)?.slice(0,2).join(' ') ?? '';
-                            const size = stream.behaviorHints?.videoSize ? `${(stream.behaviorHints.videoSize / 1e9).toFixed(1)} GB`
-                              : stream.behaviorHints?.filename ? `${Math.round((stream.behaviorHints.videoSize ?? 0) / 1e9 * 10) / 10} GB` : '';
-                            // Estrai il nome file per mostrarlo come info
-                            const fname = stream.behaviorHints?.filename?.replace(/\.mkv|\.[a-z0-9]{2,4}$/i, '').slice(0, 40) ?? '';
+                            const hasMagnet = Boolean(stream.infoHash) && !hasUrl;
                             const isActive = activeGroupIdx === gi && activeStreamIdx === si;
-                            // Estrai info dalla description/title dello stream
-                            const desc = stream.description ?? stream.title ?? '';
-                            const seeds = desc.match(/👤\s*(\d+)/)?.[1];
-                            const langs = desc.match(/[🇮🇹🇬🇧🇺🇸🏴󠁧󠁢󠁥󠁮󠁧󠁿]+/g)?.slice(0,3).join(' ') ?? '';
-                            const source = stream.behaviorHints?.filename
-                              ? stream.behaviorHints.filename.replace(/\.[^.]+$/, '').slice(0,30)
-                              : desc.split('\n').find((l: string) => l.includes('from') || l.includes('⚙️'))?.slice(0,30) ?? '';
+                            const fullText = `${stream.name ?? ''} ${stream.title ?? ''} ${stream.description ?? ''}`;
+                            const qualMatch = fullText.match(/\b(4K|2160p|1080p|720p|480p)\b/i);
+                            const quality = qualMatch?.[0]?.toUpperCase() ?? '';
+                            const tags = Array.from(new Set(
+                              (fullText.match(/\b(HDR10|HDR|DV|HEVC|x265|x264|WEBDL|WEB-DL|BluRay|COMPLETE|AVC)\b/gi) ?? [])
+                                .map((t: string) => t.toUpperCase())
+                            )).slice(0, 2) as string[];
+                            const sizeMb = stream.behaviorHints?.videoSize ?? 0;
+                            const sizeStr = sizeMb > 0 ? (sizeMb >= 1e9 ? `${(sizeMb/1e9).toFixed(1)} GB` : `${Math.round(sizeMb/1e6)} MB`) : '';
+                            const seedMatch = fullText.match(/[\u{1F465}]\s*(\d+)/u) ?? fullText.match(/(\d+)\s*seed/i);
+                            const seeds = seedMatch?.[1] ?? '';
+                            const langs = (() => {
+                              const m = [...fullText.matchAll(/[\u{1F1E0}-\u{1F1FF}]{2}/gu)];
+                              return m.map(x => x[0]).slice(0,3).join('');
+                            })();
+                            const filename = (stream.behaviorHints?.filename ?? '').replace(/\.[a-z0-9]{2,4}$/i, '');
+                            const source = filename.length > 4 ? filename.slice(0,45)
+                              : (stream.description ?? stream.title ?? '').split('\n')
+                                .find((l: string) => l.includes('from') || l.includes('SuperVideo') || l.includes('Dropload') || l.includes('GB') || l.includes('MB'))
+                                ?.slice(0,45) ?? '';
+                            const qualColors: Record<string,string> = { '4K':'#a78bfa','2160P':'#a78bfa','1080P':'#34d399','720P':'#60a5fa','480P':'#f59e0b' };
+                            const qColor = qualColors[quality] ?? '#ffffff';
                             return (
-                              <button key={si} type="button"
-                                onClick={() => handlePlay(stream, gi, si)}
-                                className={clsx(
-                                  'w-full text-left px-3 py-2.5 rounded-xl border transition-all duration-150 group/s',
-                                  isActive
-                                    ? 'border-[color:var(--accent)] bg-[color:var(--accent-bg)]'
-                                    : 'border-white/[0.07] bg-white/[0.03] hover:border-[color:var(--accent)] hover:bg-[color:var(--accent-bg)] cursor-pointer'
-                                )}>
-                                <div className="flex items-start justify-between gap-2 mb-1">
-                                  <div className="flex items-center gap-1.5 flex-wrap flex-1 min-w-0">
-                                    {quality && <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-white/10" style={{ color: isActive ? 'var(--accent)' : 'white' }}>{quality}</span>}
-                                    {hasMagnet && !hasUrl && <span className="text-[10px] px-1 py-0.5 rounded bg-amber-500/20 text-amber-400">🧲 P2P</span>}
-                                    {langs && <span className="text-[10px] text-white/50">{langs}</span>}
-                                  </div>
-                                  <div className={clsx('w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 transition-colors mt-0.5',
-                                    isActive ? 'bg-[color:var(--accent)]' : 'bg-white/10 group-hover/s:bg-[color:var(--accent)]')}>
-                                    <Play size={10} className="ml-0.5 fill-white text-white" />
+                              <button key={si} type="button" onClick={() => handlePlay(stream, gi, si)}
+                                className={clsx('w-full text-left px-3 py-2.5 rounded-xl border transition-all',
+                                  isActive ? 'border-[color:var(--accent)] bg-[color:var(--accent-bg)]'
+                                    : 'border-white/[0.08] bg-white/[0.03] hover:border-white/20 hover:bg-white/[0.06] cursor-pointer')}>
+                                <div className="flex items-center gap-1.5 mb-1">
+                                  {quality && (
+                                    <span className="text-xs font-black px-1.5 py-0.5 rounded-md"
+                                      style={{ backgroundColor: qColor + '25', color: qColor }}>{quality}</span>
+                                  )}
+                                  {tags.map((tag: string) => (
+                                    <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded bg-white/[0.08] text-white/50 font-medium">{tag}</span>
+                                  ))}
+                                  {hasMagnet && <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 font-bold">P2P</span>}
+                                  {langs && <span className="text-xs">{langs}</span>}
+                                  <div className={clsx('w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ml-auto',
+                                    isActive ? 'bg-[color:var(--accent)]' : 'bg-white/10')}>
+                                    <Play size={9} className="ml-0.5 fill-white text-white" />
                                   </div>
                                 </div>
-                                {size && <p className="text-xs text-white/60 font-mono">{size}</p>}
-                                {(fname || source) && <p className="text-[10px] text-white/30 line-clamp-1 mt-0.5">{fname || source}</p>}
-                                {seeds && <p className="text-[10px] text-green-400/70">👤 {seeds}</p>}
+                                <div className="flex items-center gap-2 text-xs">
+                                  {sizeStr && <span className="font-semibold text-white/80">{sizeStr}</span>}
+                                  {seeds && <span className="text-green-400/80">👤 {seeds}</span>}
+                                </div>
+                                {source && <p className="text-[10px] text-white/35 truncate mt-0.5">{source}</p>}
                               </button>
                             );
                           })}

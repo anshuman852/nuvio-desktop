@@ -11,7 +11,7 @@
  */
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useStore } from '../lib/store';
-import { upsertCW } from '../api/nuvio';
+import { upsertCW, traktScrobble } from '../api/nuvio';
 import { invoke } from '@tauri-apps/api/core';
 import {
   Play, Pause, Volume2, VolumeX, Maximize, Minimize, X,
@@ -83,7 +83,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
   const cwTimer = useRef<ReturnType<typeof setInterval>>();
   const nextEpTimer = useRef<ReturnType<typeof setTimeout>>();
 
-  const { nuvioUser, upsertWatch, settings: appSettings } = useStore();
+  const { nuvioUser, upsertWatch, settings: appSettings, traktAuth } = useStore();
 
   // Player prefs (personalizzabili in-player)
   const [prefs, setPrefs] = useState<PlayerPrefs>({
@@ -124,7 +124,17 @@ export default function VideoPlayer(props: VideoPlayerProps) {
     upsertWatch({ id: contentId, type: contentType ?? 'movie', name: title ?? '', poster, videoId: contentId, season, episode, progress, duration: d });
     if (nuvioUser?.token && nuvioUser.id)
       upsertCW(nuvioUser.id, { id: contentId, type: contentType ?? 'movie', name: title ?? '', poster, videoId: contentId, season, episode, progress, duration: d }).catch(() => {});
-  }, [contentId, contentType, title, poster, season, episode, nuvioUser]);
+    // Trakt scrobble
+    if ((traktAuth as any)?.token) {
+      const isEp = contentType === 'series' && season != null;
+      traktScrobble(
+        (traktAuth as any).token,
+        progress >= 0.9 ? 'stop' : progress < 0.02 ? 'start' : 'pause',
+        { type: isEp ? 'episode' : 'movie', imdbId: contentId?.startsWith('tt') ? contentId : undefined, title, season, episode },
+        progress
+      ).catch(() => {});
+    }
+  }, [contentId, contentType, title, poster, season, episode, nuvioUser, traktAuth]);
 
   useEffect(() => {
     cwTimer.current = setInterval(() => {
@@ -207,9 +217,9 @@ export default function VideoPlayer(props: VideoPlayerProps) {
   // ── Auto-hide controls ─────────────────────────────────────────────────────
   function resetHide() {
     setShowControls(true);
-    setActivePanel(null);
     clearTimeout(hideTimer.current);
-    if (playing && !paused) {
+    // NON chiudere il panel attivo — l'utente ci sta interagendo
+    if (playing && !paused && !activePanel) {
       hideTimer.current = setTimeout(() => {
         setShowControls(false);
       }, prefs.autoHideDelay);
@@ -360,9 +370,20 @@ export default function VideoPlayer(props: VideoPlayerProps) {
       <video ref={vidRef}
         className="absolute inset-0 w-full h-full object-contain"
         onClick={(e) => { e.stopPropagation(); if (activePanel) { setActivePanel(null); return; } vidRef.current?.paused ? vidRef.current.play() : vidRef.current?.pause(); resetHide(); }}
-        onPlay={() => { setPlaying(true); setPaused(false); setBuffering(false); setReady(true);
-          setTimeout(() => syncCW(vidRef.current?.currentTime??0, vidRef.current?.duration??0), 2000);
-          hideTimer.current = setTimeout(() => setShowControls(false), prefs.autoHideDelay); }}
+        onPlay={() => {
+          setPlaying(true); setPaused(false); setBuffering(false); setReady(true);
+          setTimeout(() => {
+            syncCW(vidRef.current?.currentTime??0, vidRef.current?.duration??0);
+            // Trakt start scrobble
+            if ((traktAuth as any)?.token) {
+              traktScrobble((traktAuth as any).token, 'start',
+                { type: contentType === 'series' ? 'episode' : 'movie', imdbId: contentId?.startsWith('tt') ? contentId : undefined, title, season, episode },
+                0.01
+              ).catch(() => {});
+            }
+          }, 3000);
+          hideTimer.current = setTimeout(() => setShowControls(false), prefs.autoHideDelay);
+        }}
         onPause={() => { setPlaying(false); setPaused(true); setShowControls(true); clearTimeout(hideTimer.current); }}
         onWaiting={() => setBuffering(true)}
         onPlaying={() => setBuffering(false)}
@@ -401,7 +422,10 @@ export default function VideoPlayer(props: VideoPlayerProps) {
 
       {/* ── PANELS (sottotitoli / audio / qualità / impostazioni) ─────────── */}
       {activePanel && (
-        <div className="absolute bottom-24 right-5 z-30 bg-[#1a1a20]/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl min-w-52 overflow-hidden"
+        <div
+          className="absolute bottom-24 right-5 z-30 bg-[#1a1a20]/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl min-w-52 overflow-hidden"
+          onMouseEnter={() => clearTimeout(hideTimer.current)}
+          onMouseLeave={() => { if (playing && !paused) hideTimer.current = setTimeout(() => setShowControls(false), prefs.autoHideDelay); }}
           onClick={e => e.stopPropagation()}>
           {activePanel === 'subtitles' && (
             <PanelList title="Sottotitoli" items={[

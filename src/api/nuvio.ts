@@ -229,24 +229,28 @@ async function countTable(table: string, userId: string, extra = ''): Promise<nu
 export async function getAccountStats(userId: string): Promise<AccountStats> {
   if (!_userToken || !userId) return { totalMovies: 0, totalEpisodes: 0, totalWatched: 0, librarySize: 0, watchTimeHours: 0 };
   try {
-    const [library, moviesWatched, seriesWatched, episodes, progress] = await Promise.all([
-      countTable('library_items', userId),
-      countTable('watched_items', userId, '&content_type=eq.movie&season=is.null'),
-      countTable('watched_items', userId, '&content_type=eq.series&season=is.null'),
-      countTable('watched_items', userId, '&season=not.is.null'),
-      rpc('sync_pull_watch_progress', {}, _userToken).then((d: any[]) => d ?? []).catch(() => [] as any[]),
+    // Usa gli stessi RPCs del sync tool per avere i dati reali
+    const [watchedItems, watchProgress, libraryItems] = await Promise.all([
+      rpc('sync_pull_watched_items', {}, _userToken).then((d: any) => Array.isArray(d) ? d : []).catch(() => []),
+      rpc('sync_pull_watch_progress', {}, _userToken).then((d: any) => Array.isArray(d) ? d : []).catch(() => []),
+      rpc('sync_pull_library', {}, _userToken).then((d: any) => Array.isArray(d) ? d : []).catch(() => []),
     ]);
 
-    const watchTimeMs = (progress as any[]).reduce((acc: number, w: any) => {
+    const movies = (watchedItems as any[]).filter((w: any) => w.content_type === 'movie' && w.season == null).length;
+    const episodes = (watchedItems as any[]).filter((w: any) => w.season != null).length;
+    const seriesWatched = (watchedItems as any[]).filter((w: any) => w.content_type === 'series' && w.season == null).length;
+
+    const watchTimeMs = (watchProgress as any[]).reduce((acc: number, w: any) => {
       const pos = w.position ?? 0;
-      return acc + (pos > 3600000 ? pos : pos * 1000); // normalizza a ms
+      // position è in ms se > 3.6M (1 ora in ms), altrimenti in secondi
+      return acc + (pos > 3600000 ? pos : pos * 1000);
     }, 0);
 
     return {
-      totalMovies: moviesWatched,
+      totalMovies: movies,
       totalEpisodes: episodes,
-      totalWatched: moviesWatched + seriesWatched,
-      librarySize: library,
+      totalWatched: movies + seriesWatched,
+      librarySize: (libraryItems as any[]).length,
       watchTimeHours: Math.round(watchTimeMs / 3600000),
     };
   } catch { return { totalMovies: 0, totalEpisodes: 0, totalWatched: 0, librarySize: 0, watchTimeHours: 0 }; }
@@ -279,4 +283,32 @@ export async function getAvatarCatalog(): Promise<SupabaseAvatar[]> {
       bgColor: item.bg_color,
     }));
   } catch { return []; }
+}
+
+// ─── Trakt Scrobble ───────────────────────────────────────────────────────────
+
+export async function traktScrobble(
+  token: string,
+  action: 'start' | 'pause' | 'stop',
+  item: { type: 'movie' | 'episode'; imdbId?: string; traktId?: number; title?: string; season?: number; episode?: number },
+  progress: number
+): Promise<void> {
+  if (!token) return;
+  const body: any = { progress: Math.round(progress * 100) };
+  if (item.type === 'movie') {
+    body.movie = { title: item.title ?? '', ids: { imdb: item.imdbId, trakt: item.traktId } };
+  } else {
+    body.episode = { season: item.season ?? 1, number: item.episode ?? 1, ids: { imdb: item.imdbId } };
+    body.show = { title: item.title ?? '', ids: { imdb: item.imdbId } };
+  }
+  await fetch(`https://api.trakt.tv/scrobble/${action}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+      'trakt-api-version': '2',
+      'trakt-api-key': import.meta.env.VITE_TRAKT_CLIENT_ID ?? '',
+    },
+    body: JSON.stringify(body),
+  }).catch(() => {});
 }
