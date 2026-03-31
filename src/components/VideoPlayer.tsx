@@ -1,19 +1,18 @@
 /// <reference types="vite/client" />
 /**
- * VideoPlayer v7 — 100% interno, nessun player esterno
- * HTTP/HTTPS → HTML5 <video> diretto (istantaneo con RealDebrid)
- * Magnet → errore con istruzioni per configurare Debrid
+ * VideoPlayer v8 — Player HTML5 puro, avvio istantaneo
+ * Fix: non chiama play() prima di loadedmetadata per evitare errori
  */
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useStore } from '../lib/store';
 import { upsertCW } from '../api/nuvio';
 import { stopTorrent } from '../lib/torrent';
+import { invoke } from '@tauri-apps/api/core';
 import {
   Play, Pause, Volume2, VolumeX, Maximize, Minimize, X,
   SkipForward, SkipBack, AlertCircle, ArrowLeft, ExternalLink, Settings,
 } from 'lucide-react';
 import clsx from 'clsx';
-import { invoke } from '@tauri-apps/api/core';
 
 export interface VideoPlayerProps {
   url: string;
@@ -37,8 +36,6 @@ function fmt(s: number) {
   return h > 0 ? `${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}` : `${m}:${String(sec).padStart(2,'0')}`;
 }
 
-type Mode = 'playing' | 'magnet_error' | 'load_error';
-
 export default function VideoPlayer(props: VideoPlayerProps) {
   const { url, title, subtitle, contentId, contentType, poster, backdrop, season, episode, nextEpisode, onClose, onNext, initialProgress = 0 } = props;
 
@@ -47,10 +44,9 @@ export default function VideoPlayer(props: VideoPlayerProps) {
   const progRef = useRef<HTMLDivElement>(null);
   const hideTimer = useRef<ReturnType<typeof setTimeout>>();
   const cwTimer = useRef<ReturnType<typeof setInterval>>();
-  const torrentHash = useRef<string | null>(null);
 
   const { nuvioUser, upsertWatch } = useStore();
-  const [mode, setMode] = useState<Mode>('playing');
+  const [ready, setReady] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -60,9 +56,9 @@ export default function VideoPlayer(props: VideoPlayerProps) {
   const [showControls, setShowControls] = useState(true);
   const [fullscreen, setFullscreen] = useState(false);
   const [showNextEp, setShowNextEp] = useState(false);
-  const [errorDetail, setErrorDetail] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [isMagnet, setIsMagnet] = useState(false);
 
-  // ── CW Sync ───────────────────────────────────────────────────────────────
   const syncCW = useCallback((t: number, d: number) => {
     if (!contentId || d < 5) return;
     const progress = t / d;
@@ -73,43 +69,46 @@ export default function VideoPlayer(props: VideoPlayerProps) {
 
   useEffect(() => {
     cwTimer.current = setInterval(() => {
-      if (mode === 'playing') syncCW(vidRef.current?.currentTime ?? 0, vidRef.current?.duration ?? 0);
+      const v = vidRef.current;
+      if (v && !v.paused && v.duration > 0) syncCW(v.currentTime, v.duration);
     }, 5000);
     return () => clearInterval(cwTimer.current);
-  }, [mode, syncCW]);
+  }, [syncCW]);
 
-  // ── Init ──────────────────────────────────────────────────────────────────
   useEffect(() => {
-    const isMagnet = url.startsWith('magnet:');
-    if (isMagnet) {
-      setMode('magnet_error');
-      return;
-    }
+    if (url.startsWith('magnet:')) { setIsMagnet(true); return; }
 
-    // HTTP/HTTPS → HTML5 diretto
     const v = vidRef.current;
     if (!v) return;
+
+    setReady(false); setError(null); setBuffering(true);
     v.src = url;
-    v.preload = 'auto';
     v.load();
-    // Tenta play — il browser inizia il buffering subito
-    v.play().catch(() => setBuffering(true));
 
-    if (initialProgress > 0.01 && initialProgress < 0.97) {
-      const onMeta = () => {
-        if (v.duration) v.currentTime = v.duration * initialProgress;
+    const onCanPlay = () => {
+      setBuffering(false); setReady(true);
+      if (initialProgress > 0.01 && initialProgress < 0.97 && v.duration) {
+        v.currentTime = v.duration * initialProgress;
+      }
+      v.play().catch(() => {});
+    };
+
+    const onError = () => {
+      const code = v.error?.code;
+      const msgs: Record<number, string> = {
+        1: 'Stream interrotto dall\'utente',
+        2: 'Errore di rete — controlla la connessione',
+        3: 'Errore di decodifica video',
+        4: 'Formato non supportato dal player interno',
       };
-      v.addEventListener('loadedmetadata', onMeta, { once: true });
-    }
+      setError(msgs[code ?? 0] ?? `Errore sconosciuto (${code})`);
+    };
 
-    v.addEventListener('error', () => {
-      const err = v.error;
-      setErrorDetail(err ? `Codice ${err.code}: ${err.message}` : 'Formato non supportato');
-      setMode('load_error');
-    }, { once: true });
-
+    v.addEventListener('canplay', onCanPlay, { once: true });
+    v.addEventListener('error', onError, { once: true });
     return () => {
-      clearTimeout(hideTimer.current);
+      v.removeEventListener('canplay', onCanPlay);
+      v.removeEventListener('error', onError);
     };
   }, [url]);
 
@@ -130,8 +129,9 @@ export default function VideoPlayer(props: VideoPlayerProps) {
   }
 
   function handleClose() {
-    syncCW(vidRef.current?.currentTime ?? 0, vidRef.current?.duration ?? 0);
-    if (torrentHash.current) stopTorrent(torrentHash.current).catch(() => {});
+    const v = vidRef.current;
+    syncCW(v?.currentTime ?? 0, v?.duration ?? 0);
+    if (v) { v.pause(); v.src = ''; }
     onClose();
   }
 
@@ -158,74 +158,79 @@ export default function VideoPlayer(props: VideoPlayerProps) {
   const pct = duration > 0 ? (currentTime / duration) * 100 : 0;
   const bgImg = backdrop || poster;
 
-  // ── Magnet error ──────────────────────────────────────────────────────────
-  if (mode === 'magnet_error') {
-    return (
-      <div className="fixed inset-0 bg-[#0c0c10] z-[100] flex items-center justify-center">
-        {bgImg && <><img src={bgImg} alt="" className="absolute inset-0 w-full h-full object-cover opacity-10 blur-2xl scale-110" /><div className="absolute inset-0 bg-black/80" /></>}
-        <div className="relative z-10 flex flex-col items-center gap-6 max-w-md text-center px-8">
-          {poster && <img src={poster} alt={title} className="h-32 rounded-xl shadow-2xl object-cover" />}
-          {title && <p className="text-white font-bold text-xl">{title}</p>}
-          <div className="bg-amber-500/10 border border-amber-500/25 rounded-2xl p-5 space-y-3 text-left">
-            <p className="text-amber-300 font-semibold text-sm">🧲 Stream torrent rilevato</p>
-            <p className="text-white/60 text-sm leading-relaxed">
-              Questo stream è un magnet link. Per riprodurlo <strong className="text-white">istantaneamente nel player interno</strong>, configura <strong className="text-white">Real-Debrid</strong> o <strong className="text-white">AllDebrid</strong> nell'addon Torrentio — convertirà automaticamente i torrent in stream HTTP diretti.
-            </p>
-            <div className="flex flex-col gap-2 pt-1">
-              <button onClick={() => invoke('open_url', { url: 'https://torrentio.strem.fun/configure' })}
-                className="flex items-center gap-2 justify-center w-full py-2.5 text-sm font-medium text-white rounded-xl" style={{ backgroundColor: 'var(--accent,#7c3aed)' }}>
-                <Settings size={14} />Configura Torrentio + Real-Debrid
-              </button>
-              <button onClick={() => invoke('open_url', { url: 'https://real-debrid.com' })}
-                className="flex items-center gap-2 justify-center w-full py-2 text-sm text-white/60 hover:text-white bg-white/5 hover:bg-white/10 rounded-xl transition-colors">
-                <ExternalLink size={13} />Ottieni Real-Debrid
-              </button>
-            </div>
+  // ── Magnet not supported ──────────────────────────────────────────────────
+  if (isMagnet) return (
+    <div className="fixed inset-0 bg-[#0c0c10] z-[100] flex items-center justify-center">
+      {bgImg && <><img src={bgImg} alt="" className="absolute inset-0 w-full h-full object-cover opacity-10 blur-2xl scale-110" /><div className="absolute inset-0 bg-black/80" /></>}
+      <div className="relative z-10 flex flex-col items-center gap-6 max-w-md text-center px-8">
+        {poster && <img src={poster} alt={title} className="h-28 rounded-xl shadow-2xl object-cover" />}
+        {title && <p className="text-white font-bold text-xl">{title}</p>}
+        <div className="bg-amber-500/10 border border-amber-500/25 rounded-2xl p-5 text-left space-y-3">
+          <p className="text-amber-300 font-semibold text-sm">🧲 Stream torrent</p>
+          <p className="text-white/60 text-sm leading-relaxed">
+            Configura <strong className="text-white">Real-Debrid</strong> in <strong className="text-white">Torrentio</strong> — i magnet vengono convertiti automaticamente in stream HTTP diretti (velocità istantanea).
+          </p>
+          <div className="flex flex-col gap-2 pt-1">
+            <button onClick={() => invoke('open_url', { url: 'https://torrentio.strem.fun/configure' })}
+              className="flex items-center gap-2 justify-center w-full py-2.5 text-sm font-medium text-white rounded-xl" style={{ backgroundColor: 'var(--accent,#7c3aed)' }}>
+              <Settings size={14} />Configura Torrentio
+            </button>
+            <button onClick={() => invoke('open_url', { url: 'https://real-debrid.com' })}
+              className="flex items-center gap-2 justify-center w-full py-2 text-sm text-white/60 bg-white/5 rounded-xl hover:bg-white/10">
+              <ExternalLink size={13} />Real-Debrid
+            </button>
           </div>
-          <button onClick={handleClose} className="text-white/40 hover:text-white text-sm flex items-center gap-1.5 transition-colors">
-            <ArrowLeft size={14} />Torna agli stream
-          </button>
         </div>
+        <button onClick={handleClose} className="text-white/40 hover:text-white text-sm flex items-center gap-1.5">
+          <ArrowLeft size={14} />Torna agli stream
+        </button>
       </div>
-    );
-  }
+    </div>
+  );
 
   // ── Load error ────────────────────────────────────────────────────────────
-  if (mode === 'load_error') {
-    return (
-      <div className="fixed inset-0 bg-black z-[100] flex items-center justify-center">
-        {bgImg && <><img src={bgImg} alt="" className="absolute inset-0 w-full h-full object-cover opacity-10 blur-2xl scale-110" /><div className="absolute inset-0 bg-black/80" /></>}
-        <div className="relative z-10 flex flex-col items-center gap-5 max-w-sm text-center px-6">
-          <AlertCircle size={40} className="text-red-400" />
-          <div>
-            <p className="text-white font-semibold mb-1">Impossibile riprodurre lo stream</p>
-            <p className="text-white/40 text-sm">{errorDetail}</p>
-          </div>
-          <p className="text-white/50 text-xs leading-relaxed">
-            Prova un altro stream oppure configura Real-Debrid in Torrentio per stream diretti ad alta qualità.
-          </p>
-          <div className="flex gap-2">
-            <button onClick={() => invoke('open_url', { url: 'https://torrentio.strem.fun/configure' })}
-              className="flex items-center gap-1.5 px-4 py-2 text-sm text-white rounded-full" style={{ backgroundColor: 'var(--accent)' }}>
-              <Settings size={13} />Configura Torrentio
-            </button>
-            <button onClick={handleClose} className="px-4 py-2 text-sm text-white/60 bg-white/10 hover:bg-white/20 rounded-full">Indietro</button>
-          </div>
+  if (error) return (
+    <div className="fixed inset-0 bg-black z-[100] flex items-center justify-center">
+      {bgImg && <><img src={bgImg} alt="" className="absolute inset-0 w-full h-full object-cover opacity-10 blur-2xl scale-110" /><div className="absolute inset-0 bg-black/80" /></>}
+      <div className="relative z-10 flex flex-col items-center gap-5 max-w-sm text-center px-6">
+        <AlertCircle size={36} className="text-red-400" />
+        <div>
+          <p className="text-white font-semibold mb-1">Impossibile riprodurre</p>
+          <p className="text-white/50 text-sm">{error}</p>
+        </div>
+        <p className="text-white/30 text-xs">Prova un altro stream oppure usa Real-Debrid con Torrentio per stream diretti.</p>
+        <div className="flex gap-2">
+          <button onClick={() => invoke('open_url', { url: 'https://torrentio.strem.fun/configure' })}
+            className="flex items-center gap-1.5 px-4 py-2 text-sm text-white rounded-full" style={{ backgroundColor: 'var(--accent)' }}>
+            <Settings size={13} />Configura
+          </button>
+          <button onClick={handleClose} className="px-4 py-2 text-sm text-white/60 bg-white/10 rounded-full">Indietro</button>
         </div>
       </div>
-    );
-  }
+    </div>
+  );
 
   // ── HTML5 Player ──────────────────────────────────────────────────────────
   return (
     <div ref={containerRef} onMouseMove={resetHide}
       className="fixed inset-0 bg-black z-[100] flex items-center justify-center select-none"
-      style={{ cursor: !showControls ? 'none' : 'default' }}>
+      style={{ cursor: ready && !showControls ? 'none' : 'default' }}>
+
+      {/* Poster durante buffering iniziale */}
+      {!ready && bgImg && (
+        <><img src={bgImg} alt="" className="absolute inset-0 w-full h-full object-cover opacity-20 blur-xl scale-110" /><div className="absolute inset-0 bg-black/70" /></>
+      )}
+      {!ready && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+          <div className="w-12 h-12 rounded-full border-4 border-white/20 border-t-white/80 animate-spin" />
+        </div>
+      )}
 
       <video ref={vidRef}
         className="absolute inset-0 w-full h-full object-contain"
         onClick={() => { vidRef.current?.paused ? vidRef.current.play() : vidRef.current?.pause(); resetHide(); }}
-        onPlay={() => { setPlaying(true); setBuffering(false); setTimeout(() => syncCW(vidRef.current?.currentTime??0, vidRef.current?.duration??0), 2000); }}
+        onPlay={() => { setPlaying(true); setBuffering(false); setReady(true);
+          setTimeout(() => syncCW(vidRef.current?.currentTime??0, vidRef.current?.duration??0), 2000); }}
         onPause={() => setPlaying(false)}
         onWaiting={() => setBuffering(true)}
         onPlaying={() => setBuffering(false)}
@@ -236,8 +241,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
         playsInline preload="auto"
       />
 
-      {/* Buffering */}
-      {buffering && (
+      {ready && buffering && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <div className="w-12 h-12 rounded-full border-4 border-white/20 border-t-white/80 animate-spin" />
         </div>
@@ -245,38 +249,28 @@ export default function VideoPlayer(props: VideoPlayerProps) {
 
       {/* Controls */}
       <div className={clsx('absolute inset-0 flex flex-col justify-between transition-opacity duration-300 pointer-events-none', showControls ? 'opacity-100' : 'opacity-0')}>
-        {/* Top */}
         <div className="pointer-events-auto flex items-center justify-between px-5 pt-4 pb-16"
           style={{ background: 'linear-gradient(to bottom, rgba(0,0,0,0.8), transparent)' }}>
           <div className="flex items-center gap-3">
-            <button onClick={handleClose} className="p-2 rounded-full hover:bg-white/10 text-white/70 hover:text-white transition-colors">
-              <ArrowLeft size={20} />
-            </button>
+            <button onClick={handleClose} className="p-2 rounded-full hover:bg-white/10 text-white/70 hover:text-white"><ArrowLeft size={20} /></button>
             <div>
               {title && <p className="text-white font-semibold leading-tight">{title}</p>}
               {subtitle && <p className="text-white/50 text-xs">{subtitle}</p>}
             </div>
           </div>
-          <button onClick={handleClose} className="p-2 rounded-full hover:bg-white/10 text-white/50 hover:text-white transition-colors">
-            <X size={18} />
-          </button>
+          <button onClick={handleClose} className="p-2 rounded-full hover:bg-white/10 text-white/50 hover:text-white"><X size={18} /></button>
         </div>
 
-        {/* Bottom */}
         <div className="pointer-events-auto px-5 pb-5"
           style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.85), transparent)' }}>
-          {/* Progress */}
           <div ref={progRef} onClick={e => {
             const v = vidRef.current; const b = progRef.current;
             if (!v || !b || !v.duration) return;
             v.currentTime = ((e.clientX - b.getBoundingClientRect().left) / b.clientWidth) * v.duration;
           }} className="relative w-full h-1 bg-white/25 rounded-full mb-4 cursor-pointer group/prog hover:h-1.5 transition-all">
             <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: 'var(--accent,#7c3aed)' }} />
-            <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-4 h-4 rounded-full bg-white shadow opacity-0 group-hover/prog:opacity-100 transition-opacity pointer-events-none"
-              style={{ left: `${pct}%` }} />
+            <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-4 h-4 rounded-full bg-white shadow opacity-0 group-hover/prog:opacity-100 transition-opacity pointer-events-none" style={{ left: `${pct}%` }} />
           </div>
-
-          {/* Buttons */}
           <div className="flex items-center gap-3">
             <button onClick={() => { if (vidRef.current) vidRef.current.currentTime -= 10; }} className="text-white/70 hover:text-white p-1.5"><SkipBack size={22} /></button>
             <button onClick={() => { const v = vidRef.current; v?.paused ? v.play() : v?.pause(); }}
@@ -287,22 +281,20 @@ export default function VideoPlayer(props: VideoPlayerProps) {
             <span className="text-white/50 text-xs font-mono tabular-nums">{fmt(currentTime)} / {fmt(duration)}</span>
             <div className="flex-1" />
             <div className="flex items-center gap-2">
-              <button onClick={() => { if (vidRef.current) vidRef.current.muted = !vidRef.current.muted; }} className="text-white/60 hover:text-white transition-colors">
+              <button onClick={() => { if (vidRef.current) vidRef.current.muted = !vidRef.current.muted; }} className="text-white/60 hover:text-white">
                 {muted || volume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
               </button>
               <input type="range" min={0} max={1} step={0.02} value={muted ? 0 : volume}
                 onChange={e => { if (vidRef.current) { vidRef.current.volume = +e.target.value; vidRef.current.muted = false; } }}
                 className="w-20 h-1 cursor-pointer accent-white" />
             </div>
-            <button onClick={() => { if (!document.fullscreenElement) containerRef.current?.requestFullscreen(); else document.exitFullscreen(); }}
-              className="text-white/60 hover:text-white p-1.5">
+            <button onClick={() => { if (!document.fullscreenElement) containerRef.current?.requestFullscreen(); else document.exitFullscreen(); }} className="text-white/60 hover:text-white p-1.5">
               {fullscreen ? <Minimize size={18} /> : <Maximize size={18} />}
             </button>
           </div>
         </div>
       </div>
 
-      {/* Next episode */}
       {showNextEp && nextEpisode && (
         <div className="absolute bottom-24 right-5 bg-[#18181d]/95 border border-white/10 backdrop-blur-xl rounded-2xl overflow-hidden shadow-2xl w-60 z-20">
           <div className="px-4 pt-3 pb-2">
