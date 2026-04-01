@@ -162,7 +162,6 @@ export default function VideoPlayer(props: VideoPlayerProps) {
       if (initialProgress > 0.01 && initialProgress < 0.97 && v.duration)
         v.currentTime = v.duration * initialProgress;
       v.play().catch(() => {});
-      clearTimeout(mpvFallbackTimer);
 
       // Leggi tracce
       const at: typeof audioTracks = [];

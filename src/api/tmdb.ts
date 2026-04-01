@@ -38,8 +38,9 @@ export interface StreamingService {
   tmdbId: number;
   color: string;
   logo: string;
-  logoBg?: string;      // background color per il logo
+  logoBg?: string;
   logoFallback: string;
+  forceRegion?: string;
   gradient: string;
 }
 
