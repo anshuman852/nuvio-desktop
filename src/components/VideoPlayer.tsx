@@ -153,6 +153,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
 
     setReady(false); setError(null); setBuffering(true);
     setShowNextEpCard(false); setNextEpTriggered(false);
+    setPlaying(false); setPaused(false);
     v.src = url;
     v.load();
 
@@ -211,27 +212,29 @@ export default function VideoPlayer(props: VideoPlayerProps) {
 
   // ── Next episode auto-trigger ──────────────────────────────────────────────
   useEffect(() => {
-    if (!duration || nextEpTriggered) return;
+    if (!duration || duration < 5) return;
     const remaining = duration - currentTime;
 
     // Mostra popup a X secondi dalla fine
-    if (prefs.showNextEpPopup && nextEpisode && remaining <= prefs.autoNextEpDelay && remaining > 0) {
+    if (prefs.showNextEpPopup && nextEpisode && !showNextEpCard &&
+        remaining <= prefs.autoNextEpDelay && remaining > 2) {
       setShowNextEpCard(true);
     }
 
-    // Auto-next se abilitato a 5s dalla fine
-    if (prefs.autoNextEp && nextEpisode && onNext && remaining <= 5 && remaining > 0) {
+    // Auto-next se abilitato a 5s dalla fine (una sola volta)
+    if (prefs.autoNextEp && nextEpisode && onNext && !nextEpTriggered &&
+        remaining <= 5 && remaining > 0 && playing) {
       setNextEpTriggered(true);
       syncCW(currentTime, duration);
       onNext();
     }
 
     // Auto-chiudi alla fine se non c'è next
-    if (!nextEpisode && currentTime >= duration && duration > 0) {
+    if (!nextEpisode && duration > 0 && currentTime >= duration - 0.5) {
       syncCW(currentTime, duration);
       handleClose();
     }
-  }, [currentTime, duration, nextEpisode, prefs, nextEpTriggered]);
+  }, [currentTime, duration]);
 
   // ── Auto-hide controls ─────────────────────────────────────────────────────
   function resetHide() {
