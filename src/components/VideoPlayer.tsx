@@ -94,6 +94,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
 
   // Stato video
   const [ready, setReady] = useState(false);
+  const [useMpv, setUseMpv] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [paused, setPaused] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -160,6 +161,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
       if (initialProgress > 0.01 && initialProgress < 0.97 && v.duration)
         v.currentTime = v.duration * initialProgress;
       v.play().catch(() => {});
+      clearTimeout(mpvFallbackTimer);
 
       // Leggi tracce
       const at: typeof audioTracks = [];
@@ -179,15 +181,32 @@ export default function VideoPlayer(props: VideoPlayerProps) {
       setSubtitleTracks(st);
     };
 
+    // Fallback automatico a mpv se il formato non è supportato da WebView
+    let mpvFallbackTimer: ReturnType<typeof setTimeout>;
+    mpvFallbackTimer = setTimeout(() => {
+      if (!ready) {
+        // Prova mpv come fallback silenzioso
+        setUseMpv(true);
+        setBuffering(false);
+      }
+    }, 5000);
+
     const onError = () => {
+      clearTimeout(mpvFallbackTimer);
       const code = v.error?.code;
-      const msgs: Record<number, string> = { 1: 'Interrotto', 2: 'Errore di rete', 3: 'Errore decodifica', 4: 'Formato non supportato' };
-      setError(msgs[code ?? 0] ?? `Errore (${code})`);
+      // Errore 4 = formato non supportato → usa mpv automaticamente
+      if (code === 4 || code === 3) {
+        setUseMpv(true);
+        setBuffering(false);
+        return;
+      }
+      const msgs: Record<number, string> = { 1: 'Interrotto', 2: 'Errore di rete' };
+      setError(msgs[code ?? 0] ?? `Errore di rete (${code})`);
     };
 
     v.addEventListener('canplay', onCanPlay, { once: true });
     v.addEventListener('error', onError, { once: true });
-    return () => { v.removeEventListener('canplay', onCanPlay); v.removeEventListener('error', onError); };
+    return () => { v.removeEventListener('canplay', onCanPlay); v.removeEventListener('error', onError); clearTimeout(mpvFallbackTimer); };
   }, [url]);
 
   // ── Next episode auto-trigger ──────────────────────────────────────────────
@@ -333,6 +352,30 @@ export default function VideoPlayer(props: VideoPlayerProps) {
       </div>
     </div>
   );
+
+  // ── MPV Fallback ──────────────────────────────────────────────────────────
+  if (useMpv) {
+    // Avvia mpv automaticamente e mostra schermata semplice
+    invoke('launch_mpv', { url, title: title ?? null }).catch(() => {});
+    return (
+      <div className="fixed inset-0 bg-[#0c0c10] z-[100] flex flex-col items-center justify-center gap-6">
+        {bgImg && <><img src={bgImg} alt="" className="absolute inset-0 w-full h-full object-cover opacity-10 blur-2xl scale-110" /><div className="absolute inset-0 bg-black/85" /></>}
+        <div className="relative z-10 flex flex-col items-center gap-5 text-center max-w-sm px-6">
+          {poster && <img src={poster} alt={title} className="h-28 rounded-xl shadow-2xl" />}
+          {title && <p className="text-white font-bold text-xl">{title}</p>}
+          <div className="flex items-center gap-3 bg-green-500/10 border border-green-500/20 rounded-2xl px-5 py-3">
+            <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+            <p className="text-green-300 text-sm font-medium">Riproduzione con mpv</p>
+          </div>
+          <p className="text-white/40 text-xs">Il player esterno si aprirà automaticamente. Formato video non compatibile con il player interno.</p>
+          <button onClick={handleClose}
+            className="flex items-center gap-2 px-5 py-2.5 text-white/70 hover:text-white bg-white/10 hover:bg-white/15 rounded-full text-sm transition-colors">
+            <ArrowLeft size={14} />Torna indietro
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   // ── Error ──────────────────────────────────────────────────────────────────
   if (error) return (

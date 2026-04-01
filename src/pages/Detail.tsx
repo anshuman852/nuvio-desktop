@@ -448,8 +448,27 @@ export default function Detail() {
             </div>
           )}
 
-          {!hasTMDBKey() && cast.length === 0 && (
-            <p className="text-xs text-white/25 flex items-center gap-1.5"><ExternalLink size={11} />Aggiungi la chiave TMDB nelle impostazioni per vedere cast e trame tradotte.</p>
+          {!hasTMDBKey() && cast.length === 0 && (meta?.cast?.length ?? 0) === 0 && (
+            <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl px-4 py-3 flex items-center gap-2">
+              <ExternalLink size={13} className="text-white/30 flex-shrink-0" />
+              <p className="text-xs text-white/40">
+                Aggiungi la chiave <strong className="text-white/60">TMDB</strong> nelle Impostazioni → Integrazioni per cast, trama e trailer.
+              </p>
+            </div>
+          )}
+          {/* Cast da meta addon quando non c'è TMDB */}
+          {cast.length === 0 && (meta?.cast?.length ?? 0) > 0 && (
+            <div>
+              <h2 className="text-xs font-semibold text-white/40 uppercase tracking-wider flex items-center gap-2 mb-3"><Users size={13} />Cast</h2>
+              <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-hide">
+                {((meta as any).cast as string[]).slice(0, 12).map((name: string, i: number) => (
+                  <div key={i} className="flex flex-col items-center gap-1.5 flex-shrink-0 w-16">
+                    <div className="w-14 h-14 rounded-full bg-white/10 border border-white/10 flex items-center justify-center text-white/30 text-lg font-bold">{name.charAt(0)}</div>
+                    <p className="text-xs text-white/60 text-center leading-tight">{name}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
 
           {/* Episodes — usa meta.videos (addon) oppure genera da TMDB seasons */}

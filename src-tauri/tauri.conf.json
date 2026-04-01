@@ -1,6 +1,6 @@
 {
   "productName": "NuvioDesktop",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "identifier": "space.nuvioapp.desktop",
   "build": {
     "frontendDist": "../dist",
@@ -23,7 +23,7 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self' 'unsafe-inline' 'unsafe-eval' https: http:; media-src * blob: data: https: http:; img-src * blob: data: https: http:; connect-src * https: http: ws: wss:; frame-src * https: http: youtube.com *.youtube.com;"
     }
   },
   "bundle": {

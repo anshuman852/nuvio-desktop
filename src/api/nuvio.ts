@@ -21,13 +21,22 @@ function sbH(useUser = false): Record<string, string> {
 }
 
 async function rpc(fn: string, payload: Record<string, unknown> = {}, token?: string | null): Promise<any> {
-  const auth = token ?? _userToken ?? SUPABASE_ANON;
+  // IMPORTANTE: deve usare il token utente, non anon - come il sync tool
+  const auth = token ?? _userToken;
+  if (!auth) throw new Error(`RPC ${fn}: token utente mancante - effettua il login`);
   const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON, Authorization: `Bearer ${auth}` },
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': SUPABASE_ANON,
+      'Authorization': `Bearer ${auth}`,
+    },
     body: JSON.stringify(payload),
   });
-  if (!res.ok) throw new Error(`RPC ${fn} failed: ${res.status}`);
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    throw new Error(`RPC ${fn} failed ${res.status}: ${txt.slice(0, 200)}`);
+  }
   return res.json();
 }
 
@@ -36,21 +45,26 @@ async function rpc(fn: string, payload: Record<string, unknown> = {}, token?: st
 export async function nuvioLogin(email: string, password: string): Promise<NuvioUser> {
   const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
     method: 'POST',
-    headers: sbH(),
+    headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON, Authorization: `Bearer ${SUPABASE_ANON}` },
     body: JSON.stringify({ email, password }),
   });
   const data = await res.json();
-  if (!res.ok) throw new Error(data.error_description ?? data.msg ?? 'Login fallito');
+  if (!res.ok) throw new Error(data.error_description ?? data.msg ?? data.error ?? 'Login fallito');
+  
+  // Imposta token SUBITO prima di qualsiasi altra chiamata
   _userToken = data.access_token;
-
-  // Usa get_sync_owner per l'owner reale (come il sync tool)
+  
+  // get_sync_owner: ottieni l'owner reale (esattamente come il sync tool)
   let ownerId = data.user.id;
   try {
     const ownerRes = await rpc('get_sync_owner', {}, data.access_token);
     if (typeof ownerRes === 'string' && ownerRes.length > 10) ownerId = ownerRes;
-    else if (Array.isArray(ownerRes) && ownerRes[0]) ownerId = String(ownerRes[0]);
-    else if (ownerRes?.id) ownerId = ownerRes.id;
-  } catch { /* usa user.id come fallback */ }
+    else if (Array.isArray(ownerRes) && ownerRes.length > 0) ownerId = String(ownerRes[0]);
+    else if (ownerRes && typeof ownerRes === 'object' && ownerRes.id) ownerId = ownerRes.id;
+    console.log('[Nuvio] owner reale:', ownerId);
+  } catch (e) {
+    console.warn('[Nuvio] get_sync_owner fallito, uso user.id:', e);
+  }
 
   let name = data.user.email.split('@')[0];
   let avatar: string | undefined;
