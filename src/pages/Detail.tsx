@@ -142,87 +142,112 @@ export default function Detail() {
     (async () => {
       let found: MetaItem | null = null;
       const tmdbNumId = isTmdbId ? parseInt(decodedId.replace('tmdb:', '')) : null;
+      const imdbId = decodedId.startsWith('tt') ? decodedId : null;
 
-      // 1. Fetch da addon
-      if (!isTmdbId) {
-        for (const addon of addons.slice(0, 5)) {
+      // ── FETCH PARALLELO: addon meta + TMDB contemporaneamente ────────────
+      const [addonResult, tmdbData] = await Promise.all([
+        // 1. Addon meta (tutti in parallelo, timeout 5s)
+        isTmdbId ? Promise.resolve(null) : Promise.race([
+          Promise.any(
+            addons.slice(0, 8).map(addon =>
+              fetchMeta(addon.url, type!, decodedId).then(m => {
+                if (!m?.name) throw new Error('no meta');
+                return m;
+              })
+            )
+          ).catch(() => null),
+          new Promise<null>(res => setTimeout(() => res(null), 5000)),
+        ]),
+
+        // 2. TMDB (parallelo con addon)
+        hasTMDBKey() ? (async () => {
           try {
-            const m = await fetchMeta(addon.url, type, decodedId);
-            if (m?.name) { found = m; break; }
-          } catch { /* prova prossimo */ }
-        }
-      }
-
-      // 2. TMDB
-      if (hasTMDBKey() && (tmdbNumId || found)) {
-        try {
-          let tmdbId = tmdbNumId;
-          if (!tmdbId && found?.id?.startsWith('tt')) {
-            const findRes = await fetch(`https://api.themoviedb.org/3/find/${found.id}?api_key=${settings.tmdbApiKey}&external_source=imdb_id`).then(r => r.json());
-            const arr = type === 'series' ? (findRes.tv_results ?? []) : (findRes.movie_results ?? []);
-            tmdbId = arr[0]?.id ?? null;
-          }
-          if (tmdbId) {
+            let tmdbId = tmdbNumId;
+            if (!tmdbId && imdbId) {
+              const fr = await fetch(
+                `https://api.themoviedb.org/3/find/${imdbId}?api_key=${settings.tmdbApiKey}&external_source=imdb_id`
+              ).then(r => r.json()).catch(() => null);
+              const arr = type === 'series' ? (fr?.tv_results ?? []) : (fr?.movie_results ?? []);
+              tmdbId = arr[0]?.id ?? null;
+            }
+            if (!tmdbId) return null;
             const tmdbType = type === 'series' ? 'tv' : 'movie';
-            const data = await getDetails(tmdbType, tmdbId);
-            setTmdb(data);
-            setCast((data.credits?.cast ?? []).slice(0, 30).map((c: any) => ({
-              id: c.id, name: c.name, role: c.character ?? '',
-              photo: c.profile_path ? tmdbImg(c.profile_path, 'w185') : undefined,
-            })));
-            setCrew((data.credits?.crew ?? []).filter((c: any) => ['Director','Screenplay','Writer','Creator'].includes(c.job)).slice(0, 6).map((c: any) => ({
-              id: c.id, name: c.name, role: c.job,
-              photo: c.profile_path ? tmdbImg(c.profile_path, 'w185') : undefined,
-            })));
-            if (!found || isTmdbId) {
-              const imdb = data.external_ids?.imdb_id;
-              found = {
-                id: imdb ?? decodedId,
-                type: type ?? 'movie',
-                name: data.title ?? data.name ?? '',
-                poster: data.poster_path ? tmdbImg(data.poster_path, 'w342') : undefined,
-                background: data.backdrop_path ? tmdbImg(data.backdrop_path, 'w1280') : undefined,
-                description: data.overview,
-                releaseInfo: (data.release_date ?? data.first_air_date ?? '').slice(0, 4),
-                imdbRating: data.vote_average ? data.vote_average.toFixed(1) : undefined,
-                runtime: data.runtime ? `${data.runtime}min` : data.episode_run_time?.[0] ? `${data.episode_run_time[0]}min` : undefined,
-                genres: (data.genres ?? []).map((g: any) => g.name),
-              };
-              if (data.seasons?.length) {
-                const episodes: Video[] = [];
-                for (const season of data.seasons) {
-                  if (!season.season_number) continue;
-                  for (let ep = 1; ep <= (season.episode_count ?? 0); ep++) {
-                    const imdbBase = imdb ?? decodedId;
-                    episodes.push({
-                      id: `${imdbBase}:${season.season_number}:${ep}`,
-                      title: `Episodio ${ep}`,
-                      season: season.season_number,
-                      episode: ep,
-                    });
-                  }
-                }
-                if (episodes.length > 0 && (!found.videos || found.videos.length === 0)) {
-                  found.videos = episodes;
-                }
+            return await getDetails(tmdbType, tmdbId);
+          } catch { return null; }
+        })() : Promise.resolve(null),
+      ]);
+
+      found = addonResult as MetaItem | null;
+
+      // Applica dati TMDB
+      if (tmdbData) {
+        setTmdb(tmdbData);
+        setCast((tmdbData.credits?.cast ?? []).slice(0, 30).map((c: any) => ({
+          id: c.id, name: c.name, role: c.character ?? '',
+          photo: c.profile_path ? tmdbImg(c.profile_path, 'w185') : undefined,
+        })));
+        setCrew((tmdbData.credits?.crew ?? []).filter((c: any) =>
+          ['Director','Screenplay','Writer','Creator'].includes(c.job)
+        ).slice(0, 6).map((c: any) => ({
+          id: c.id, name: c.name, role: c.job,
+          photo: c.profile_path ? tmdbImg(c.profile_path, 'w185') : undefined,
+        })));
+
+        // Se non abbiamo meta dall'addon (es. tmdb: ID), costruiscila da TMDB
+        if (!found || isTmdbId) {
+          const imdbFromTmdb = tmdbData.external_ids?.imdb_id;
+          const episodes: Video[] = [];
+          if (tmdbData.seasons?.length) {
+            for (const season of tmdbData.seasons) {
+              if (!season.season_number) continue;
+              const baseId = imdbFromTmdb ?? decodedId;
+              for (let ep = 1; ep <= (season.episode_count ?? 0); ep++) {
+                episodes.push({
+                  id: `${baseId}:${season.season_number}:${ep}`,
+                  title: `Episodio ${ep}`,
+                  season: season.season_number,
+                  episode: ep,
+                });
               }
             }
           }
-        } catch { /* non bloccante */ }
+          found = {
+            id: imdbFromTmdb ?? decodedId,
+            type: type ?? 'movie',
+            name: tmdbData.title ?? tmdbData.name ?? '',
+            poster: tmdbData.poster_path ? tmdbImg(tmdbData.poster_path, 'w342') : undefined,
+            background: tmdbData.backdrop_path ? tmdbImg(tmdbData.backdrop_path, 'w1280') : undefined,
+            description: tmdbData.overview,
+            releaseInfo: (tmdbData.release_date ?? tmdbData.first_air_date ?? '').slice(0, 4),
+            imdbRating: tmdbData.vote_average ? tmdbData.vote_average.toFixed(1) : undefined,
+            runtime: tmdbData.runtime ? `${tmdbData.runtime}min`
+              : tmdbData.episode_run_time?.[0] ? `${tmdbData.episode_run_time[0]}min` : undefined,
+            genres: (tmdbData.genres ?? []).map((g: any) => g.name),
+            videos: episodes.length > 0 ? episodes : undefined,
+          };
+        } else if (found && (!found.videos || found.videos.length === 0) && tmdbData.seasons?.length) {
+          // Aggiungi episodi TMDB al meta dell'addon
+          const baseId = found.id?.startsWith('tt') ? found.id : imdbId ?? found.id;
+          const eps: Video[] = [];
+          for (const season of tmdbData.seasons) {
+            if (!season.season_number) continue;
+            for (let ep = 1; ep <= (season.episode_count ?? 0); ep++) {
+              eps.push({ id: `${baseId}:${season.season_number}:${ep}`, title: `Episodio ${ep}`, season: season.season_number, episode: ep });
+            }
+          }
+          if (eps.length > 0) found = { ...found, videos: eps };
+        }
       }
 
       if (found) {
-        setMeta(found);
         // Cast da addon se TMDB non disponibile
         if (cast.length === 0 && (found as any).cast?.length > 0) {
-          const addonCast = ((found as any).cast as string[]).slice(0, 30).map((name: string, i: number) => ({
-            id: i, name, role: '',
-          }));
-          setCast(addonCast);
+          setCast(((found as any).cast as string[]).slice(0, 30).map((name: string, i: number) => ({ id: i, name, role: '' })));
         }
         // Imposta stagione iniziale
         const seasons = [...new Set((found.videos ?? []).map(v => v.season ?? 0))].filter(Boolean).sort((a, b) => a - b);
         if (seasons.length > 0) setActiveSeason(seasons[0]);
+        setMeta(found);
       }
 
       setMetaLoading(false);

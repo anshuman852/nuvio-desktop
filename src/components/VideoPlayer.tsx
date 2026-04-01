@@ -182,32 +182,25 @@ export default function VideoPlayer(props: VideoPlayerProps) {
       setSubtitleTracks(st);
     };
 
-    // Fallback automatico a mpv se il formato non è supportato da WebView
-    let mpvFallbackTimer: ReturnType<typeof setTimeout>;
-    mpvFallbackTimer = setTimeout(() => {
-      if (!ready) {
-        // Prova mpv come fallback silenzioso
-        setUseMpv(true);
-        setBuffering(false);
-      }
-    }, 5000);
-
+    // Solo errori codec veri → mpv. Mai timer automatico per HTTP
     const onError = () => {
-      clearTimeout(mpvFallbackTimer);
       const code = v.error?.code;
-      // Errore 4 = formato non supportato → usa mpv automaticamente
       if (code === 4 || code === 3) {
+        // Formato non supportato da WebView → mpv automatico
         setUseMpv(true);
         setBuffering(false);
         return;
       }
-      const msgs: Record<number, string> = { 1: 'Interrotto', 2: 'Errore di rete' };
-      setError(msgs[code ?? 0] ?? `Errore di rete (${code})`);
+      const msgs: Record<number, string> = {
+        1: 'Stream interrotto',
+        2: 'Errore di rete — verifica la connessione',
+      };
+      setError(msgs[code ?? 0] ?? `Errore stream (${code ?? 'unknown'})`);
     };
 
     v.addEventListener('canplay', onCanPlay, { once: true });
     v.addEventListener('error', onError, { once: true });
-    return () => { v.removeEventListener('canplay', onCanPlay); v.removeEventListener('error', onError); clearTimeout(mpvFallbackTimer); };
+    return () => { v.removeEventListener('canplay', onCanPlay); v.removeEventListener('error', onError); };
   }, [url]);
 
   // ── Next episode auto-trigger ──────────────────────────────────────────────

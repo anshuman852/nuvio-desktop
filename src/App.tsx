@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { Home, Search as SearchIcon, Library, Package, Settings, X, Tv } from 'lucide-react';
 import clsx from 'clsx';
 import { useStore } from './lib/store';
+import { setAuthToken } from './api/nuvio';
 // avatar helpers rimossi - ora avatarUrl è diretto nel profilo
 
 import HomePage from './pages/Home';
@@ -15,6 +16,18 @@ import StreamingPage from './pages/Streaming';
 import LibraryPage from './pages/Library';
 import PersonDetailPage from './pages/PersonDetail';
 import ProfileSelectPage from './pages/ProfileSelect';
+
+function TokenRestorer() {
+  const { nuvioUser } = useStore();
+  useEffect(() => {
+    // Ripristina _userToken dal Zustand persist ad ogni avvio/reload
+    if (nuvioUser?.token) {
+      setAuthToken(nuvioUser.token);
+      console.log('[Nuvio] Token ripristinato da Zustand:', nuvioUser.id);
+    }
+  }, [nuvioUser?.token]);
+  return null;
+}
 
 function AccentApplier() {
   const { settings } = useStore();
@@ -157,6 +170,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <AccentApplier />
+      <TokenRestorer />
       {profileSelected ? <Layout /> : <ProfileSelectPage />}
     </BrowserRouter>
   );

@@ -59,13 +59,13 @@ export const STREAMING_SERVICES: StreamingService[] = [
   { id: 'amazon',     name: 'Prime Video',  tmdbId: 9,   color: '#00A8E1',
     logo: 'https://upload.wikimedia.org/wikipedia/commons/1/11/Amazon_Prime_Video_logo.svg',
     logoBg: '#00A8E1', logoFallback: '📦', gradient: 'from-cyan-950 to-black' },
-  { id: 'hbo',        name: 'Max',          tmdbId: 384, color: '#5822B4',
+  { id: 'hbo',        name: 'Max',          tmdbId: 1899, color: '#5822B4',
     logo: 'https://upload.wikimedia.org/wikipedia/commons/1/17/HBO_Max_Logo.svg',
     logoBg: '#5822B4', logoFallback: '💜', gradient: 'from-purple-950 to-black' },
   { id: 'crunchyroll',name: 'Crunchyroll',  tmdbId: 283, color: '#F47521',
     logo: 'https://upload.wikimedia.org/wikipedia/commons/0/08/Crunchyroll_logo_2024.svg',
     logoBg: '#F47521', logoFallback: '🍥', gradient: 'from-orange-950 to-black' },
-  { id: 'raiplay',    name: 'RaiPlay',      tmdbId: 675, color: '#009246',
+  { id: 'raiplay',    name: 'RaiPlay',      tmdbId: 675, color: '#009246', forceRegion: 'IT',
     logo: 'https://upload.wikimedia.org/wikipedia/commons/5/5f/RaiPlay_-_Logo.svg',
     logoBg: '#009246', logoFallback: '🇮🇹', gradient: 'from-green-950 to-black' },
 ];
@@ -76,15 +76,21 @@ export async function discoverByProvider(
   providerId: number,
   type: 'movie' | 'tv',
   page = 1,
-  region = 'US'  // US ha più contenuti; IT limita troppo alcuni provider
 ): Promise<{ results: any[]; total_pages: number }> {
-  return get(`/discover/${type}`, {
-    with_watch_providers: String(providerId),
-    watch_region: region,
-    sort_by: 'popularity.desc',
-    include_adult: 'false',
-    page: String(page),
-  });
+  // Prova IT (per servizi locali come RaiPlay) poi US (per tutti gli altri)
+  for (const region of ['IT', 'US']) {
+    try {
+      const data = await get(`/discover/${type}`, {
+        with_watch_providers: String(providerId),
+        watch_region: region,
+        sort_by: 'popularity.desc',
+        include_adult: 'false',
+        page: String(page),
+      });
+      if ((data.results ?? []).length > 0) return data;
+    } catch { /* prova prossima region */ }
+  }
+  return { results: [], total_pages: 0 };
 }
 
 // ─── Details (film o serie) ───────────────────────────────────────────────────
