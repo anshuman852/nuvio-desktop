@@ -20,5 +20,15 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
-  </body>
+  
+  <script>
+    // Disabilita right-click del browser ovunque - le card usano onContextMenu React
+    document.addEventListener('contextmenu', function(e) {
+      // Permetti right-click solo su elementi con data-content-menu
+      if (!e.target.closest('[data-context-menu]')) {
+        e.preventDefault();
+      }
+    });
+  </script>
+</body>
 </html>

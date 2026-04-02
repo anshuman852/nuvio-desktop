@@ -91,11 +91,12 @@ export interface NuvioCW {
   progress: number; duration: number; updatedAt: string;
 }
 
-export async function getContinueWatching(userId: string): Promise<NuvioCW[]> {
-  if (!_userToken || !userId) return [];
+export async function getContinueWatching(userId: string, userToken?: string): Promise<NuvioCW[]> {
+  const tok = userToken ?? _userToken;
+  if (!tok || !userId) return [];
   try {
     // Usa l'RPC ufficiale sync_pull_watch_progress (identico al sync tool)
-    const data = await rpc('sync_pull_watch_progress', {}, _userToken);
+    const data = await rpc('sync_pull_watch_progress', {}, tok);
     if (!Array.isArray(data) || data.length === 0) return [];
     return data
       .filter((r: any) => {
@@ -135,8 +136,9 @@ export async function upsertCW(userId: string, item: {
 }): Promise<void> {
   if (!_userToken || !userId) return;
   const now = Date.now();
-  const posMs = Math.round(item.progress * item.duration * 1000);
-  const durMs = Math.round(item.duration * 1000);
+  // Scrivi in SECONDI (schema Supabase reale)
+  const posSec = Math.round(item.progress * item.duration);
+  const durSec = Math.round(item.duration);
   const progressKey = item.season != null && item.episode != null
     ? `${item.id}_s${item.season}e${item.episode}`
     : item.id;
@@ -149,8 +151,8 @@ export async function upsertCW(userId: string, item: {
     video_id: item.videoId ?? item.id,
     season: item.season ?? null,
     episode: item.episode ?? null,
-    position: posMs,
-    duration: durMs,
+    position: posSec,
+    duration: durSec,
     last_watched: now,
     progress_key: progressKey,
   };
@@ -235,36 +237,32 @@ async function countTable(table: string, userId: string, extra = ''): Promise<nu
   return Array.isArray(data) ? data.length : 0;
 }
 
-export async function getAccountStats(userId: string): Promise<AccountStats> {
-  if (!_userToken || !userId) {
+export async function getAccountStats(userId: string, userToken?: string): Promise<AccountStats> {
+  const tok = userToken ?? _userToken;
+  if (!tok || !userId) {
     console.log('[Nuvio stats] no token/userId', { hasToken: !!_userToken, userId });
     return { totalMovies: 0, totalEpisodes: 0, totalWatched: 0, librarySize: 0, watchTimeHours: 0 };
   }
   console.log('[Nuvio stats] fetching for user:', userId);
   try {
-    // Usa gli stessi RPCs del sync tool per avere i dati reali
     const [watchedItems, watchProgress, libraryItems] = await Promise.all([
-      rpc('sync_pull_watched_items', {}, _userToken).then((d: any) => { console.log('[Nuvio] watched_items:', Array.isArray(d) ? d.length : d); return Array.isArray(d) ? d : []; }).catch(e => { console.error('[Nuvio] watched_items error:', e); return []; }),
-      rpc('sync_pull_watch_progress', {}, _userToken).then((d: any) => { console.log('[Nuvio] watch_progress:', Array.isArray(d) ? d.length : d); return Array.isArray(d) ? d : []; }).catch(e => { console.error('[Nuvio] watch_progress error:', e); return []; }),
-      rpc('sync_pull_library', {}, _userToken).then((d: any) => { console.log('[Nuvio] library:', Array.isArray(d) ? d.length : d); return Array.isArray(d) ? d : []; }).catch(e => { console.error('[Nuvio] library error:', e); return []; }),
+      rpc('sync_pull_watched_items', {}, tok).then((d: any) => Array.isArray(d) ? d : []).catch(() => [] as any[]),
+      rpc('sync_pull_watch_progress', {}, tok).then((d: any) => Array.isArray(d) ? d : []).catch(() => [] as any[]),
+      rpc('sync_pull_library', {}, tok).then((d: any) => Array.isArray(d) ? d : []).catch(() => [] as any[]),
     ]);
 
     const movies = (watchedItems as any[]).filter((w: any) => w.content_type === 'movie' && w.season == null).length;
     const episodes = (watchedItems as any[]).filter((w: any) => w.season != null).length;
     const seriesWatched = (watchedItems as any[]).filter((w: any) => w.content_type === 'series' && w.season == null).length;
-
-    const watchTimeMs = (watchProgress as any[]).reduce((acc: number, w: any) => {
-      const pos = w.position ?? 0;
-      // position è in ms se > 3.6M (1 ora in ms), altrimenti in secondi
-      return acc + (pos > 3600000 ? pos : pos * 1000);
-    }, 0);
+    // position/duration in SECONDI nel DB reale
+    const watchTimeSec = (watchProgress as any[]).reduce((acc: number, w: any) => acc + (w.position ?? 0), 0);
 
     return {
       totalMovies: movies,
       totalEpisodes: episodes,
       totalWatched: movies + seriesWatched,
       librarySize: (libraryItems as any[]).length,
-      watchTimeHours: Math.round(watchTimeMs / 3600000),
+      watchTimeHours: Math.round(watchTimeSec / 3600),
     };
   } catch { return { totalMovies: 0, totalEpisodes: 0, totalWatched: 0, librarySize: 0, watchTimeHours: 0 }; }
 }

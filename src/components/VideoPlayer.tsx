@@ -378,6 +378,10 @@ export default function VideoPlayer(props: VideoPlayerProps) {
           <p className="text-white/30 text-xs">Prova uno stream diverso dalla lista.</p>
         </div>
         <div className="flex gap-2 w-full">
+          <button onClick={() => { setError(null); setRetryCount(0); setBuffering(true); if(vidRef.current){vidRef.current.load();vidRef.current.play().catch(()=>{});} }}
+            className="flex-1 flex items-center justify-center gap-2 py-2.5 text-sm text-white bg-white/10 hover:bg-white/20 rounded-xl transition-colors">
+            ↻ Riprova
+          </button>
           <button onClick={handleClose}
             className="flex-1 flex items-center justify-center gap-2 py-2.5 text-sm text-white bg-white/10 hover:bg-white/20 rounded-xl transition-colors">
             <ArrowLeft size={14} />Cambia stream

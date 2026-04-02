@@ -102,7 +102,7 @@ function PosterCard({ item, onRemove }: { item: any; onRemove?: (id: string) => 
           style={{ left: ctxMenu.x, top: ctxMenu.y }}
           onClick={e => e.stopPropagation()}>
           {onRemove && (
-            <button onClick={() => { setCtxMenu(null); onRemove(item.id); }}
+            <button onClick={e => { e.stopPropagation(); setCtxMenu(null); onRemove(item.id); }}
               className="w-full text-left px-4 py-2.5 text-sm text-red-400 hover:bg-white/5 flex items-center gap-2">
               <span>✕</span> Rimuovi da CW
             </button>
@@ -113,11 +113,7 @@ function PosterCard({ item, onRemove }: { item: any; onRemove?: (id: string) => 
             <span>ℹ</span> Info
           </Link>
           {onRemove && (
-            <button onClick={() => {
-              setCtxMenu(null);
-              onRemove(item.id);
-              // Segna come visto (progresso 100%)
-            }}
+            <button onClick={e => { e.stopPropagation(); setCtxMenu(null); onRemove(item.id); }}
               className="w-full text-left px-4 py-2.5 text-sm text-green-400 hover:bg-white/5 flex items-center gap-2">
               <span>✓</span> Segna come visto
             </button>
@@ -127,7 +123,7 @@ function PosterCard({ item, onRemove }: { item: any; onRemove?: (id: string) => 
     <Link to={`/detail/${item.type}/${encodeURIComponent(item.id)}`} className="flex-shrink-0 group">
       <div
         className="relative w-[150px] h-[225px] rounded-xl overflow-hidden bg-white/5 border border-white/[0.06] group-hover:border-white/20 transition-all duration-200 group-hover:scale-[1.04] shadow-lg"
-        onContextMenu={e => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY }); }}>
+        data-context-menu="true" onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setCtxMenu({ x: e.clientX, y: e.clientY }); }}>
         {posterSrc && !imgErr
           ? <img src={posterSrc} alt={item.name} className="w-full h-full object-cover" onError={() => setImgErr(true)} />
           : <div className="w-full h-full flex items-center justify-center text-white/10"><Play size={28} /></div>}
