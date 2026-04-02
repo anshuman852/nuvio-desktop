@@ -195,7 +195,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
         return;
       }
       const msgs: Record<number, string> = {
-        1: 'Stream interrotto dall'utente',
+        1: "Stream interrotto dall'utente",
         2: 'Errore di rete — il provider non risponde',
         3: 'Errore decodifica video',
         4: 'Formato non supportato dal player interno',
