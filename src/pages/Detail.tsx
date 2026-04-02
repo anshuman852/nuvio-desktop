@@ -124,6 +124,7 @@ export default function Detail() {
   const [prevEpData, setPrevEpData] = useState<Video | null>(null);
   const [playError, setPlayError] = useState<string | null>(null);
   const [activeStreamKey, setActiveStreamKey] = useState<string | null>(null);
+  const [selectedAddon, setSelectedAddon] = useState<string | null>(null); // null = tutti
   const [playerStream, setPlayerStream] = useState<Stream | null>(null);
   const [activeSeason, setActiveSeason] = useState<number>(1);
   const [inLibrary, setInLibrary] = useState(false);
@@ -704,13 +705,30 @@ export default function Detail() {
         {/* Pannello STREAM */}
         {(!showEpisodePanel || selectedVideo) && (
           <div className="flex flex-col h-full">
-            {/* Header stream */}
-            <div className="px-4 py-2.5 border-b border-white/[0.08] flex-shrink-0 flex items-center gap-2">
-              <p className="text-xs font-bold text-white/50 uppercase tracking-wider flex-1">Stream disponibili</p>
+            {/* Header stream con dropdown addon */}
+            <div className="px-3 py-2 border-b border-white/[0.08] flex-shrink-0 flex items-center gap-2">
+              {streamGroups.length > 1 ? (
+                <select
+                  value={selectedAddon ?? 'all'}
+                  onChange={e => setSelectedAddon(e.target.value === 'all' ? null : e.target.value)}
+                  className="flex-1 bg-white/10 border border-white/10 rounded-lg px-2 py-1 text-xs text-white focus:outline-none focus:border-[color:var(--accent)] cursor-pointer"
+                  style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}>
+                  <option value="all" style={{ backgroundColor: '#1a1a22' }}>
+                    Tutti gli addon ({streamGroups.reduce((t, g) => t + g.streams.length, 0)})
+                  </option>
+                  {streamGroups.map(g => (
+                    <option key={g.addonUrl} value={g.addonUrl} style={{ backgroundColor: '#1a1a22' }}>
+                      {g.addonName} ({g.streams.length})
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <p className="text-xs font-bold text-white/50 uppercase tracking-wider flex-1">Stream disponibili</p>
+              )}
               {streamsLoading && (
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1 flex-shrink-0">
                   <Loader2 size={11} className="animate-spin text-white/40" />
-                  <span className="text-[10px] text-white/30">{streamGroups.length} addon caricati...</span>
+                  <span className="text-[10px] text-white/30">{streamGroups.length}</span>
                 </div>
               )}
             </div>
@@ -735,7 +753,7 @@ export default function Detail() {
                   Seleziona un episodio per caricare gli stream
                 </div>
               )}
-              {streamGroups.map((group) => (
+              {(selectedAddon ? streamGroups.filter(g => g.addonUrl === selectedAddon) : streamGroups).map((group) => (
                 <div key={group.addonUrl}>
                   {/* Addon header */}
                   <div className="sticky top-0 bg-[#111115]/95 backdrop-blur-sm px-3 py-2 border-b border-white/[0.05] z-10">

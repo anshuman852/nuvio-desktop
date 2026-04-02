@@ -236,13 +236,17 @@ async function countTable(table: string, userId: string, extra = ''): Promise<nu
 }
 
 export async function getAccountStats(userId: string): Promise<AccountStats> {
-  if (!_userToken || !userId) return { totalMovies: 0, totalEpisodes: 0, totalWatched: 0, librarySize: 0, watchTimeHours: 0 };
+  if (!_userToken || !userId) {
+    console.log('[Nuvio stats] no token/userId', { hasToken: !!_userToken, userId });
+    return { totalMovies: 0, totalEpisodes: 0, totalWatched: 0, librarySize: 0, watchTimeHours: 0 };
+  }
+  console.log('[Nuvio stats] fetching for user:', userId);
   try {
     // Usa gli stessi RPCs del sync tool per avere i dati reali
     const [watchedItems, watchProgress, libraryItems] = await Promise.all([
-      rpc('sync_pull_watched_items', {}, _userToken).then((d: any) => Array.isArray(d) ? d : []).catch(() => []),
-      rpc('sync_pull_watch_progress', {}, _userToken).then((d: any) => Array.isArray(d) ? d : []).catch(() => []),
-      rpc('sync_pull_library', {}, _userToken).then((d: any) => Array.isArray(d) ? d : []).catch(() => []),
+      rpc('sync_pull_watched_items', {}, _userToken).then((d: any) => { console.log('[Nuvio] watched_items:', Array.isArray(d) ? d.length : d); return Array.isArray(d) ? d : []; }).catch(e => { console.error('[Nuvio] watched_items error:', e); return []; }),
+      rpc('sync_pull_watch_progress', {}, _userToken).then((d: any) => { console.log('[Nuvio] watch_progress:', Array.isArray(d) ? d.length : d); return Array.isArray(d) ? d : []; }).catch(e => { console.error('[Nuvio] watch_progress error:', e); return []; }),
+      rpc('sync_pull_library', {}, _userToken).then((d: any) => { console.log('[Nuvio] library:', Array.isArray(d) ? d.length : d); return Array.isArray(d) ? d : []; }).catch(e => { console.error('[Nuvio] library error:', e); return []; }),
     ]);
 
     const movies = (watchedItems as any[]).filter((w: any) => w.content_type === 'movie' && w.season == null).length;

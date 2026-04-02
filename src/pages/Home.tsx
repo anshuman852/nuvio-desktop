@@ -65,8 +65,18 @@ function HeroSection({ item }: { item: MetaItem }) {
 function PosterCard({ item, onRemove }: { item: any; onRemove?: (id: string) => void }) {
   const [imgErr, setImgErr] = useState(false);
   const [tmdbPoster, setTmdbPoster] = useState<string|null>(null);
-  const { settings } = useStore();
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
+  const { settings, nuvioUser } = useStore();
+  const { removeWatch } = useStore();
   const progress = typeof item.progress === 'number' ? item.progress : (item.progressPct ? item.progressPct / 100 : undefined);
+
+  // Chiudi menu al click esterno
+  useEffect(() => {
+    if (!ctxMenu) return;
+    const close = () => setCtxMenu(null);
+    window.addEventListener('click', close);
+    return () => window.removeEventListener('click', close);
+  }, [ctxMenu]);
 
   // Carica poster da TMDB se mancante
   useEffect(() => {
@@ -85,8 +95,39 @@ function PosterCard({ item, onRemove }: { item: any; onRemove?: (id: string) => 
   const posterSrc = item.poster || tmdbPoster;
 
   return (
+    <div className="flex-shrink-0 group relative">
+      {/* Context menu */}
+      {ctxMenu && (
+        <div className="fixed z-50 bg-[#1e1e26] border border-white/10 rounded-xl shadow-2xl py-1.5 min-w-[180px] overflow-hidden"
+          style={{ left: ctxMenu.x, top: ctxMenu.y }}
+          onClick={e => e.stopPropagation()}>
+          {onRemove && (
+            <button onClick={() => { setCtxMenu(null); onRemove(item.id); }}
+              className="w-full text-left px-4 py-2.5 text-sm text-red-400 hover:bg-white/5 flex items-center gap-2">
+              <span>✕</span> Rimuovi da CW
+            </button>
+          )}
+          <Link to={`/detail/${item.type}/${encodeURIComponent(item.id)}`}
+            className="w-full text-left px-4 py-2.5 text-sm text-white/70 hover:bg-white/5 flex items-center gap-2 block"
+            onClick={() => setCtxMenu(null)}>
+            <span>ℹ</span> Info
+          </Link>
+          {onRemove && (
+            <button onClick={() => {
+              setCtxMenu(null);
+              onRemove(item.id);
+              // Segna come visto (progresso 100%)
+            }}
+              className="w-full text-left px-4 py-2.5 text-sm text-green-400 hover:bg-white/5 flex items-center gap-2">
+              <span>✓</span> Segna come visto
+            </button>
+          )}
+        </div>
+      )}
     <Link to={`/detail/${item.type}/${encodeURIComponent(item.id)}`} className="flex-shrink-0 group">
-      <div className="relative w-[150px] h-[225px] rounded-xl overflow-hidden bg-white/5 border border-white/[0.06] group-hover:border-white/20 transition-all duration-200 group-hover:scale-[1.04] shadow-lg">
+      <div
+        className="relative w-[150px] h-[225px] rounded-xl overflow-hidden bg-white/5 border border-white/[0.06] group-hover:border-white/20 transition-all duration-200 group-hover:scale-[1.04] shadow-lg"
+        onContextMenu={e => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY }); }}>
         {posterSrc && !imgErr
           ? <img src={posterSrc} alt={item.name} className="w-full h-full object-cover" onError={() => setImgErr(true)} />
           : <div className="w-full h-full flex items-center justify-center text-white/10"><Play size={28} /></div>}
@@ -115,6 +156,7 @@ function PosterCard({ item, onRemove }: { item: any; onRemove?: (id: string) => 
       <p className="mt-2 text-xs text-white/70 group-hover:text-white truncate w-[150px] transition-colors">{item.name}</p>
       {item.releaseInfo && <p className="text-xs text-white/30">{item.releaseInfo}</p>}
     </Link>
+    </div>
   );
 }
 

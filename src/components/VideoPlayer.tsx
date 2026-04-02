@@ -94,7 +94,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
 
   // Stato video
   const [ready, setReady] = useState(false);
-  const [useMpv, setUseMpv] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [paused, setPaused] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -181,20 +181,26 @@ export default function VideoPlayer(props: VideoPlayerProps) {
       setSubtitleTracks(st);
     };
 
-    // Solo errori codec veri → mpv. Mai timer automatico per HTTP
     const onError = () => {
       const code = v.error?.code;
-      if (code === 4 || code === 3) {
-        // Formato non supportato da WebView → mpv automatico
-        setUseMpv(true);
-        setBuffering(false);
+      // Prima retry automatico (spesso risolve problemi transitori)
+      if (retryCount < 2 && code !== 1) {
+        setRetryCount(prev => prev + 1);
+        setTimeout(() => {
+          if (vidRef.current) {
+            vidRef.current.load();
+            vidRef.current.play().catch(() => {});
+          }
+        }, 1000);
         return;
       }
       const msgs: Record<number, string> = {
-        1: 'Stream interrotto',
-        2: 'Errore di rete — verifica la connessione',
+        1: 'Stream interrotto dall'utente',
+        2: 'Errore di rete — il provider non risponde',
+        3: 'Errore decodifica video',
+        4: 'Formato non supportato dal player interno',
       };
-      setError(msgs[code ?? 0] ?? `Errore stream (${code ?? 'unknown'})`);
+      setError(msgs[code ?? 0] ?? `Errore stream (${code ?? 'sconosciuto'})`);
     };
 
     v.addEventListener('canplay', onCanPlay, { once: true });
@@ -348,39 +354,35 @@ export default function VideoPlayer(props: VideoPlayerProps) {
     </div>
   );
 
-  // ── MPV Fallback ──────────────────────────────────────────────────────────
-  if (useMpv) {
-    // Avvia mpv automaticamente e mostra schermata semplice
-    invoke('launch_mpv', { url, title: title ?? null }).catch(() => {});
-    return (
-      <div className="fixed inset-0 bg-[#0c0c10] z-[100] flex flex-col items-center justify-center gap-6">
-        {bgImg && <><img src={bgImg} alt="" className="absolute inset-0 w-full h-full object-cover opacity-10 blur-2xl scale-110" /><div className="absolute inset-0 bg-black/85" /></>}
-        <div className="relative z-10 flex flex-col items-center gap-5 text-center max-w-sm px-6">
-          {poster && <img src={poster} alt={title} className="h-28 rounded-xl shadow-2xl" />}
-          {title && <p className="text-white font-bold text-xl">{title}</p>}
-          <div className="flex items-center gap-3 bg-green-500/10 border border-green-500/20 rounded-2xl px-5 py-3">
-            <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-            <p className="text-green-300 text-sm font-medium">Riproduzione con mpv</p>
-          </div>
-          <p className="text-white/40 text-xs">Il player esterno si aprirà automaticamente. Formato video non compatibile con il player interno.</p>
+
+
+  // ── Error screen ──────────────────────────────────────────────────────────
+  if (error) return (
+    <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black">
+      {/* Poster sfondo animato */}
+      {(bgImg || poster) && (
+        <>
+          <img src={bgImg ?? poster} alt="" className="absolute inset-0 w-full h-full object-cover opacity-15 blur-2xl scale-110 animate-pulse" style={{ animationDuration: '3s' }} />
+          <div className="absolute inset-0 bg-black/80" />
+        </>
+      )}
+      <div className="relative z-10 flex flex-col items-center gap-5 text-center max-w-sm px-6">
+        {/* Logo/poster lampeggiante */}
+        {poster && (
+          <img src={poster} alt={title} className="h-32 rounded-2xl shadow-2xl border border-white/10" />
+        )}
+        {title && <p className="text-white font-bold text-lg">{title}</p>}
+        <div className="bg-red-500/10 border border-red-500/20 rounded-2xl px-5 py-4 w-full text-left space-y-2">
+          <p className="text-red-400 font-semibold text-sm">Stream non disponibile</p>
+          <p className="text-white/50 text-xs">{error}</p>
+          <p className="text-white/30 text-xs">Prova uno stream diverso dalla lista.</p>
+        </div>
+        <div className="flex gap-2 w-full">
           <button onClick={handleClose}
-            className="flex items-center gap-2 px-5 py-2.5 text-white/70 hover:text-white bg-white/10 hover:bg-white/15 rounded-full text-sm transition-colors">
-            <ArrowLeft size={14} />Torna indietro
+            className="flex-1 flex items-center justify-center gap-2 py-2.5 text-sm text-white bg-white/10 hover:bg-white/20 rounded-xl transition-colors">
+            <ArrowLeft size={14} />Cambia stream
           </button>
         </div>
-      </div>
-    );
-  }
-
-  // ── Error ──────────────────────────────────────────────────────────────────
-  if (error) return (
-    <div className="fixed inset-0 bg-black z-[100] flex items-center justify-center">
-      {bgImg && <><img src={bgImg} alt="" className="absolute inset-0 w-full h-full object-cover opacity-10 blur-2xl scale-110" /><div className="absolute inset-0 bg-black/80" /></>}
-      <div className="relative z-10 flex flex-col items-center gap-4 max-w-sm text-center px-6">
-        <AlertCircle size={36} className="text-red-400" />
-        <p className="text-white font-semibold">Impossibile riprodurre</p>
-        <p className="text-white/50 text-sm">{error}</p>
-        <button onClick={handleClose} className="px-5 py-2 text-sm text-white/70 bg-white/10 rounded-full hover:bg-white/20">Indietro</button>
       </div>
     </div>
   );

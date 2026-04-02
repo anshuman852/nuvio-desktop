@@ -132,6 +132,8 @@ function Layout() {
   const { settings } = useStore();
   const reduceSidebar = !!(settings as any).reduceSidebar;
   const [manualCollapsed, setManualCollapsed] = useState(reduceSidebar);
+  // Sincronizza con settings in tempo reale
+  useEffect(() => { setManualCollapsed(reduceSidebar); }, [reduceSidebar]);
   const collapsed = manualCollapsed;
   return (
     <div className="flex h-screen bg-[#0f0f13] overflow-hidden">
