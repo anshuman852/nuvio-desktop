@@ -142,32 +142,27 @@ export async function upsertCW(userId: string, item: {
     : item.id;
 
   // Usa sync_push_watch_progress con il formato corretto
+  // Schema corretto: watch_progress NON ha name/poster
+  const entry = {
+    content_id: item.id,
+    content_type: item.type,
+    video_id: item.videoId ?? item.id,
+    season: item.season ?? null,
+    episode: item.episode ?? null,
+    position: posMs,
+    duration: durMs,
+    last_watched: now,
+    progress_key: progressKey,
+  };
   try {
-    await rpc('sync_push_watch_progress', {
-      p_entries: [{
-        content_id: item.id,
-        content_type: item.type,
-        video_id: item.videoId ?? item.id,
-        season: item.season ?? null,
-        episode: item.episode ?? null,
-        position: posMs,
-        duration: durMs,
-        last_watched: now,
-        progress_key: progressKey,
-      }],
-    }, _userToken);
-  } catch {
-    // Fallback REST diretto
+    await rpc('sync_push_watch_progress', { p_entries: [entry] }, _userToken);
+  } catch (e) {
+    console.warn('[Nuvio] sync_push_watch_progress fallback REST:', e);
+    // Fallback REST diretto (senza name/poster)
     await fetch(`${SUPABASE_URL}/rest/v1/watch_progress`, {
       method: 'POST',
-      headers: { ...sbH(true), Prefer: 'resolution=merge-duplicates' },
-      body: JSON.stringify({
-        user_id: userId, content_id: item.id, content_type: item.type,
-        video_id: item.videoId ?? item.id, season: item.season ?? null,
-        episode: item.episode ?? null, position: posMs, duration: durMs,
-        last_watched: now, progress_key: progressKey, profile_id: 1,
-        name: item.name, poster: item.poster ?? null,
-      }),
+      headers: { ...sbH(true), Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify({ user_id: userId, profile_id: 1, ...entry }),
     }).catch(() => {});
   }
 }

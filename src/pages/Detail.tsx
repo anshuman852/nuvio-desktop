@@ -1,3 +1,4 @@
+import React from 'react';
 /// <reference types="vite/client" />
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
@@ -334,32 +335,68 @@ export default function Detail() {
     }
   }
 
-  function handleNextFromPlayer() {
-    // Chiamato dal player con next episode — carica stream e auto-play
-    if (!nextEpisodeData) return;
+  // Ref per i stream precaricati del prossimo episodio
+  const preloadedRef = React.useRef<{ streamId: string; groups: StreamGroup[] } | null>(null);
+
+  // Precarica gli stream del prossimo episodio in background
+  React.useEffect(() => {
+    if (!nextEpisodeData || !playerStream) return;
     const imdbBase = meta?.id?.startsWith('tt') ? meta.id : (decodedId.startsWith('tt') ? decodedId : null);
-    const streamId = imdbBase && nextEpisodeData.season && nextEpisodeData.episode
+    const nextStreamId = imdbBase && nextEpisodeData.season && nextEpisodeData.episode
       ? `${imdbBase}:${nextEpisodeData.season}:${nextEpisodeData.episode}`
       : nextEpisodeData.id;
+    if (preloadedRef.current?.streamId === nextStreamId) return; // già precaricati
+    preloadedRef.current = { streamId: nextStreamId, groups: [] };
+    (async () => {
+      const groups: StreamGroup[] = [];
+      await fetchAllStreams(addons, type!, nextStreamId, (g) => { groups.push(g); });
+      preloadedRef.current = { streamId: nextStreamId, groups };
+    })().catch(() => {});
+  }, [nextEpisodeData?.id, playerStream?.url]);
+
+  function handleNextFromPlayer() {
+    if (!nextEpisodeData) return;
+    const imdbBase = meta?.id?.startsWith('tt') ? meta.id : (decodedId.startsWith('tt') ? decodedId : null);
+    const nextStreamId = imdbBase && nextEpisodeData.season && nextEpisodeData.episode
+      ? `${imdbBase}:${nextEpisodeData.season}:${nextEpisodeData.episode}`
+      : nextEpisodeData.id;
+
     setSelectedVideo(nextEpisodeData);
     const idx2 = (meta?.videos ?? []).findIndex(v => v.id === nextEpisodeData.id);
     setPrevEpData(idx2 > 0 ? (meta?.videos ?? [])[idx2 - 1] : null);
     setPlayerStream(null);
-    setStreamGroups([]);
-    // Carica stream e auto-play il primo disponibile
-    (async () => {
-      const groups: StreamGroup[] = [];
-      await fetchAllStreams(addons, type!, streamId, (g) => { groups.push(g); });
-      setStreamGroups(groups);
-      // Auto-play primo stream con URL
-      const firstGroup = groups[0];
-      const firstStream = firstGroup?.streams.find((s: Stream) => s.url);
-      if (firstStream && firstGroup) {
-        const playUrl = firstStream.url!;
-        setActiveStreamKey(`${firstGroup.addonUrl}:0`);
-        setPlayerStream({ ...firstStream, url: playUrl });
+
+    // Usa stream precaricati se disponibili, altrimenti carica
+    const preloaded = preloadedRef.current;
+    if (preloaded?.streamId === nextStreamId && preloaded.groups.length > 0) {
+      setStreamGroups(preloaded.groups);
+      // Auto-play: usa lo stesso addon del stream attuale (stesso provider)
+      const currentAddonUrl = activeStreamKey?.split(':')[0] ?? '';
+      const sameAddonGroup = preloaded.groups.find(g => g.addonUrl === currentAddonUrl);
+      const targetGroup = sameAddonGroup ?? preloaded.groups[0];
+      const firstStream = targetGroup?.streams.find((s: Stream) => s.url);
+      if (firstStream && targetGroup) {
+        setActiveStreamKey(`${targetGroup.addonUrl}:0`);
+        setPlayerStream({ ...firstStream, url: firstStream.url! });
       }
-    })();
+    } else {
+      // Fallback: carica stream normalmente
+      setStreamGroups([]);
+      (async () => {
+        const groups: StreamGroup[] = [];
+        await fetchAllStreams(addons, type!, nextStreamId, (g) => {
+          groups.push(g);
+          setStreamGroups([...groups]);
+        });
+        const currentAddonUrl = activeStreamKey?.split(':')[0] ?? '';
+        const targetGroup = groups.find(g => g.addonUrl === currentAddonUrl) ?? groups[0];
+        const firstStream = targetGroup?.streams.find((s: Stream) => s.url);
+        if (firstStream && targetGroup) {
+          setActiveStreamKey(`${targetGroup.addonUrl}:0`);
+          setPlayerStream({ ...firstStream, url: firstStream.url! });
+        }
+      })().catch(() => {});
+    }
   }
 
   const bg = meta?.background ?? (tmdb?.backdrop_path ? tmdbImg(tmdb.backdrop_path, 'w1280') : null);
@@ -507,16 +544,17 @@ export default function Detail() {
             <div className="mb-4">
               <p className="text-xs text-white/40 uppercase tracking-wider mb-2">Cast</p>
               <div className="flex gap-3 overflow-x-auto scrollbar-hide pb-1">
-                {cast.slice(0, 12).map((p: any) => (
-                  <div key={p.id} className="flex-shrink-0 w-14 text-center">
-                    <div className="w-14 h-14 rounded-full overflow-hidden bg-white/10 border border-white/10 mx-auto">
+                {cast.slice(0, 15).map((p: any) => (
+                  <Link key={p.id} to={`/search?q=${encodeURIComponent(p.name)}`}
+                    className="flex-shrink-0 w-14 text-center group">
+                    <div className="w-14 h-14 rounded-full overflow-hidden bg-white/10 border border-white/10 mx-auto group-hover:border-[color:var(--accent)] transition-colors">
                       {p.photo
                         ? <img src={p.photo} alt={p.name} className="w-full h-full object-cover object-top" />
                         : <div className="w-full h-full flex items-center justify-center text-white/30 text-xl font-bold">{p.name.charAt(0)}</div>}
                     </div>
-                    <p className="text-[10px] text-white/60 mt-1 leading-tight line-clamp-2">{p.name}</p>
+                    <p className="text-[10px] text-white/60 mt-1 leading-tight line-clamp-2 group-hover:text-white transition-colors">{p.name}</p>
                     {p.role && <p className="text-[9px] text-white/30 line-clamp-1">{p.role}</p>}
-                  </div>
+                  </Link>
                 ))}
               </div>
             </div>
@@ -597,33 +635,38 @@ export default function Detail() {
         {/* Pannello EPISODI (serie, nessun episodio selezionato) */}
         {showEpisodePanel && !selectedVideo && (
           <div className="flex flex-col h-full">
-            {/* Season selector */}
+            {/* Season selector — dropdown + frecce */}
             {seasons.length > 1 && (
               <div className="flex items-center gap-2 px-4 py-2.5 border-b border-white/[0.08] flex-shrink-0">
                 <button onClick={() => {
                   const idx = seasons.indexOf(activeSeason);
                   if (idx > 0) setActiveSeason(seasons[idx - 1]);
                 }} disabled={seasons.indexOf(activeSeason) === 0}
-                  className="p-1 rounded hover:bg-white/10 text-white/50 disabled:opacity-25">
-                  <ChevronLeft size={14} />
+                  className="p-1.5 rounded-lg hover:bg-white/10 text-white/50 disabled:opacity-25 flex-shrink-0">
+                  <ChevronLeft size={16} />
                 </button>
-                <div className="flex gap-1.5 flex-1 overflow-x-auto scrollbar-hide">
+                {/* Dropdown select — gestisce qualsiasi numero di stagioni */}
+                <select
+                  value={activeSeason}
+                  onChange={e => setActiveSeason(Number(e.target.value))}
+                  className="flex-1 bg-white/10 border border-white/10 rounded-lg px-2 py-1 text-sm text-white focus:outline-none focus:border-[color:var(--accent)] cursor-pointer"
+                  style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}>
                   {seasons.map(s => (
-                    <button key={s} onClick={() => setActiveSeason(s)}
-                      className={clsx('flex-shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-colors',
-                        activeSeason === s ? 'text-black font-bold' : 'bg-white/10 text-white/60 hover:bg-white/20')}
-                      style={activeSeason === s ? { backgroundColor: 'var(--accent)', color: 'white' } : {}}>
+                    <option key={s} value={s} style={{ backgroundColor: '#1a1a22', color: 'white' }}>
                       {s === 0 ? 'Speciali' : `Stagione ${s}`}
-                    </button>
+                    </option>
                   ))}
-                </div>
+                </select>
                 <button onClick={() => {
                   const idx = seasons.indexOf(activeSeason);
                   if (idx < seasons.length - 1) setActiveSeason(seasons[idx + 1]);
                 }} disabled={seasons.indexOf(activeSeason) === seasons.length - 1}
-                  className="p-1 rounded hover:bg-white/10 text-white/50 disabled:opacity-25">
-                  <ChevronRight size={14} />
+                  className="p-1.5 rounded-lg hover:bg-white/10 text-white/50 disabled:opacity-25 flex-shrink-0">
+                  <ChevronRight size={16} />
                 </button>
+                <span className="text-xs text-white/30 flex-shrink-0">
+                  {episodesForSeason.length} ep
+                </span>
               </div>
             )}
             {seasons.length <= 1 && (
