@@ -325,9 +325,9 @@ export async function getAvatarCatalog(): Promise<SupabaseAvatar[]> {
 
 // ─── Alias per compatibilità ──────────────────────────────────────────────────
 export async function markNuvioWatched(userId: string, contentId: string, contentType = 'movie') { return markWatched(userId, contentId, contentType); }
-export const removeNuvioWatched = unmarkWatched;
+export async function removeNuvioWatched(userId: string, contentId: string, _contentType = 'movie') { return unmarkWatched(userId, contentId); }
 
 // traktScrobble stub (usato da VideoPlayer - la vera impl è in trakt.ts)
-export async function traktScrobble(_action: string, _item: any): Promise<void> {
-  // Implementato in api/trakt.ts - questo è uno stub per compatibilità
+export async function traktScrobble(_token: string, _action: string, _item: any, _progress?: number): Promise<void> {
+  // Stub - la vera implementazione è in api/trakt.ts
 }
