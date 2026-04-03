@@ -120,7 +120,7 @@ function SearchBar() {
           placeholder="Cerca film, serie, anime..."
           className={clsx(
             'w-full pl-9 pr-8 py-2 rounded-full text-sm text-white placeholder:text-white/30 focus:outline-none transition-all',
-            focused ? 'bg-white/15 border border-white/20' : 'bg-white/8 border border-white/8 hover:bg-white/10'
+            focused ? 'bg-white/12 border border-white/20' : 'bg-[#1e1e26] border border-white/[0.08] hover:bg-[#252530]'
           )} />
         {query && <button type="button" onClick={() => setQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30 hover:text-white"><X size={13} /></button>}
       </div>

@@ -699,6 +699,7 @@ export default function Detail() {
               {episodesForSeason.map((ep, i) => (
                 <button key={ep.id} type="button"
                   onClick={() => handleEpisodeSelect(ep)}
+                  data-context-menu="true"
                   className="w-full flex items-center gap-3 px-4 py-3 border-b border-white/[0.05] hover:bg-white/[0.05] transition-colors cursor-pointer text-left">
                   {(() => {
                     const epVideoId = `${decodedId}:${ep.season}:${ep.episode}`;

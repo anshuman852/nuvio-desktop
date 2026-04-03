@@ -189,25 +189,23 @@ export default function VideoPlayer(props: VideoPlayerProps) {
         setTimeout(() => { if (vidRef.current) { vidRef.current.load(); vidRef.current.play().catch(() => {}); } }, 800);
         return;
       }
-      // Retry 2: prova con fetch + blob URL per bypassare CORS/headers
-      if (retryCount === 1 && code === 2 && url.startsWith('http')) {
+      // Retry 2: prova a risolvere URL HTTP via invoke open_url (Tauri)
+      // I CDN come WebStreamr usano redirect 302 che WebView2 blocca
+      if (retryCount === 1 && url.startsWith('http')) {
         setRetryCount(2);
-        try {
-          setBuffering(true);
-          const resp = await fetch(url, { 
-            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)', 'Range': 'bytes=0-' },
-          });
-          if (resp.ok && resp.body) {
-            const blob = await resp.blob();
-            const blobUrl = URL.createObjectURL(blob);
+        // Tenta comunque di riavviare con src pulito
+        setBuffering(true);
+        if (vidRef.current) {
+          vidRef.current.src = '';
+          setTimeout(() => {
             if (vidRef.current) {
-              vidRef.current.src = blobUrl;
+              vidRef.current.src = url;
               vidRef.current.load();
               vidRef.current.play().catch(() => {});
-              return;
             }
-          }
-        } catch { /* fallthrough to error */ }
+          }, 500);
+          return;
+        }
         setBuffering(false);
       }
       const msgs: Record<number, string> = {

@@ -11,12 +11,29 @@ const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY ?? '';
 
 // ─── Fallback DiceBear se Supabase non disponibile ────────────────────────────
 const DICEBEAR_FALLBACK = [
-  { id: 'f_goku',    label: 'Goku',     url: 'https://api.dicebear.com/9.x/adventurer/svg?seed=goku-warrior',    category: 'Anime' },
-  { id: 'f_naruto',  label: 'Naruto',   url: 'https://api.dicebear.com/9.x/adventurer/svg?seed=naruto-ninja',    category: 'Anime' },
-  { id: 'f_levi',    label: 'Levi',     url: 'https://api.dicebear.com/9.x/adventurer/svg?seed=levi-ackerman',   category: 'Anime' },
-  { id: 'f_geralt',  label: 'Geralt',   url: 'https://api.dicebear.com/9.x/personas/svg?seed=geralt-witcher',    category: 'TV' },
-  { id: 'f_jon',     label: 'Jon Snow', url: 'https://api.dicebear.com/9.x/personas/svg?seed=jon-got',           category: 'TV' },
-  { id: 'f_kratos',  label: 'Kratos',   url: 'https://api.dicebear.com/9.x/personas/svg?seed=kratos-gow',        category: 'Gaming' },
+  // Anime
+  { id: 'a1', label: 'Goku',       url: 'https://api.dicebear.com/9.x/adventurer/svg?seed=goku&eyes=variant01&hair=short01&hairColor=black', category: 'Anime' },
+  { id: 'a2', label: 'Naruto',     url: 'https://api.dicebear.com/9.x/adventurer/svg?seed=naruto&eyes=variant02&hair=short02&hairColor=blonde', category: 'Anime' },
+  { id: 'a3', label: 'Levi',       url: 'https://api.dicebear.com/9.x/adventurer/svg?seed=levi&eyes=variant03&hair=short03&hairColor=black', category: 'Anime' },
+  { id: 'a4', label: 'Zero Two',   url: 'https://api.dicebear.com/9.x/adventurer/svg?seed=zerotwo&eyes=variant04&hair=long01&hairColor=pink', category: 'Anime' },
+  { id: 'a5', label: 'Mikasa',     url: 'https://api.dicebear.com/9.x/adventurer/svg?seed=mikasa&eyes=variant05&hair=short05&hairColor=black', category: 'Anime' },
+  { id: 'a6', label: 'Ichigo',     url: 'https://api.dicebear.com/9.x/adventurer/svg?seed=ichigo&eyes=variant06&hair=medium01&hairColor=orange', category: 'Anime' },
+  { id: 'a7', label: 'Sasuke',     url: 'https://api.dicebear.com/9.x/adventurer/svg?seed=sasuke&eyes=variant07&hair=short06&hairColor=black', category: 'Anime' },
+  { id: 'a8', label: 'Nezuko',     url: 'https://api.dicebear.com/9.x/adventurer/svg?seed=nezuko&eyes=variant08&hair=long02&hairColor=black', category: 'Anime' },
+  // TV
+  { id: 't1', label: 'Jon Snow',   url: 'https://api.dicebear.com/9.x/personas/svg?seed=jonsnow&hair=short01&eyes=happy', category: 'TV' },
+  { id: 't2', label: 'Walter',     url: 'https://api.dicebear.com/9.x/personas/svg?seed=walterwhite&hair=none&eyes=squint', category: 'TV' },
+  { id: 't3', label: 'Eleven',     url: 'https://api.dicebear.com/9.x/personas/svg?seed=eleven&hair=short02&eyes=happy', category: 'TV' },
+  { id: 't4', label: 'Tony Stark', url: 'https://api.dicebear.com/9.x/personas/svg?seed=tonystark&hair=short03&eyes=squint', category: 'TV' },
+  { id: 't5', label: 'Daenerys',   url: 'https://api.dicebear.com/9.x/personas/svg?seed=daenerys&hair=long01&eyes=happy', category: 'TV' },
+  { id: 't6', label: 'Sherlock',   url: 'https://api.dicebear.com/9.x/personas/svg?seed=sherlock&hair=short04&eyes=squint', category: 'TV' },
+  // Gaming
+  { id: 'g1', label: 'Kratos',     url: 'https://api.dicebear.com/9.x/personas/svg?seed=kratos&hair=none&eyes=squint', category: 'Gaming' },
+  { id: 'g2', label: 'Geralt',     url: 'https://api.dicebear.com/9.x/personas/svg?seed=geralt&hair=long02&eyes=squint', category: 'Gaming' },
+  { id: 'g3', label: 'Master Chief',url: 'https://api.dicebear.com/9.x/personas/svg?seed=masterchief&hair=short05&eyes=happy', category: 'Gaming' },
+  { id: 'g4', label: 'Lara Croft', url: 'https://api.dicebear.com/9.x/personas/svg?seed=laracroft&hair=long03&eyes=happy', category: 'Gaming' },
+  { id: 'g5', label: 'Arthur Morgan',url: 'https://api.dicebear.com/9.x/personas/svg?seed=arthurmorgon&hair=medium02&eyes=squint', category: 'Gaming' },
+  { id: 'g6', label: 'Aloy',       url: 'https://api.dicebear.com/9.x/personas/svg?seed=aloy&hair=long04&eyes=happy', category: 'Gaming' },
 ];
 
 type AvatarItem = { id: string; label: string; url: string; category: string };
@@ -289,17 +306,26 @@ export default function ProfileSelect() {
   const [avatarCatalog, setAvatarCatalog] = useState<AvatarItem[]>([]);
   const [catalogLoading, setCatalogLoading] = useState(true);
 
-  // Carica avatar da Supabase, fallback a DiceBear
+  // Carica avatar: mostra subito i DiceBear, poi sovrascrive con Supabase
   useEffect(() => {
+    setAvatarCatalog(DICEBEAR_FALLBACK); // mostra subito
     getAvatarCatalog()
       .then(remote => {
         if (remote.length > 0) {
-          setAvatarCatalog(remote.map(a => ({ id: a.id, label: a.display_name, url: `https://dpyhjjcoabcglfmgecug.supabase.co/storage/v1/object/public/avatars/${a.storage_path}`, category: a.category ?? 'default' })));
-        } else {
-          setAvatarCatalog(DICEBEAR_FALLBACK);
+          // Combina Supabase + DiceBear
+          const supabaseItems = remote.map(a => ({
+            id: String(a.id),
+            label: a.display_name,
+            url: a.storage_path?.startsWith('http')
+              ? a.storage_path
+              : `https://dpyhjjcoabcglfmgecug.supabase.co/storage/v1/object/public/avatars/${a.storage_path}`,
+            category: a.category ?? 'Nuvio',
+          }));
+          setAvatarCatalog([...supabaseItems, ...DICEBEAR_FALLBACK]);
         }
+        // else mantieni DICEBEAR_FALLBACK già impostato
       })
-      .catch(() => setAvatarCatalog(DICEBEAR_FALLBACK))
+      .catch(() => { /* mantieni DICEBEAR_FALLBACK */ })
       .finally(() => setCatalogLoading(false));
   }, []);
 

@@ -315,12 +315,34 @@ export async function getAccountStats(userId: string, userToken?: string): Promi
 export interface SupabaseAvatar { id: string; display_name: string; storage_path: string; category?: string; bg_color?: string; }
 
 export async function getAvatarCatalog(): Promise<SupabaseAvatar[]> {
+  // Prova con token utente prima
   const tok = _userToken;
-  if (!tok) return [];
   try {
-    const data = await rpc('get_avatar_catalog', {}, tok);
-    return Array.isArray(data) ? data : [];
-  } catch { return []; }
+    const endpoint = `${SUPABASE_URL}/rest/v1/rpc/get_avatar_catalog`;
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'apikey': SUPABASE_ANON,
+    };
+    // Se c'è token usiamolo, altrimenti anon
+    if (tok) headers['Authorization'] = `Bearer ${tok}`;
+    else headers['Authorization'] = `Bearer ${SUPABASE_ANON}`;
+    const res = await fetch(endpoint, { method: 'POST', headers, body: '{}' });
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data) && data.length > 0) return data;
+    }
+  } catch { /* fallback */ }
+  // Fallback: leggi avatar_catalog direttamente (potrebbe essere pubblica)
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/avatar_catalog?select=*&is_active=eq.true&order=sort_order.asc`, {
+      headers: { 'apikey': SUPABASE_ANON, 'Authorization': `Bearer ${SUPABASE_ANON}` },
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data) && data.length > 0) return data;
+    }
+  } catch { /* fallback */ }
+  return [];
 }
 
 // ─── Alias per compatibilità ──────────────────────────────────────────────────

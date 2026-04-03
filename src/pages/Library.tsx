@@ -211,7 +211,7 @@ export default function Library() {
     const nuvioWatched = new Set<string>();
     if (nuvioUser?.token && nuvioUser.id) {
       try {
-        const items = await getAllWatchedItems(nuvioUser.id);
+        const items = await getAllWatchedItems(nuvioUser.id, nuvioUser.token);
         items.forEach(i => nuvioWatched.add(i.id));
       } catch { /* non bloccante */ }
     }
@@ -353,27 +353,48 @@ export default function Library() {
       }
     }
 
-    // ── Nuvio watched (integra poster mancanti da Trakt) ─────────────────────
+    // ── Nuvio: library + watched ──────────────────────────────────────────────
     if (nuvioUser?.token && nuvioUser.id) {
       try {
-        const items = await getAllWatchedItems(nuvioUser.id);
-        for (const i of items) {
+        // 1. Library items (tutti i contenuti salvati)
+        const { getContinueWatching } = await import('../api/nuvio');
+        const libRes = await fetch(
+          `https://dpyhjjcoabcglfmgecug.supabase.co/rest/v1/rpc/sync_pull_library`,
+          { method: 'POST', headers: { 'Content-Type': 'application/json', 'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY ?? '', 'Authorization': `Bearer ${nuvioUser.token}` }, body: '{}' }
+        );
+        if (libRes.ok) {
+          const libItems = await libRes.json();
+          for (const i of (Array.isArray(libItems) ? libItems : [])) {
+            const isMovie = i.content_type === 'movie';
+            const target = isMovie ? film : serie;
+            if (!target.find(x => x.id === i.content_id)) {
+              target.push({
+                id: i.content_id, type: i.content_type as any,
+                name: i.name ?? i.content_id, poster: i.poster ?? null,
+                source: 'nuvio' as any, watchedAt: i.added_at ?? 0,
+                watched: false, inWatchlist: false,
+              });
+            }
+          }
+        }
+        // 2. Watched items (badge visti)
+        const watchedItems = await getAllWatchedItems(nuvioUser.id, nuvioUser.token);
+        const watchedSet = new Set(watchedItems.map(w => w.id));
+        // Segna come visti quelli presenti in watched_items
+        [...film, ...serie].forEach(x => { if (watchedSet.has(x.id)) x.watched = true; });
+        // Aggiungi watched items non ancora in lista
+        for (const i of watchedItems.filter(w => w.season == null)) {
           const isMovie = i.type === 'movie';
           const target = isMovie ? film : serie;
-          const existing = target.find(x => x.id === i.id);
-          if (existing) {
-            // Aggiorna poster se mancante
-            if (!existing.poster && i.poster) existing.poster = i.poster;
-            existing.watched = true;
-          } else {
+          if (!target.find(x => x.id === i.id)) {
             target.push({
-              id: i.id, type: i.type as any, name: i.name, poster: i.poster,
-              source: 'nuvio', watchedAt: new Date(i.watchedAt).getTime(),
+              id: i.id, type: i.type as any, name: i.name ?? i.id, poster: i.poster,
+              source: 'nuvio' as any, watchedAt: i.watchedAt ?? 0,
               watched: true, inWatchlist: false,
             });
           }
         }
-      } catch { /* non bloccante */ }
+      } catch (e: any) { console.warn('[Library Nuvio]', e.message); }
     }
 
     // ── Simkl ─────────────────────────────────────────────────────────────────
