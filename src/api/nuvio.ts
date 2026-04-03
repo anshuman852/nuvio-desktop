@@ -243,7 +243,7 @@ export async function markWatched(userId: string, contentId: string, contentType
   }
 }
 
-export async function unmarkWatched(userId: string, contentId: string, contentType: string): Promise<void> {
+export async function unmarkWatched(userId: string, contentId: string, contentType = "movie"): Promise<void> {
   const tok = _userToken;
   if (!tok) return;
   try {
