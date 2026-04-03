@@ -62,12 +62,11 @@ function HeroSection({ item }: { item: MetaItem }) {
 
 // ─── Poster card ──────────────────────────────────────────────────────────────
 
-function PosterCard({ item, onRemove }: { item: any; onRemove?: (id: string) => void }) {
+function PosterCard({ item, onRemove, showWatched }: { item: any; onRemove?: (id: string) => void; showWatched?: boolean }) {
   const [imgErr, setImgErr] = useState(false);
-  const [tmdbPoster, setTmdbPoster] = useState<string|null>(null);
+  const [removed, setRemoved] = useState(false);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
-  const { settings, nuvioUser } = useStore();
-  const { removeWatch } = useStore();
+  const { settings, nuvioUser, removeWatch } = useStore();
   const progress = typeof item.progress === 'number' ? item.progress : (item.progressPct ? item.progressPct / 100 : undefined);
 
   // Chiudi menu al click esterno
@@ -77,6 +76,10 @@ function PosterCard({ item, onRemove }: { item: any; onRemove?: (id: string) => 
     window.addEventListener('click', close);
     return () => window.removeEventListener('click', close);
   }, [ctxMenu]);
+
+  if (removed) return null;
+
+  const isWatched = showWatched && ((progress ?? 0) >= 0.90 || item.watched);
 
   // Carica poster da TMDB se mancante
   useEffect(() => {
@@ -102,22 +105,33 @@ function PosterCard({ item, onRemove }: { item: any; onRemove?: (id: string) => 
           style={{ left: ctxMenu.x, top: ctxMenu.y }}
           onClick={e => e.stopPropagation()}>
           {onRemove && (
-            <button onClick={e => { e.stopPropagation(); setCtxMenu(null); onRemove(item.id); }}
+            <button onClick={async e => {
+              e.stopPropagation(); setCtxMenu(null); setRemoved(true);
+              onRemove(item.id);
+              if (nuvioUser?.id) await removeCW(nuvioUser.id, item.id).catch(() => {});
+              removeWatch(item.id);
+            }}
               className="w-full text-left px-4 py-2.5 text-sm text-red-400 hover:bg-white/5 flex items-center gap-2">
-              <span>✕</span> Rimuovi da CW
+              ✕ Rimuovi da CW
             </button>
           )}
           <Link to={`/detail/${item.type}/${encodeURIComponent(item.id)}`}
             className="w-full text-left px-4 py-2.5 text-sm text-white/70 hover:bg-white/5 flex items-center gap-2 block"
             onClick={() => setCtxMenu(null)}>
-            <span>ℹ</span> Info
+            ℹ Info
           </Link>
-          {onRemove && (
-            <button onClick={e => { e.stopPropagation(); setCtxMenu(null); onRemove(item.id); }}
-              className="w-full text-left px-4 py-2.5 text-sm text-green-400 hover:bg-white/5 flex items-center gap-2">
-              <span>✓</span> Segna come visto
-            </button>
-          )}
+          <button onClick={async e => {
+            e.stopPropagation(); setCtxMenu(null); setRemoved(true);
+            onRemove?.(item.id);
+            if (nuvioUser?.id) {
+              await markWatched(nuvioUser.id, item.id, item.type, item.season, item.episode).catch(() => {});
+              await removeCW(nuvioUser.id, item.id).catch(() => {});
+            }
+            removeWatch(item.id);
+          }}
+            className="w-full text-left px-4 py-2.5 text-sm text-green-400 hover:bg-white/5 flex items-center gap-2">
+            ✓ Segna come visto
+          </button>
         </div>
       )}
     <Link to={`/detail/${item.type}/${encodeURIComponent(item.id)}`} className="flex-shrink-0 group">

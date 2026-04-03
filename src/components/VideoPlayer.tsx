@@ -181,26 +181,42 @@ export default function VideoPlayer(props: VideoPlayerProps) {
       setSubtitleTracks(st);
     };
 
-    const onError = () => {
+    const onError = async () => {
       const code = v.error?.code;
-      // Prima retry automatico (spesso risolve problemi transitori)
-      if (retryCount < 2 && code !== 1) {
+      // Retry 1: semplice reload (risolve problemi transitori)
+      if (retryCount < 1 && code !== 1) {
         setRetryCount(prev => prev + 1);
-        setTimeout(() => {
-          if (vidRef.current) {
-            vidRef.current.load();
-            vidRef.current.play().catch(() => {});
-          }
-        }, 1000);
+        setTimeout(() => { if (vidRef.current) { vidRef.current.load(); vidRef.current.play().catch(() => {}); } }, 800);
         return;
       }
+      // Retry 2: prova con fetch + blob URL per bypassare CORS/headers
+      if (retryCount === 1 && code === 2 && url.startsWith('http')) {
+        setRetryCount(2);
+        try {
+          setBuffering(true);
+          const resp = await fetch(url, { 
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)', 'Range': 'bytes=0-' },
+          });
+          if (resp.ok && resp.body) {
+            const blob = await resp.blob();
+            const blobUrl = URL.createObjectURL(blob);
+            if (vidRef.current) {
+              vidRef.current.src = blobUrl;
+              vidRef.current.load();
+              vidRef.current.play().catch(() => {});
+              return;
+            }
+          }
+        } catch { /* fallthrough to error */ }
+        setBuffering(false);
+      }
       const msgs: Record<number, string> = {
-        1: "Stream interrotto dall'utente",
-        2: 'Errore di rete — il provider non risponde',
-        3: 'Errore decodifica video',
-        4: 'Formato non supportato dal player interno',
+        1: "Stream interrotto",
+        2: 'Provider non raggiungibile — prova un altro stream',
+        3: 'Errore decodifica',
+        4: 'Formato non supportato',
       };
-      setError(msgs[code ?? 0] ?? `Errore stream (${code ?? 'sconosciuto'})`);
+      setError(msgs[code ?? 0] ?? `Errore (${code ?? 'sconosciuto'})`);
     };
 
     v.addEventListener('canplay', onCanPlay, { once: true });

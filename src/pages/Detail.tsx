@@ -128,8 +128,18 @@ export default function Detail() {
   const [playerStream, setPlayerStream] = useState<Stream | null>(null);
   const [activeSeason, setActiveSeason] = useState<number>(1);
   const [inLibrary, setInLibrary] = useState(false);
+  const [watchedEpIds, setWatchedEpIds] = useState<Set<string>>(new Set());
 
   const isTmdbId = decodedId.startsWith('tmdb:');
+
+  // Carica episodi visti
+  useEffect(() => {
+    if (!nuvioUser?.id || !isSeries) return;
+    getAllWatchedItems(nuvioUser.id, nuvioUser.token).then(items => {
+      const ids = new Set(items.map((w: any) => w.content_id?.toString() ?? ''));
+      setWatchedEpIds(ids);
+    }).catch(() => {});
+  }, [nuvioUser?.id, isSeries, decodedId]);
   const isSeries = meta?.type === 'series' || type === 'series';
 
   // ── Meta fetch ────────────────────────────────────────────────────────────
@@ -186,7 +196,10 @@ export default function Detail() {
         setTmdb(tmdbData);
         setCast((tmdbData.credits?.cast ?? []).slice(0, 30).map((c: any) => ({
           id: c.id, name: c.name, role: c.character ?? '',
-          photo: c.profile_path ? tmdbImg(c.profile_path, 'w185') : undefined,
+          // Se no foto TMDB, usa DiceBear con il nome dell'attore
+          photo: c.profile_path
+            ? tmdbImg(c.profile_path, 'w185')
+            : `https://api.dicebear.com/9.x/personas/svg?seed=${encodeURIComponent(c.name)}&backgroundColor=1a1a2e`,
         })));
         setCrew((tmdbData.credits?.crew ?? []).filter((c: any) =>
           ['Director','Screenplay','Writer','Creator'].includes(c.job)
@@ -429,7 +442,11 @@ export default function Detail() {
         contentType={type}
         poster={meta?.poster}
         backdrop={bg ?? undefined}
-        cast={cast.slice(0, 15).map(p => ({ name: p.name, character: p.role, photo: p.photo }))}
+        cast={cast.slice(0, 15).map(p => ({
+          name: p.name,
+          character: p.role,
+          photo: p.photo,
+        }))}
         season={selectedVideo?.season}
         episode={selectedVideo?.episode}
         nextEpisode={nextEpisodeData ? {
@@ -682,13 +699,18 @@ export default function Detail() {
                 <button key={ep.id} type="button"
                   onClick={() => handleEpisodeSelect(ep)}
                   className="w-full flex items-center gap-3 px-4 py-3 border-b border-white/[0.05] hover:bg-white/[0.05] transition-colors cursor-pointer text-left">
-                  {ep.thumbnail ? (
-                    <img src={ep.thumbnail} alt="" className="w-24 h-[54px] rounded-lg object-cover flex-shrink-0 bg-white/5" />
-                  ) : (
-                    <div className="w-24 h-[54px] rounded-lg bg-white/5 flex-shrink-0 flex items-center justify-center text-white/20">
-                      <Play size={16} />
-                    </div>
-                  )}
+                  {(() => {
+                    const epVideoId = `${decodedId}:${ep.season}:${ep.episode}`;
+                    const epWatched = watchedEpIds.has(epVideoId) || watchedEpIds.has(decodedId);
+                    const shouldBlur = (settings as any).blurUnwatched && !epWatched;
+                    return ep.thumbnail ? (
+                      <img src={ep.thumbnail} alt="" className={`w-24 h-[54px] rounded-lg object-cover flex-shrink-0 bg-white/5 transition-all ${shouldBlur ? 'blur-sm brightness-50' : ''}`} />
+                    ) : (
+                      <div className="w-24 h-[54px] rounded-lg bg-white/5 flex-shrink-0 flex items-center justify-center text-white/20">
+                        <Play size={16} />
+                      </div>
+                    );
+                  })()}
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-white leading-tight">
                       {i + 1}. {ep.title ?? `Episodio ${ep.episode}`}
