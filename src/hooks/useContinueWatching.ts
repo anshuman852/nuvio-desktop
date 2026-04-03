@@ -55,7 +55,7 @@ export function useContinueWatching() {
     // 2. Nuvio cloud (merge con locale)
     if (nuvioUser?.token && nuvioUser.id) {
       try {
-        const cw = await getContinueWatching(nuvioUser.id);
+        const cw = await getContinueWatching(nuvioUser.id, nuvioUser.token);
         for (const i of cw) {
           if (!i.progress || i.progress < 0.01) continue;
           all.push({

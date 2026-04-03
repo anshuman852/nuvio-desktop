@@ -98,7 +98,7 @@ function AccountPage() {
     if (!nuvioUser) return;
     setSyncing(true); setSyncMsg(null);
     try {
-      const cloudAddons = await getNuvioAddons(nuvioUser.id);
+      const cloudAddons = await getNuvioAddons(nuvioUser.id, nuvioUser.token);
       if (cloudAddons.length > 0) {
         const currentIds = new Set(addons.map((a: any) => a.id));
         const newAddons = cloudAddons.filter((a: any) => !currentIds.has(a.id));

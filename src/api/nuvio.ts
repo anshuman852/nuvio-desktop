@@ -201,9 +201,10 @@ export async function upsertCW(userId: string, item: {
   const progressKey = item.type === 'movie' ? item.id
     : item.season && item.episode ? `${item.id}_s${item.season}e${item.episode}` : item.id;
 
-  // Scrivi in SECONDI (schema reale)
-  const posSec = Math.round(item.progress * item.duration);
-  const durSec = Math.round(item.duration);
+  // Formato ufficiale NuvioTV: MILLISECONDI (come il mobile app)
+  // progress * duration * 1000 = posizione in ms
+  const posMs = Math.round(item.progress * item.duration * 1000);
+  const durMs = Math.round(item.duration * 1000);
 
   const entry = {
     content_id: item.id,
@@ -211,8 +212,8 @@ export async function upsertCW(userId: string, item: {
     video_id: item.videoId ?? item.id,
     season: item.season ?? null,
     episode: item.episode ?? null,
-    position: posSec,
-    duration: durSec,
+    position: posMs,
+    duration: durMs,
     last_watched: Date.now(),
     progress_key: progressKey,
   };
@@ -285,8 +286,8 @@ export async function removeFromLibrary(userId: string, contentId: string): Prom
 
 // ─── Addons ───────────────────────────────────────────────────────────────────
 
-export async function getNuvioAddons(userId: string): Promise<any[]> {
-  const tok = _userToken;
+export async function getNuvioAddons(userId: string, userToken?: string): Promise<any[]> {
+  const tok = userToken ?? _userToken;
   if (!tok) return [];
   const res = await fetch(
     `${SUPABASE_URL}/rest/v1/addons?select=url,name,sort_order&user_id=eq.${userId}&order=sort_order.asc`,
@@ -315,8 +316,11 @@ export async function getAccountStats(userId: string, userToken?: string): Promi
     const movies = (watchedItems as any[]).filter((w: any) => w.content_type === 'movie' && w.season == null).length;
     const episodes = (watchedItems as any[]).filter((w: any) => w.season != null).length;
     const seriesWatched = (watchedItems as any[]).filter((w: any) => w.content_type === 'series' && w.season == null).length;
-    // position in SECONDI nel DB reale
-    const watchTimeSec = (watchProgress as any[]).reduce((acc: number, w: any) => acc + (w.position ?? 0), 0);
+    // position può essere ms (mobile) o sec (sync tool) → auto-detect
+    const watchTimeSec = (watchProgress as any[]).reduce((acc: number, w: any) => {
+      const pos = w.position ?? 0;
+      return acc + (pos > 3_600_000 ? pos / 1000 : pos);
+    }, 0);
     return {
       totalMovies: movies,
       totalEpisodes: episodes,
