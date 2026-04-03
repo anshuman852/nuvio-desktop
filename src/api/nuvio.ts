@@ -76,12 +76,30 @@ export async function nuvioLogin(email: string, password: string): Promise<Nuvio
   let name = data.user.email.split('@')[0];
   let avatar: string | undefined;
   try {
-    const pr = await fetch(`${SUPABASE_URL}/rest/v1/profiles?select=username,full_name,avatar_url&id=eq.${data.user.id}`, {
-      headers: authHeaders(data.access_token),
-    });
+    // Carica profilo: usa il user_id dell'autenticazione per trovare il profilo primario
+    const pr = await fetch(
+      `${SUPABASE_URL}/rest/v1/profiles?select=name,avatar_id,avatar_color_hex&user_id=eq.${data.user.id}&order=profile_index.asc&limit=1`,
+      { headers: authHeaders(data.access_token) }
+    );
     const rows = await pr.json();
-    const p = rows?.[0];
-    if (p) { name = p.username ?? p.full_name ?? name; avatar = p.avatar_url; }
+    const p = Array.isArray(rows) ? rows[0] : null;
+    if (p) {
+      name = p.name ?? p.username ?? p.full_name ?? name;
+      // Carica URL avatar dal catalog se c'è un avatar_id
+      if (p.avatar_id) {
+        try {
+          const avatarRes = await fetch(
+            `${SUPABASE_URL}/rest/v1/avatar_catalog?select=storage_path&id=eq.${p.avatar_id}&is_active=eq.true&limit=1`,
+            { headers: authHeaders(data.access_token) }
+          );
+          const avatarRows = await avatarRes.json();
+          const storagePath = avatarRows?.[0]?.storage_path;
+          if (storagePath) {
+            avatar = `${SUPABASE_URL}/storage/v1/object/public/avatars/${storagePath}`;
+          }
+        } catch { /* usa icona default */ }
+      }
+    }
   } catch { /* opzionale */ }
 
   return { id: ownerId, email: data.user.email, token: data.access_token, name, avatar };
@@ -294,7 +312,7 @@ export async function getNuvioAddons(userId: string, userToken?: string): Promis
     { headers: authHeaders(tok) }
   );
   const rows = await res.json();
-  return (rows ?? []).map((r: any) => ({ id: r.url, url: r.url, name: r.name ?? r.url }));
+  return (Array.isArray(rows) ? rows : []).map((r: any) => ({ id: r.url, url: r.url, name: r.name ?? r.url }));
 }
 
 // ─── Account Stats ────────────────────────────────────────────────────────────
@@ -309,9 +327,9 @@ export async function getAccountStats(userId: string, userToken?: string): Promi
   if (!tok || !userId) return { totalMovies: 0, totalEpisodes: 0, totalWatched: 0, librarySize: 0, watchTimeHours: 0 };
   try {
     const [watchedItems, watchProgress, libraryItems] = await Promise.all([
-      rpc('sync_pull_watched_items', {}, tok).then((d: any) => Array.isArray(d) ? d : []).catch(() => [] as any[]),
-      rpc('sync_pull_watch_progress', {}, tok).then((d: any) => Array.isArray(d) ? d : []).catch(() => [] as any[]),
-      rpc('sync_pull_library', {}, tok).then((d: any) => Array.isArray(d) ? d : []).catch(() => [] as any[]),
+      rpc('sync_pull_watched_items', {}, tok).then((d: any) => { console.log('[stats] watched_items:', d); return Array.isArray(d) ? d : []; }).catch((e: any) => { console.error('[stats] watched_items ERR:', e.message); return [] as any[]; }),
+      rpc('sync_pull_watch_progress', {}, tok).then((d: any) => { console.log('[stats] watch_progress:', Array.isArray(d) ? d.length : d); return Array.isArray(d) ? d : []; }).catch((e: any) => { console.error('[stats] watch_progress ERR:', e.message); return [] as any[]; }),
+      rpc('sync_pull_library', {}, tok).then((d: any) => { console.log('[stats] library:', Array.isArray(d) ? d.length : d); return Array.isArray(d) ? d : []; }).catch((e: any) => { console.error('[stats] library ERR:', e.message); return [] as any[]; }),
     ]);
     const movies = (watchedItems as any[]).filter((w: any) => w.content_type === 'movie' && w.season == null).length;
     const episodes = (watchedItems as any[]).filter((w: any) => w.season != null).length;

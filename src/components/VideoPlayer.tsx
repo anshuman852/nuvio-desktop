@@ -155,29 +155,18 @@ export default function VideoPlayer(props: VideoPlayerProps) {
     setReady(false); setError(null); setBuffering(true);
     setShowNextEpCard(false); setNextEpTriggered(false);
     setPlaying(false); setPaused(false); setRetryCount(0);
-    // Imposta URL direttamente
     setResolvedUrl(url);
     setRetryCount(0);
-    // Per stream HTTP: prova a risolvere i redirect tramite HEAD request
-    if (url.startsWith('http') && !url.includes('.m3u8') && !url.includes('.mpd') && !url.includes('.torrent')) {
-      (async () => {
-        try {
-          // Usa fetch con redirect:follow per ottenere l'URL finale dopo i redirect
-          const resp = await fetch(url, {
-            method: 'GET',
-            redirect: 'follow',
-            headers: { 'Range': 'bytes=0-0' },
-            signal: AbortSignal.timeout(8000),
-          });
-          if (resp.ok || resp.status === 206) {
-            const finalUrl = resp.url;
-            if (finalUrl && finalUrl !== url) {
-              console.log('[Player] Redirect risolto:', url, '->', finalUrl);
-              setResolvedUrl(finalUrl);
-            }
+    // Per stream HTTP/HTTPS: risolvi redirect tramite Tauri (bypassa CORS WebView2)
+    if (url.startsWith('http') && !url.includes('.m3u8') && !url.includes('.mpd') && !url.includes('magnet:')) {
+      invoke<string>('resolve_stream_url', { url })
+        .then(finalUrl => {
+          if (finalUrl && finalUrl !== url) {
+            console.log('[Player] URL risolto:', url.slice(0, 60), '->', finalUrl.slice(0, 60));
+            setResolvedUrl(finalUrl);
           }
-        } catch { /* usa URL originale */ }
-      })();
+        })
+        .catch(() => { /* usa URL originale */ });
     }
     v.src = url;
     v.load();

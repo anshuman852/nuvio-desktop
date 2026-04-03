@@ -248,7 +248,7 @@ interface Row { key: string; title: string; subtitle: string; items: MetaItem[];
 
 export default function Home() {
   const { addons } = useStore();
-  const { items: cwItems, loading: cwLoading, reload: reloadCW } = useContinueWatching();
+  const { items: cwItems, loading: cwLoading, reload: reloadCW, removeItem: removeCWItem } = useContinueWatching();
   const { nuvioUser, removeWatch } = useStore();
   const dispatch = () => { window.dispatchEvent(new CustomEvent('nuvio:cw-updated')); };
   const [rows, setRows] = useState<Row[]>([]);
@@ -308,9 +308,9 @@ export default function Home() {
             items={cwItems as any}
             loading={cwLoading}
             onRemoveItem={async (id) => {
+              removeCWItem(id);  // rimozione immediata senza reload
               removeWatch(id);
               if (nuvioUser?.id) removeCW(nuvioUser.id, id).catch(() => {});
-              window.dispatchEvent(new CustomEvent('nuvio:cw-updated'));
             }}
           />
         )}

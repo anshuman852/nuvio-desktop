@@ -140,10 +140,31 @@ pub fn run() {
             fetch_manifest, fetch_streams,
             launch_mpv, launch_mpv_embedded, launch_custom_player,
             mpv_command, mpv_stop, mpv_get_position, mpv_get_duration,
-            open_url, stream_magnet,
+            open_url, stream_magnet, resolve_stream_url,
         ])
         .run(tauri::generate_context!())
         .expect("error while running nuvio-desktop");
 }
 
 fn main() { run(); }
+
+#[tauri::command]
+async fn resolve_stream_url(url: String) -> Result<String, String> {
+    // Usa reqwest per seguire i redirect e restituire l'URL finale
+    // Questo bypassa le restrizioni CORS di WebView2
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::limited(10))
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| e.to_string())?;
+    
+    let resp = client
+        .head(&url)
+        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    
+    // Restituisce l'URL finale dopo redirect
+    Ok(resp.url().to_string())
+}

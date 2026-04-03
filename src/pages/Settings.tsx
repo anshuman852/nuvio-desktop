@@ -369,12 +369,36 @@ function TraktPage() {
   return (
     <div className="space-y-4">
       {traktAuth ? (
-        <div className="rounded-2xl bg-[#1e1e24] border border-white/[0.06] p-5 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            {traktAuth.avatar ? <img src={traktAuth.avatar} className="w-12 h-12 rounded-full" /> : <div className="w-12 h-12 rounded-full bg-[#ed1c24] flex items-center justify-center text-white font-bold">T</div>}
-            <div><p className="font-semibold text-white">{traktAuth.name}</p><p className="text-xs text-white/40">@{traktAuth.username} · Trakt.tv</p></div>
+        <div className="rounded-2xl bg-[#1e1e24] border border-white/[0.06] overflow-hidden">
+          {/* Header profilo Trakt */}
+          <div className="p-5 flex items-center gap-4">
+            <div className="relative flex-shrink-0">
+              {traktAuth.avatar
+                ? <img src={traktAuth.avatar} className="w-16 h-16 rounded-full border-2 border-[#ed1c24]/50" />
+                : <div className="w-16 h-16 rounded-full bg-[#ed1c24] flex items-center justify-center text-white font-bold text-xl">T</div>}
+              <div className="absolute -bottom-0.5 -right-0.5 w-5 h-5 rounded-full bg-[#ed1c24] flex items-center justify-center">
+                <Tv size={10} className="text-white" />
+              </div>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-bold text-white text-lg">{traktAuth.name ?? traktAuth.username}</p>
+              <p className="text-sm text-white/40">@{traktAuth.username}</p>
+              <div className="flex items-center gap-1.5 mt-1">
+                <div className="w-2 h-2 rounded-full bg-green-400" />
+                <p className="text-xs text-green-400">Connesso a Trakt.tv</p>
+              </div>
+            </div>
+            <button onClick={() => setTraktAuth(null)} className="flex items-center gap-1.5 px-4 py-2 text-sm text-red-400 bg-red-500/10 rounded-xl hover:bg-red-500/20 transition-colors">
+              <LogOut size={14} />Esci
+            </button>
           </div>
-          <button onClick={() => setTraktAuth(null)} className="px-4 py-2 text-sm text-red-400 bg-red-500/10 rounded-xl flex items-center gap-1.5"><LogOut size={14} />Esci</button>
+          {/* Azioni Trakt */}
+          <div className="border-t border-white/[0.06] px-5 py-3 flex items-center gap-2">
+            <button onClick={() => openExternal(`https://trakt.tv/users/${traktAuth.username}`)}
+              className="flex items-center gap-1.5 text-xs text-white/40 hover:text-white transition-colors">
+              <ExternalLink size={12} />Profilo Trakt
+            </button>
+          </div>
         </div>
       ) : code ? (
         <div className="rounded-2xl bg-[#1e1e24] border border-white/[0.06] p-6 space-y-4 text-center">

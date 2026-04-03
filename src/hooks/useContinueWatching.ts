@@ -27,6 +27,8 @@ export function useContinueWatching() {
   const localHistory = useWatchHistory();
   const [items, setItems] = useState<CWItem[]>([]);
   const [loading, setLoading] = useState(true);
+  // IDs rimossi manualmente — non ricompaiono durante il reload
+  const removedIds = useState<Set<string>>(() => new Set())[0];
 
   // Reload quando cambia la storia locale (guardando qualcosa di nuovo)
   useEffect(() => { load(); }, [traktAuth?.token, simklAuth?.token, nuvioUser?.token, localHistory.length, localHistory[0]?.watchedAt]);
@@ -109,10 +111,15 @@ export function useContinueWatching() {
       } catch { /* fallback */ }
     }
 
-    const deduped = dedup(all).slice(0, 20);
+    const deduped = dedup(all).filter(i => !removedIds.has(i.id)).slice(0, 20);
     setItems(deduped);
     setLoading(false);
   }
 
-  return { items, loading, reload: load };
+  function removeItem(id: string) {
+    removedIds.add(id);
+    setItems(prev => prev.filter(i => i.id !== id));
+  }
+
+  return { items, loading, reload: load, removeItem };
 }

@@ -3,7 +3,7 @@ import React from 'react';
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useStore } from '../lib/store';
-import { getAllWatchedItems } from '../api/nuvio';
+import { getAllWatchedItems, markWatched, unmarkWatched } from '../api/nuvio';
 import { fetchMeta, fetchAllStreams, openExternal, launchPlayer } from '../api/stremio';
 import { getDetails, tmdbImg, hasTMDBKey, STREAMING_SERVICES } from '../api/tmdb';
 import { MetaItem, Stream, StreamGroup, Video } from '../lib/types';
@@ -125,13 +125,21 @@ export default function Detail() {
   const [prevEpData, setPrevEpData] = useState<Video | null>(null);
   const [playError, setPlayError] = useState<string | null>(null);
   const [activeStreamKey, setActiveStreamKey] = useState<string | null>(null);
-  const [selectedAddon, setSelectedAddon] = useState<string | null>(null); // null = tutti
+  const [selectedAddon, setSelectedAddon] = useState<string | null>(null);
+  const [epCtxMenu, setEpCtxMenu] = useState<{ x: number; y: number; ep: Video } | null>(null); // null = tutti
   const [playerStream, setPlayerStream] = useState<Stream | null>(null);
   const [activeSeason, setActiveSeason] = useState<number>(1);
   const [inLibrary, setInLibrary] = useState(false);
   const [watchedEpIds, setWatchedEpIds] = useState<Set<string>>(new Set());
 
   const isTmdbId = decodedId.startsWith('tmdb:');
+
+  useEffect(() => {
+    if (!epCtxMenu) return;
+    const close = () => setEpCtxMenu(null);
+    window.addEventListener('mousedown', close);
+    return () => window.removeEventListener('mousedown', close);
+  }, [epCtxMenu]);
   const isSeries = meta?.type === 'series' || type === 'series';
 
   // Carica episodi visti (dopo dichiarazione isSeries)
@@ -424,6 +432,7 @@ export default function Detail() {
 
   // Panel destra: mostra episodi SE serie e nessun ep selezionato, altrimenti mostra stream
   const showEpisodePanel = isSeries && allVideos.length > 0;
+  // Quando un episodio è selezionato, il pannello destro mostra gli stream
 
   // ── Player aperto ─────────────────────────────────────────────────────────
 
@@ -700,6 +709,7 @@ export default function Detail() {
                 <button key={ep.id} type="button"
                   onClick={() => handleEpisodeSelect(ep)}
                   data-context-menu="true"
+                  onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setEpCtxMenu({ x: e.clientX, y: e.clientY, ep }); }}
                   className="w-full flex items-center gap-3 px-4 py-3 border-b border-white/[0.05] hover:bg-white/[0.05] transition-colors cursor-pointer text-left">
                   {(() => {
                     const epVideoId = `${decodedId}:${ep.season}:${ep.episode}`;
@@ -725,6 +735,49 @@ export default function Detail() {
                 </button>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* Context menu episodio */}
+        {epCtxMenu && (
+          <div className="fixed z-[9999] bg-[#1e1e26] border border-white/10 rounded-xl shadow-2xl py-1.5 min-w-[200px]"
+            style={{ left: epCtxMenu.x, top: epCtxMenu.y }}
+            onMouseDown={e => e.stopPropagation()}>
+            <button onMouseDown={e => { e.stopPropagation(); handleEpisodeSelect(epCtxMenu.ep); setEpCtxMenu(null); }}
+              className="w-full text-left px-4 py-2.5 text-sm text-white/80 hover:bg-white/5 flex items-center gap-2">
+              ▶ Riproduci
+            </button>
+            <button onMouseDown={async e => {
+              e.stopPropagation(); setEpCtxMenu(null);
+              if (nuvioUser?.id) await markWatched(nuvioUser.id, epCtxMenu.ep.id.split(':')[0], 'series', epCtxMenu.ep.season, epCtxMenu.ep.episode).catch(() => {});
+              setWatchedEpIds(prev => new Set([...prev, epCtxMenu.ep.id]));
+            }} className="w-full text-left px-4 py-2.5 text-sm text-green-400 hover:bg-white/5 flex items-center gap-2">
+              ✓ Segna come visto
+            </button>
+            <button onMouseDown={async e => {
+              e.stopPropagation(); setEpCtxMenu(null);
+              // Segna tutti fino a questo episodio
+              const epIdx = episodesForSeason.findIndex(e => e.id === epCtxMenu.ep.id);
+              if (epIdx >= 0 && nuvioUser?.id) {
+                const contentId = epCtxMenu.ep.id.split(':')[0];
+                for (let i = 0; i <= epIdx; i++) {
+                  const e = episodesForSeason[i];
+                  await markWatched(nuvioUser.id, contentId, 'series', e.season, e.episode).catch(() => {});
+                }
+                const newIds = new Set(watchedEpIds);
+                episodesForSeason.slice(0, epIdx + 1).forEach(e => newIds.add(e.id));
+                setWatchedEpIds(newIds);
+              }
+            }} className="w-full text-left px-4 py-2.5 text-sm text-blue-400 hover:bg-white/5 flex items-center gap-2">
+              ✓✓ Segna visti fino a qui
+            </button>
+            <button onMouseDown={async e => {
+              e.stopPropagation(); setEpCtxMenu(null);
+              if (nuvioUser?.id) await unmarkWatched(nuvioUser.id, epCtxMenu.ep.id.split(':')[0], 'series').catch(() => {});
+              setWatchedEpIds(prev => { const s = new Set(prev); s.delete(epCtxMenu.ep.id); return s; });
+            }} className="w-full text-left px-4 py-2.5 text-sm text-red-400 hover:bg-white/5 flex items-center gap-2">
+              ✕ Segna come non visto
+            </button>
           </div>
         )}
 
