@@ -85,7 +85,7 @@ export async function fetchAllStreams(addons: Addon[], type: string, id: string,
   const cached = _streamCache.get(cacheKey);
   if (cached && Date.now() - cached.ts < 300_000) return cached.data;
 
-  const eligible = addons.filter(a => a.resources.some(r => r === 'stream' || r.startsWith('stream')));
+  const eligible = addons.filter(a => Array.isArray(a.resources) && a.resources.some((r: any) => r === 'stream' || (typeof r === 'string' && r.startsWith('stream')) || (r?.name === 'stream')));
   const groups: StreamGroup[] = [];
 
   // Fetch in parallelo con timeout 10s per addon
