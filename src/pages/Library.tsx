@@ -8,7 +8,7 @@ import {
 } from '../api/trakt';
 import { getSimklHistory } from '../api/simkl';
 import { getMALAnimeList } from '../api/mal';
-import { getAllWatchedItems, markNuvioWatched, removeNuvioWatched } from '../api/nuvio';
+import { getAllWatchedItems, markNuvioWatched, removeNuvioWatched, callRpc } from '../api/nuvio';
 import { hasTMDBKey, tmdbImg } from '../api/tmdb';
 import {
   Film, Tv, BookOpen, List, Search, X, Filter, Loader2,
@@ -358,13 +358,9 @@ export default function Library() {
       try {
         // 1. Library items (tutti i contenuti salvati)
         const { getContinueWatching } = await import('../api/nuvio');
-        const libRes = await fetch(
-          `https://dpyhjjcoabcglfmgecug.supabase.co/rest/v1/rpc/sync_pull_library`,
-          { method: 'POST', headers: { 'Content-Type': 'application/json', 'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY ?? '', 'Authorization': `Bearer ${nuvioUser.token}` }, body: '{}' }
-        );
-        if (libRes.ok) {
-          const libItems = await libRes.json();
-          for (const i of (Array.isArray(libItems) ? libItems : [])) {
+        const libItems = await callRpc('sync_pull_library', {}, nuvioUser.token).catch(() => []);
+        if (Array.isArray(libItems) && libItems.length >= 0) {
+          for (const i of libItems) {
             const isMovie = i.content_type === 'movie';
             const target = isMovie ? film : serie;
             if (!target.find(x => x.id === i.content_id)) {

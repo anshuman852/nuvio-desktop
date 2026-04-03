@@ -3,6 +3,23 @@
 const SUPABASE_URL  = import.meta.env.VITE_SUPABASE_URL      ?? '';
 const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY ?? '';
 
+export const SUPABASE_ENDPOINT = SUPABASE_URL;
+export const SUPABASE_KEY = SUPABASE_ANON;
+
+// Funzione helper pubblica per chiamate RPC dall'esterno
+export async function callRpc(fn: string, payload: Record<string, unknown>, token: string): Promise<any> {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON, 'Authorization': `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    throw new Error(`RPC ${fn} ${res.status}: ${txt.slice(0, 200)}`);
+  }
+  return res.json();
+}
+
 let _userToken: string | null = null;
 
 export function setAuthToken(t: string | null) { _userToken = t; }

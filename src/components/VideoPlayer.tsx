@@ -95,6 +95,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
   // Stato video
   const [ready, setReady] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
+  const [resolvedUrl, setResolvedUrl] = useState(url);
   const [playing, setPlaying] = useState(false);
   const [paused, setPaused] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -153,7 +154,15 @@ export default function VideoPlayer(props: VideoPlayerProps) {
 
     setReady(false); setError(null); setBuffering(true);
     setShowNextEpCard(false); setNextEpTriggered(false);
-    setPlaying(false); setPaused(false);
+    setPlaying(false); setPaused(false); setRetryCount(0);
+    // Per URL HTTP, prova a risolvere i redirect prima
+    setResolvedUrl(url);
+    if (url.startsWith('http://') || (url.startsWith('https://') && !url.includes('.m3u8') && !url.includes('.mpd'))) {
+      // Aggiungi cache-buster per evitare problemi di caching WebView2
+      const sep = url.includes('?') ? '&' : '?';
+      const bustUrl = `${url}${sep}_t=${Date.now()}`;
+      setResolvedUrl(bustUrl);
+    }
     v.src = url;
     v.load();
 
