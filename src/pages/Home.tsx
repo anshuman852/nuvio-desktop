@@ -174,7 +174,6 @@ function PosterCard({ item, onRemove, showWatched }: { item: any; onRemove?: (id
       </div>
       <p className="mt-2 text-xs text-white/70 group-hover:text-white truncate w-[150px] transition-colors">{item.name}</p>
       {item.releaseInfo && <p className="text-xs text-white/30">{item.releaseInfo}</p>}
-      </div>
     </div>
   );
 }
