@@ -135,30 +135,38 @@ function PosterCard({ item, onRemove, showWatched }: { item: any; onRemove?: (id
           </button>
         </div>
       )}
-    <Link to={`/detail/${item.type}/${encodeURIComponent(item.id)}`} className="flex-shrink-0 group">
       <div
-        className="relative w-[150px] h-[225px] rounded-xl overflow-hidden bg-white/5 border border-white/[0.06] group-hover:border-white/20 transition-all duration-200 group-hover:scale-[1.04] shadow-lg"
-        data-context-menu="true" onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setCtxMenu({ x: e.clientX, y: e.clientY }); }}>
+        className={`relative w-[150px] h-[225px] rounded-xl overflow-hidden bg-white/5 transition-all duration-200 group-hover:scale-[1.04] shadow-lg ${isWatched ? 'border-2 border-green-500' : 'border border-white/[0.06] group-hover:border-white/20'}`}
+        data-context-menu="true"
+        onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setCtxMenu({ x: e.clientX, y: e.clientY }); }}>
         {posterSrc && !imgErr
           ? <img src={posterSrc} alt={item.name} className="w-full h-full object-cover" onError={() => setImgErr(true)} />
           : <div className="w-full h-full flex items-center justify-center text-white/10"><Play size={28} /></div>}
 
-        {/* Hover play overlay */}
+        {isWatched && (
+          <>
+            <div className="absolute top-2 right-2 z-20 w-7 h-7 rounded-full bg-green-500 flex items-center justify-center shadow-lg">
+              <span className="text-white text-xs font-black">✓</span>
+            </div>
+            <div className="absolute bottom-0 left-0 right-0 z-20 bg-green-500/90 py-0.5">
+              <p className="text-[10px] text-white font-bold text-center tracking-wide">VISTO</p>
+            </div>
+          </>
+        )}
+
         <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
           <div className="w-11 h-11 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center border border-white/30">
             <Play size={18} className="text-white fill-white ml-1" />
           </div>
         </div>
 
-        {/* Episode badge */}
         {item.season && item.episode && (
           <div className="absolute top-2 left-2 bg-black/70 backdrop-blur-sm px-1.5 py-0.5 rounded text-xs text-white/80 font-mono">
             S{item.season}E{item.episode}
           </div>
         )}
 
-        {/* Progress bar */}
-        {progress !== undefined && progress > 0 && (
+        {progress !== undefined && progress > 0 && !isWatched && (
           <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-white/20">
             <div className="h-full rounded-full" style={{ width: `${Math.min(progress * 100, 100)}%`, backgroundColor: 'var(--accent)' }} />
           </div>
