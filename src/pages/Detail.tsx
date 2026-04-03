@@ -131,16 +131,16 @@ export default function Detail() {
   const [watchedEpIds, setWatchedEpIds] = useState<Set<string>>(new Set());
 
   const isTmdbId = decodedId.startsWith('tmdb:');
+  const isSeries = meta?.type === 'series' || type === 'series';
 
-  // Carica episodi visti
+  // Carica episodi visti (dopo dichiarazione isSeries)
   useEffect(() => {
     if (!nuvioUser?.id || !isSeries) return;
-    getAllWatchedItems(nuvioUser.id, nuvioUser.token).then(items => {
-      const ids = new Set(items.map((w: any) => w.content_id?.toString() ?? ''));
+    getAllWatchedItems(nuvioUser.id, nuvioUser.token).then((items: any[]) => {
+      const ids = new Set<string>(items.map((w: any) => String(w.content_id ?? '')));
       setWatchedEpIds(ids);
     }).catch(() => {});
   }, [nuvioUser?.id, isSeries, decodedId]);
-  const isSeries = meta?.type === 'series' || type === 'series';
 
   // ── Meta fetch ────────────────────────────────────────────────────────────
 

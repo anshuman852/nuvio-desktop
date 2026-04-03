@@ -294,7 +294,7 @@ export default function ProfileSelect() {
     getAvatarCatalog()
       .then(remote => {
         if (remote.length > 0) {
-          setAvatarCatalog(remote.map(a => ({ id: a.id, label: a.displayName, url: a.imageUrl, category: a.category })));
+          setAvatarCatalog(remote.map(a => ({ id: a.id, label: a.display_name, url: `https://dpyhjjcoabcglfmgecug.supabase.co/storage/v1/object/public/avatars/${a.storage_path}`, category: a.category ?? 'default' })));
         } else {
           setAvatarCatalog(DICEBEAR_FALLBACK);
         }

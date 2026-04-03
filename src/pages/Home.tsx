@@ -66,6 +66,7 @@ function PosterCard({ item, onRemove, showWatched }: { item: any; onRemove?: (id
   const [imgErr, setImgErr] = useState(false);
   const [removed, setRemoved] = useState(false);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
+  const [tmdbPoster, setTmdbPoster] = useState<string|null>(null);
   const { settings, nuvioUser, removeWatch } = useStore();
   const progress = typeof item.progress === 'number' ? item.progress : (item.progressPct ? item.progressPct / 100 : undefined);
 

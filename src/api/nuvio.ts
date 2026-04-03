@@ -129,7 +129,7 @@ export async function getContinueWatching(userId: string, userToken?: string): P
           id: r.content_id,
           type: r.content_type,
           name: lib?.name ?? r.content_id ?? '',
-          poster: lib?.poster ?? null,
+          poster: lib?.poster ?? undefined,
           videoId: r.video_id,
           season: r.season ?? undefined,
           episode: r.episode ?? undefined,
@@ -144,8 +144,11 @@ export async function getContinueWatching(userId: string, userToken?: string): P
 // ─── Watched Items ────────────────────────────────────────────────────────────
 
 export interface WatchedItem {
+  id: string;
   content_id: string; content_type: string;
+  type: string; name: string; poster?: string;
   season?: number | null; episode?: number | null;
+  watchedAt: number;
 }
 
 export async function getAllWatchedItems(userId: string, userToken?: string): Promise<WatchedItem[]> {
@@ -153,7 +156,18 @@ export async function getAllWatchedItems(userId: string, userToken?: string): Pr
   if (!tok) return [];
   try {
     const data = await rpc('sync_pull_watched_items', {}, tok);
-    return Array.isArray(data) ? data : [];
+    if (!Array.isArray(data)) return [];
+    return data.map((r: any) => ({
+      id: r.content_id,
+      content_id: r.content_id,
+      content_type: r.content_type,
+      type: r.content_type,
+      name: r.title ?? r.content_id ?? '',
+      poster: r.poster ?? undefined,
+      season: r.season ?? null,
+      episode: r.episode ?? null,
+      watchedAt: r.watched_at ?? Date.now(),
+    }));
   } catch { return []; }
 }
 
@@ -307,4 +321,13 @@ export async function getAvatarCatalog(): Promise<SupabaseAvatar[]> {
     const data = await rpc('get_avatar_catalog', {}, tok);
     return Array.isArray(data) ? data : [];
   } catch { return []; }
+}
+
+// ─── Alias per compatibilità ──────────────────────────────────────────────────
+export const markNuvioWatched = markWatched;
+export const removeNuvioWatched = unmarkWatched;
+
+// traktScrobble stub (usato da VideoPlayer - la vera impl è in trakt.ts)
+export async function traktScrobble(_action: string, _item: any): Promise<void> {
+  // Implementato in api/trakt.ts - questo è uno stub per compatibilità
 }

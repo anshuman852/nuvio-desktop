@@ -11,7 +11,8 @@
  */
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useStore } from '../lib/store';
-import { upsertCW, traktScrobble } from '../api/nuvio';
+import { upsertCW } from '../api/nuvio';
+import { traktScrobble } from '../api/trakt';
 import { invoke } from '@tauri-apps/api/core';
 import {
   Play, Pause, Volume2, VolumeX, Maximize, Minimize, X,
