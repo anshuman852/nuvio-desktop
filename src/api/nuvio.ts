@@ -228,7 +228,7 @@ export async function removeCW(userId: string, contentId: string): Promise<void>
 
 // ─── Watched Items ─────────────────────────────────────────────────────────────
 
-export async function markWatched(userId: string, contentId: string, contentType: string, season?: number, episode?: number): Promise<void> {
+export async function markWatched(userId: string, contentId: string, contentType = 'movie', season?: number, episode?: number): Promise<void> {
   const tok = _userToken;
   if (!tok) return;
   const item = { content_id: contentId, content_type: contentType, title: contentId, season: season ?? null, episode: episode ?? null, watched_at: Date.now() };
@@ -324,7 +324,7 @@ export async function getAvatarCatalog(): Promise<SupabaseAvatar[]> {
 }
 
 // ─── Alias per compatibilità ──────────────────────────────────────────────────
-export const markNuvioWatched = markWatched;
+export async function markNuvioWatched(userId: string, contentId: string, contentType = 'movie') { return markWatched(userId, contentId, contentType); }
 export const removeNuvioWatched = unmarkWatched;
 
 // traktScrobble stub (usato da VideoPlayer - la vera impl è in trakt.ts)

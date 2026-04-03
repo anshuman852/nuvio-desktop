@@ -2,7 +2,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useStore } from '../lib/store';
-import { removeCW } from '../api/nuvio';
+import { removeCW, markWatched } from '../api/nuvio';
 import { fetchCatalog } from '../api/stremio';
 import { useContinueWatching } from '../hooks/useContinueWatching';
 import { MetaItem, Addon, AddonCatalog } from '../lib/types';

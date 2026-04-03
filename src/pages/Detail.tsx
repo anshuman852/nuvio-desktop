@@ -3,6 +3,7 @@ import React from 'react';
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useStore } from '../lib/store';
+import { getAllWatchedItems } from '../api/nuvio';
 import { fetchMeta, fetchAllStreams, openExternal, launchPlayer } from '../api/stremio';
 import { getDetails, tmdbImg, hasTMDBKey, STREAMING_SERVICES } from '../api/tmdb';
 import { MetaItem, Stream, StreamGroup, Video } from '../lib/types';
