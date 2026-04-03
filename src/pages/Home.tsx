@@ -63,26 +63,27 @@ function HeroSection({ item }: { item: MetaItem }) {
 // ─── Poster card ──────────────────────────────────────────────────────────────
 
 function PosterCard({ item, onRemove, showWatched }: { item: any; onRemove?: (id: string) => void; showWatched?: boolean }) {
+  // TUTTI gli hooks PRIMA di qualsiasi return condizionale (Rules of Hooks)
   const [imgErr, setImgErr] = useState(false);
   const [removed, setRemoved] = useState(false);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
   const [tmdbPoster, setTmdbPoster] = useState<string|null>(null);
   const { settings, nuvioUser, removeWatch } = useStore();
+  const navigate = useNavigate();
+
   const progress = typeof item.progress === 'number' ? item.progress : (item.progressPct ? item.progressPct / 100 : undefined);
+  const isWatched = showWatched && ((progress ?? 0) >= 0.90 || item.watched);
+  const posterSrc = item.poster || tmdbPoster;
 
   // Chiudi menu al click esterno
   useEffect(() => {
     if (!ctxMenu) return;
-    const close = () => setCtxMenu(null);
-    window.addEventListener('click', close);
-    return () => window.removeEventListener('click', close);
+    const handler = (e: MouseEvent) => { setCtxMenu(null); };
+    window.addEventListener('mousedown', handler);
+    return () => window.removeEventListener('mousedown', handler);
   }, [ctxMenu]);
 
-  if (removed) return null;
-
-  const isWatched = showWatched && ((progress ?? 0) >= 0.90 || item.watched);
-
-  // Carica poster da TMDB se mancante
+  // Poster TMDB fallback
   useEffect(() => {
     if (item.poster || !item.id || !settings.tmdbApiKey) return;
     const imdbId = item.id.startsWith('tt') ? item.id : null;
@@ -96,84 +97,97 @@ function PosterCard({ item, onRemove, showWatched }: { item: any; onRemove?: (id
       .catch(() => {});
   }, [item.id, item.poster, settings.tmdbApiKey]);
 
-  const posterSrc = item.poster || tmdbPoster;
+  // Return condizionale DOPO tutti gli hooks
+  if (removed) return null;
+
+  function doRemove() {
+    setCtxMenu(null); setRemoved(true);
+    onRemove?.(item.id);
+    removeWatch(item.id);
+    if (nuvioUser?.id) removeCW(nuvioUser.id, item.id).catch(() => {});
+  }
+
+  function doMarkWatched() {
+    setCtxMenu(null); setRemoved(true);
+    onRemove?.(item.id);
+    removeWatch(item.id);
+    if (nuvioUser?.id) {
+      markWatched(nuvioUser.id, item.id, item.type, item.season, item.episode).catch(() => {});
+      removeCW(nuvioUser.id, item.id).catch(() => {});
+    }
+  }
 
   return (
     <div className="flex-shrink-0 group relative">
       {/* Context menu */}
       {ctxMenu && (
-        <div className="fixed z-50 bg-[#1e1e26] border border-white/10 rounded-xl shadow-2xl py-1.5 min-w-[180px] overflow-hidden"
+        <div
+          className="fixed z-[9999] bg-[#1e1e26] border border-white/10 rounded-xl shadow-2xl py-1.5 min-w-[180px]"
           style={{ left: ctxMenu.x, top: ctxMenu.y }}
-          onClick={e => e.stopPropagation()}>
+          onMouseDown={e => e.stopPropagation()}>
           {onRemove && (
-            <button onClick={async e => {
-              e.stopPropagation(); setCtxMenu(null); setRemoved(true);
-              onRemove(item.id);
-              if (nuvioUser?.id) await removeCW(nuvioUser.id, item.id).catch(() => {});
-              removeWatch(item.id);
-            }}
+            <button onMouseDown={e => { e.stopPropagation(); doRemove(); }}
               className="w-full text-left px-4 py-2.5 text-sm text-red-400 hover:bg-white/5 flex items-center gap-2">
               ✕ Rimuovi da CW
             </button>
           )}
-          <Link to={`/detail/${item.type}/${encodeURIComponent(item.id)}`}
-            className="w-full text-left px-4 py-2.5 text-sm text-white/70 hover:bg-white/5 flex items-center gap-2 block"
-            onClick={() => setCtxMenu(null)}>
+          <button onMouseDown={e => { e.stopPropagation(); setCtxMenu(null); navigate(`/detail/${item.type}/${encodeURIComponent(item.id)}`); }}
+            className="w-full text-left px-4 py-2.5 text-sm text-white/70 hover:bg-white/5 flex items-center gap-2">
             ℹ Info
-          </Link>
-          <button onClick={async e => {
-            e.stopPropagation(); setCtxMenu(null); setRemoved(true);
-            onRemove?.(item.id);
-            if (nuvioUser?.id) {
-              await markWatched(nuvioUser.id, item.id, item.type, item.season, item.episode).catch(() => {});
-              await removeCW(nuvioUser.id, item.id).catch(() => {});
-            }
-            removeWatch(item.id);
-          }}
+          </button>
+          <button onMouseDown={e => { e.stopPropagation(); doMarkWatched(); }}
             className="w-full text-left px-4 py-2.5 text-sm text-green-400 hover:bg-white/5 flex items-center gap-2">
             ✓ Segna come visto
           </button>
         </div>
       )}
+
+      {/* Card cliccabile */}
       <div
-        className={`relative w-[150px] h-[225px] rounded-xl overflow-hidden bg-white/5 transition-all duration-200 group-hover:scale-[1.04] shadow-lg ${isWatched ? 'border-2 border-green-500' : 'border border-white/[0.06] group-hover:border-white/20'}`}
-        data-context-menu="true"
+        className="cursor-pointer"
+        onClick={() => { if (!ctxMenu) navigate(`/detail/${item.type}/${encodeURIComponent(item.id)}`); }}
         onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setCtxMenu({ x: e.clientX, y: e.clientY }); }}>
-        {posterSrc && !imgErr
-          ? <img src={posterSrc} alt={item.name} className="w-full h-full object-cover" onError={() => setImgErr(true)} />
-          : <div className="w-full h-full flex items-center justify-center text-white/10"><Play size={28} /></div>}
+        <div className={`relative w-[150px] h-[225px] rounded-xl overflow-hidden bg-white/5 transition-all duration-200 group-hover:scale-[1.04] shadow-lg ${isWatched ? 'border-2 border-green-500' : 'border border-white/[0.06] group-hover:border-white/20'}`}>
+          {posterSrc && !imgErr
+            ? <img src={posterSrc} alt={item.name} className="w-full h-full object-cover" onError={() => setImgErr(true)} />
+            : <div className="w-full h-full flex items-center justify-center text-white/10"><Play size={28} /></div>}
 
-        {isWatched && (
-          <>
-            <div className="absolute top-2 right-2 z-20 w-7 h-7 rounded-full bg-green-500 flex items-center justify-center shadow-lg">
-              <span className="text-white text-xs font-black">✓</span>
-            </div>
-            <div className="absolute bottom-0 left-0 right-0 z-20 bg-green-500/90 py-0.5">
-              <p className="text-[10px] text-white font-bold text-center tracking-wide">VISTO</p>
-            </div>
-          </>
-        )}
+          {/* Badge visto */}
+          {isWatched && (
+            <>
+              <div className="absolute top-2 right-2 z-20 w-7 h-7 rounded-full bg-green-500 flex items-center justify-center shadow-lg">
+                <span className="text-white text-xs font-black">✓</span>
+              </div>
+              <div className="absolute bottom-0 left-0 right-0 z-20 bg-green-500/90 py-0.5">
+                <p className="text-[10px] text-white font-bold text-center tracking-wide">VISTO</p>
+              </div>
+            </>
+          )}
 
-        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-          <div className="w-11 h-11 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center border border-white/30">
-            <Play size={18} className="text-white fill-white ml-1" />
+          {/* Hover overlay */}
+          <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+            <div className="w-11 h-11 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center border border-white/30">
+              <Play size={18} className="text-white fill-white ml-1" />
+            </div>
           </div>
+
+          {/* Ep badge */}
+          {item.season && item.episode && (
+            <div className="absolute top-2 left-2 bg-black/70 backdrop-blur-sm px-1.5 py-0.5 rounded text-xs text-white/80 font-mono">
+              S{item.season}E{item.episode}
+            </div>
+          )}
+
+          {/* Barra progresso */}
+          {progress !== undefined && progress > 0 && !isWatched && (
+            <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-white/20">
+              <div className="h-full rounded-full" style={{ width: `${Math.min(progress * 100, 100)}%`, backgroundColor: 'var(--accent)' }} />
+            </div>
+          )}
         </div>
-
-        {item.season && item.episode && (
-          <div className="absolute top-2 left-2 bg-black/70 backdrop-blur-sm px-1.5 py-0.5 rounded text-xs text-white/80 font-mono">
-            S{item.season}E{item.episode}
-          </div>
-        )}
-
-        {progress !== undefined && progress > 0 && !isWatched && (
-          <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-white/20">
-            <div className="h-full rounded-full" style={{ width: `${Math.min(progress * 100, 100)}%`, backgroundColor: 'var(--accent)' }} />
-          </div>
-        )}
+        <p className="mt-2 text-xs text-white/70 group-hover:text-white truncate w-[150px] transition-colors">{item.name}</p>
+        {item.releaseInfo && <p className="text-xs text-white/30">{item.releaseInfo}</p>}
       </div>
-      <p className="mt-2 text-xs text-white/70 group-hover:text-white truncate w-[150px] transition-colors">{item.name}</p>
-      {item.releaseInfo && <p className="text-xs text-white/30">{item.releaseInfo}</p>}
     </div>
   );
 }

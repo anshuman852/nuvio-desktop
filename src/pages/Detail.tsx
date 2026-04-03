@@ -705,11 +705,13 @@ export default function Detail() {
                     const epVideoId = `${decodedId}:${ep.season}:${ep.episode}`;
                     const epWatched = watchedEpIds.has(epVideoId) || watchedEpIds.has(decodedId);
                     const shouldBlur = (settings as any).blurUnwatched && !epWatched;
-                    return ep.thumbnail ? (
-                      <img src={ep.thumbnail} alt="" className={`w-24 h-[54px] rounded-lg object-cover flex-shrink-0 bg-white/5 transition-all ${shouldBlur ? 'blur-sm brightness-50' : ''}`} />
-                    ) : (
-                      <div className="w-24 h-[54px] rounded-lg bg-white/5 flex-shrink-0 flex items-center justify-center text-white/20">
-                        <Play size={16} />
+                    if (ep.thumbnail) {
+                      return <img src={ep.thumbnail} alt="" className={`w-24 h-[54px] rounded-lg object-cover flex-shrink-0 bg-white/5 transition-all ${shouldBlur ? 'blur-sm brightness-50' : ''}`} />;
+                    }
+                    // Nessuna thumbnail: mostra numero episodio invece di icona play grigia
+                    return (
+                      <div className={`w-24 h-[54px] rounded-lg flex-shrink-0 flex items-center justify-center text-white/30 text-sm font-bold ${shouldBlur ? 'bg-white/3' : 'bg-white/5'}`}>
+                        {ep.episode}
                       </div>
                     );
                   })()}
