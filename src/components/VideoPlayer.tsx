@@ -1,14 +1,5 @@
 /// <reference types="vite/client" />
 
-  // Applica resolvedUrl al tag video quando viene risolto (HTTPS redirect)
-  useEffect(() => {
-    if (!resolvedUrl || isMagnet) return;
-    const v = vidRef.current;
-    if (!v) return;
-    v.src = resolvedUrl;
-    v.load();
-  }, [resolvedUrl, isMagnet]);
-
 /**
  * NuvioPlayer v9 — Player intelligente completo
  * - Auto-hide controlli dopo 5s
@@ -248,6 +239,14 @@ export default function VideoPlayer(props: VideoPlayerProps) {
     v.addEventListener('error', onError, { once: true });
     return () => { v.removeEventListener('canplay', onCanPlay); v.removeEventListener('error', onError); };
   }, [url]);
+
+  useEffect(() => {
+    if (!resolvedUrl || isMagnet) return;
+    const v = vidRef.current;
+    if (!v) return;
+    v.src = resolvedUrl;
+    v.load();
+  }, [resolvedUrl, isMagnet]);
 
   // ── Next episode auto-trigger ──────────────────────────────────────────────
   useEffect(() => {
