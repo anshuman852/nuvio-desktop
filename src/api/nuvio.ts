@@ -312,7 +312,34 @@ export async function getNuvioAddons(userId: string, userToken?: string): Promis
     { headers: authHeaders(tok) }
   );
   const rows = await res.json();
-  return (Array.isArray(rows) ? rows : []).map((r: any) => ({ id: r.url, url: r.url, name: r.name ?? r.url }));
+  if (!Array.isArray(rows) || rows.length === 0) return [];
+
+  // Fetcha il manifest per ogni addon (per avere catalogs, resources, types)
+  const addons = await Promise.allSettled(
+    rows.map(async (r: any) => {
+      const manifestUrl = r.url.endsWith('manifest.json') ? r.url : r.url.replace(/\/?$/, '/manifest.json');
+      try {
+        const mRes = await fetch(manifestUrl, { signal: AbortSignal.timeout(5000) });
+        if (mRes.ok) {
+          const m = await mRes.json();
+          return {
+            id: m.id ?? r.url,
+            url: r.url,
+            name: m.name ?? r.name ?? r.url,
+            version: m.version ?? '',
+            description: m.description ?? '',
+            types: m.types ?? [],
+            catalogs: m.catalogs ?? [],
+            resources: Array.isArray(m.resources) ? m.resources.map((res: any) => typeof res === 'string' ? res : res.name) : [],
+            logo: m.logo ?? m.icon ?? null,
+          };
+        }
+      } catch { /* manifest non raggiungibile */ }
+      // Fallback senza manifest
+      return { id: r.url, url: r.url, name: r.name ?? r.url, version: '', description: '', types: [], catalogs: [], resources: [], logo: null };
+    })
+  );
+  return addons.filter(r => r.status === 'fulfilled').map((r: any) => r.value);
 }
 
 // ─── Account Stats ────────────────────────────────────────────────────────────

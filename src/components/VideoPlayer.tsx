@@ -96,6 +96,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
   const [ready, setReady] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
   const [resolvedUrl, setResolvedUrl] = useState(url);
+  const [isResolvingUrl, setIsResolvingUrl] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [paused, setPaused] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -155,18 +156,26 @@ export default function VideoPlayer(props: VideoPlayerProps) {
     setReady(false); setError(null); setBuffering(true);
     setShowNextEpCard(false); setNextEpTriggered(false);
     setPlaying(false); setPaused(false); setRetryCount(0);
-    setResolvedUrl(url);
     setRetryCount(0);
-    // Per stream HTTP/HTTPS: risolvi redirect tramite Tauri (bypassa CORS WebView2)
+    setIsResolvingUrl(false);
+    // Per stream HTTP/HTTPS non HLS: risolvi redirect via Tauri PRIMA del play
     if (url.startsWith('http') && !url.includes('.m3u8') && !url.includes('.mpd') && !url.includes('magnet:')) {
+      setResolvedUrl(''); // svuota src per evitare play prematuro
+      setBuffering(true);
+      setIsResolvingUrl(true);
       invoke<string>('resolve_stream_url', { url })
         .then(finalUrl => {
-          if (finalUrl && finalUrl !== url) {
-            console.log('[Player] URL risolto:', url.slice(0, 60), '->', finalUrl.slice(0, 60));
-            setResolvedUrl(finalUrl);
-          }
+          const resolved = (finalUrl && finalUrl.startsWith('http')) ? finalUrl : url;
+          console.log('[Player] Resolved:', url.slice(0, 50), '→', resolved.slice(0, 50));
+          setResolvedUrl(resolved);
+          setIsResolvingUrl(false);
         })
-        .catch(() => { /* usa URL originale */ });
+        .catch(() => {
+          setResolvedUrl(url); // fallback URL originale
+          setIsResolvingUrl(false);
+        });
+    } else {
+      setResolvedUrl(url);
     }
     v.src = url;
     v.load();

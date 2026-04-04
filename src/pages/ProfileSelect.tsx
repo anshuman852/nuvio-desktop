@@ -67,16 +67,25 @@ function QRLoginModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: 
     setStep('loading');
     clearInterval(pollRef.current);
     try {
-      // Step 1: Ottieni sessione anonima per chiamare start_tv_login_session
-      let anonToken = SUPABASE_ANON;
-      try {
-        const anonRes = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=anonymous`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON, Authorization: `Bearer ${SUPABASE_ANON}` },
-          body: '{}',
-        });
-        if (anonRes.ok) { const d = await anonRes.json(); anonToken = d.access_token ?? SUPABASE_ANON; }
-      } catch { /* usa anon key */ }
+      // Step 1: Token per le chiamate (usa token utente se disponibile, altrimenti anon)
+      let anonToken = _userToken ?? SUPABASE_ANON;
+      if (!_userToken) {
+        try {
+          const anonRes = await fetch(`${SUPABASE_URL}/auth/v1/signup`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON, Authorization: `Bearer ${SUPABASE_ANON}` },
+            body: JSON.stringify({ data: { tv_client: 'desktop' } }),
+          });
+          if (anonRes.ok) { const d = await anonRes.json(); anonToken = d.session?.access_token ?? d.access_token ?? SUPABASE_ANON; }
+        } catch {
+          try {
+            const anonRes2 = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=anonymous`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON, Authorization: `Bearer ${SUPABASE_ANON}` }, body: '{}',
+            });
+            if (anonRes2.ok) { const d = await anonRes2.json(); anonToken = d.access_token ?? SUPABASE_ANON; }
+          } catch { /* usa anon key */ }
+        }
+      }
 
       // Step 2: Genera device_nonce (UUID)
       const deviceNonce = crypto.randomUUID();
@@ -89,7 +98,27 @@ function QRLoginModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: 
         body: JSON.stringify({ p_device_nonce: deviceNonce, p_redirect_base_url: redirectBase, p_device_name: 'Nuvio Desktop' }),
       });
 
-      if (!startRes.ok) { console.error('start_tv_login_session failed:', await startRes.text()); setStep('error'); return; }
+      if (!startRes.ok) {
+        const errText = await startRes.text();
+        console.error('start_tv_login_session failed:', errText);
+        // Prova senza p_redirect_base_url (alcuni backend non lo richiedono)
+        const startRes2 = await fetch(`${SUPABASE_URL}/rest/v1/rpc/start_tv_login_session`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON, Authorization: `Bearer ${anonToken}` },
+          body: JSON.stringify({ p_device_nonce: deviceNonce, p_device_name: 'Nuvio Desktop' }),
+        });
+        if (!startRes2.ok) { console.error('start_tv_login_session (no redirect) failed:', await startRes2.text()); setStep('error'); return; }
+        Object.defineProperty(startRes, 'ok', { value: true });
+        // usa startRes2
+        const session2 = await startRes2.json();
+        const sd2 = Array.isArray(session2) ? session2[0] : session2;
+        const qrCode2 = sd2?.code ?? crypto.randomUUID().split('-')[0].toUpperCase();
+        const loginUrl2 = sd2?.qr_content ?? sd2?.web_url ?? `https://web.nuvioapp.space/tv-login?code=${qrCode2}`;
+        setCode(qrCode2); setWebUrl(loginUrl2);
+        setQrSvg(`https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(loginUrl2)}&size=220x220&bgcolor=141418&color=ffffff&margin=10`);
+        setStep('show');
+        return; // il poll verrà avviato dal codice successivo (refactor needed)
+      }
       const session = await startRes.json();
       const sessionData = Array.isArray(session) ? session[0] : session;
 

@@ -120,7 +120,13 @@ function ServiceDetail({ service }: { service: StreamingService }) {
     setLoading(true);
     try {
       const data = await discoverByProvider(service.tmdbId, tab, p);
-      setItems(prev => p === 1 ? (data.results ?? []).map(tmdbToMeta) : [...prev, ...(data.results ?? []).map(tmdbToMeta)]);
+      const mapped = (data.results ?? []).map(item => {
+        const meta = tmdbToMeta(item);
+        // Per le serie, il tipo deve essere 'series' per navigare correttamente
+        if (tab === 'tv') meta.type = 'series';
+        return meta;
+      });
+      setItems(prev => p === 1 ? mapped : [...prev, ...mapped]);
       setTotalPages(data.total_pages ?? 1);
     } catch { } finally { setLoading(false); }
   }
