@@ -100,8 +100,13 @@ function AccountPage() {
     try {
       const cloudAddons = await getNuvioAddons(nuvioUser.id, nuvioUser.token);
       if (cloudAddons.length > 0) {
+        // Deduplication per ID manifest (es. "com.stremio.cinemeta") E per URL
         const currentIds = new Set(addons.map((a: any) => a.id));
-        const newAddons = cloudAddons.filter((a: any) => !currentIds.has(a.id));
+        const currentUrls = new Set(addons.map((a: any) => (a.url ?? '').replace(/\/+$/, '').replace(/\/manifest\.json$/, '')));
+        const newAddons = cloudAddons.filter((a: any) => {
+          const normalUrl = (a.url ?? '').replace(/\/+$/, '').replace(/\/manifest\.json$/, '');
+          return !currentIds.has(a.id) && !currentUrls.has(normalUrl);
+        });
         if (newAddons.length > 0) setAddons([...addons, ...newAddons]);
       }
       const s = await getAccountStats(nuvioUser.id, nuvioUser.token);

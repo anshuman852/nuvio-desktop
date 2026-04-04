@@ -67,156 +67,96 @@ function QRLoginModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: 
     setStep('loading');
     clearInterval(pollRef.current);
     try {
-      // Step 1: Token per le chiamate (usa token utente se disponibile, altrimenti anon)
-      const storedToken = useStore.getState().nuvioUser?.token ?? null;
-      let anonToken = storedToken ?? SUPABASE_ANON;
-      if (!storedToken) {
-        try {
-          const anonRes = await fetch(`${SUPABASE_URL}/auth/v1/signup`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON, Authorization: `Bearer ${SUPABASE_ANON}` },
-            body: JSON.stringify({ data: { tv_client: 'desktop' } }),
-          });
-          if (anonRes.ok) { const d = await anonRes.json(); anonToken = d.session?.access_token ?? d.access_token ?? SUPABASE_ANON; }
-        } catch {
-          try {
-            const anonRes2 = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=anonymous`, {
-              method: 'POST', headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON, Authorization: `Bearer ${SUPABASE_ANON}` }, body: '{}',
-            });
-            if (anonRes2.ok) { const d = await anonRes2.json(); anonToken = d.access_token ?? SUPABASE_ANON; }
-          } catch { /* usa anon key */ }
-        }
-      }
-
-      // Step 2: Genera device_nonce (UUID)
+      const storedToken = useStore.getState().nuvioUser?.token ?? SUPABASE_ANON;
       const deviceNonce = crypto.randomUUID();
-      const redirectBase = 'https://web.nuvioapp.space';
 
-      // Step 3: start_tv_login_session con p_device_nonce e p_redirect_base_url
-      const startRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/start_tv_login_session`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON, Authorization: `Bearer ${anonToken}` },
-        body: JSON.stringify({ p_device_nonce: deviceNonce, p_redirect_base_url: redirectBase, p_device_name: 'Nuvio Desktop' }),
-      });
-
-      if (!startRes.ok) {
-        const errText = await startRes.text();
-        console.error('start_tv_login_session failed:', errText);
-        // Prova senza p_redirect_base_url (alcuni backend non lo richiedono)
-        const startRes2 = await fetch(`${SUPABASE_URL}/rest/v1/rpc/start_tv_login_session`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON, Authorization: `Bearer ${anonToken}` },
-          body: JSON.stringify({ p_device_nonce: deviceNonce, p_device_name: 'Nuvio Desktop' }),
-        });
-        if (!startRes2.ok) { console.error('start_tv_login_session (no redirect) failed:', await startRes2.text()); setStep('error'); return; }
-        Object.defineProperty(startRes, 'ok', { value: true });
-        // usa startRes2
-        const session2 = await startRes2.json();
-        const sd2 = Array.isArray(session2) ? session2[0] : session2;
-        const qrCode2 = sd2?.code ?? crypto.randomUUID().split('-')[0].toUpperCase();
-        const loginUrl2 = sd2?.qr_content ?? sd2?.web_url ?? `https://web.nuvioapp.space/tv-login?code=${qrCode2}`;
-        setCode(qrCode2); setWebUrl(loginUrl2);
-        setQrSvg(`https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(loginUrl2)}&size=220x220&bgcolor=141418&color=ffffff&margin=10`);
-        setStep('show');
-        return; // il poll verrà avviato dal codice successivo (refactor needed)
-      }
-      const session = await startRes.json();
-      const sessionData = Array.isArray(session) ? session[0] : session;
-
-      const qrCode = sessionData?.code ?? '';
-      const loginUrl = sessionData?.qr_content ?? sessionData?.web_url ?? `${redirectBase}/tv-login?code=${qrCode}`;
-      const qrImageUrl = sessionData?.qr_image_url
-        ?? `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(loginUrl)}&size=220x220&bgcolor=141418&color=ffffff&margin=10`;
-      const pollIntervalMs = (sessionData?.poll_interval_seconds ?? 3) * 1000;
-
-      setCode(qrCode);
-      setWebUrl(loginUrl);
-      setQrSvg(qrImageUrl);
-      setStep('show');
-
-      // Step 4: Poll con p_code + p_device_nonce
-      let attempts = 0;
-      pollRef.current = setInterval(async () => {
-        attempts++;
-        if (attempts > 100) { clearInterval(pollRef.current); setStep('error'); return; }
+      let sessionData: any = null;
+      const bodies = [
+        { p_device_nonce: deviceNonce, p_redirect_base_url: 'https://web.nuvioapp.space', p_device_name: 'Nuvio Desktop' },
+        { p_device_nonce: deviceNonce, p_device_name: 'Nuvio Desktop' },
+        { p_device_nonce: deviceNonce },
+      ];
+      for (const body of bodies) {
         try {
-          const pollRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/poll_tv_login_session`, {
+          const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/start_tv_login_session`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON, Authorization: `Bearer ${anonToken}` },
+            headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON, Authorization: `Bearer ${storedToken}` },
+            body: JSON.stringify(body),
+          });
+          if (r.ok) {
+            const data = await r.json();
+            sessionData = Array.isArray(data) ? data[0] : data;
+            if (sessionData?.code) break;
+          }
+        } catch { }
+      }
+
+      if (!sessionData?.code) { setStep('error'); return; }
+
+      const qrCode = sessionData.code;
+      const loginUrl = sessionData.qr_content ?? sessionData.web_url ?? `https://web.nuvioapp.space/tv-login?code=${qrCode}`;
+      const qrImageUrl = sessionData.qr_image_url ?? `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(loginUrl)}&size=220x220&bgcolor=141418&color=ffffff&margin=10`;
+      const pollMs = Math.max(2000, (sessionData.poll_interval_seconds ?? 3) * 1000);
+
+      setCode(qrCode); setWebUrl(loginUrl); setQrSvg(qrImageUrl); setStep('show');
+
+      let pollCount = 0;
+      pollRef.current = setInterval(async () => {
+        pollCount++;
+        if (pollCount > 100) { clearInterval(pollRef.current); setStep('error'); return; }
+        try {
+          const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/poll_tv_login_session`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON, Authorization: `Bearer ${storedToken}` },
             body: JSON.stringify({ p_code: qrCode, p_device_nonce: deviceNonce }),
           });
-          if (!pollRes.ok) return;
-          const pollData = await pollRes.json();
-          const status = (Array.isArray(pollData) ? pollData[0] : pollData)?.status;
-
+          if (!r.ok) return;
+          const d = await r.json();
+          const status = (Array.isArray(d) ? d[0] : d)?.status;
           if (status === 'approved') {
             clearInterval(pollRef.current);
-            // Step 5: Exchange via Edge Function (come nel qrLoginService ufficiale)
-            const exchRes = await fetch(`${SUPABASE_URL}/functions/v1/tv-logins-exchange`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON, Authorization: `Bearer ${anonToken}` },
-              body: JSON.stringify({ code: qrCode, device_nonce: deviceNonce }),
-            });
-            if (!exchRes.ok) {
-              // Fallback: consume_tv_login_session RPC
-              const consumeRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/consume_tv_login_session`, {
+            try {
+              const exchR = await fetch(`${SUPABASE_URL}/functions/v1/tv-logins-exchange`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON, Authorization: `Bearer ${anonToken}` },
-                body: JSON.stringify({ p_code: qrCode, p_device_nonce: deviceNonce }),
+                headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON, Authorization: `Bearer ${storedToken}` },
+                body: JSON.stringify({ code: qrCode, device_nonce: deviceNonce }),
               });
-              if (!consumeRes.ok) { setStep('error'); return; }
-              const t = await consumeRes.json();
-              const accessToken = (Array.isArray(t) ? t[0] : t)?.access_token ?? t;
-              if (!accessToken || typeof accessToken !== 'string') { setStep('error'); return; }
-              await finalizeLogin(accessToken);
-            } else {
-              const result = await exchRes.json();
-              const accessToken = result?.access_token ?? result?.session?.access_token;
-              if (!accessToken) { setStep('error'); return; }
-              await finalizeLogin(accessToken);
-            }
-          } else if (status === 'expired') {
-            clearInterval(pollRef.current); setStep('error');
-          }
-        } catch { /* continua polling */ }
-      }, pollIntervalMs);
-    } catch (e) {
-      console.error('QR start failed:', e);
-      setStep('error');
-    }
+              if (exchR.ok) { const res = await exchR.json(); const tok = res?.access_token ?? res?.session?.access_token; if (tok) { await finalizeLogin(tok); return; } }
+            } catch { }
+            const cR = await fetch(`${SUPABASE_URL}/rest/v1/rpc/consume_tv_login_session`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON, Authorization: `Bearer ${storedToken}` },
+              body: JSON.stringify({ p_code: qrCode, p_device_nonce: deviceNonce }),
+            });
+            if (cR.ok) { const cd = await cR.json(); const tok2 = (Array.isArray(cd) ? cd[0] : cd)?.access_token; if (tok2) { await finalizeLogin(tok2); return; } }
+            setStep('error');
+          } else if (status === 'expired') { clearInterval(pollRef.current); setStep('error'); }
+        } catch { }
+      }, pollMs);
+    } catch { setStep('error'); }
   }
 
   async function finalizeLogin(accessToken: string) {
     setAuthToken(accessToken);
     try {
-      const userRes = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
-        headers: { apikey: SUPABASE_ANON, Authorization: `Bearer ${accessToken}` },
-      });
-      const user = await userRes.json();
-      // Carica profilo e avatar
-      let name = user.user_metadata?.username ?? user.email?.split('@')[0] ?? 'User';
+      const userR = await fetch(`${SUPABASE_URL}/auth/v1/user`, { headers: { apikey: SUPABASE_ANON, Authorization: `Bearer ${accessToken}` } });
+      const user = await userR.json();
+      let name = user.email?.split('@')[0] ?? 'User';
       let avatar: string | undefined;
       try {
-        const profRes = await fetch(
-          `${SUPABASE_URL}/rest/v1/profiles?select=name,avatar_id&user_id=eq.${user.id}&limit=1`,
-          { headers: { apikey: SUPABASE_ANON, Authorization: `Bearer ${accessToken}` } }
-        );
-        const profs = await profRes.json();
-        const prof = Array.isArray(profs) ? profs[0] : null;
+        const pR = await fetch(`${SUPABASE_URL}/rest/v1/profiles?select=name,avatar_id&user_id=eq.${user.id}&limit=1`, { headers: { apikey: SUPABASE_ANON, Authorization: `Bearer ${accessToken}` } });
+        const prof = (await pR.json())?.[0];
         if (prof?.name) name = prof.name;
         if (prof?.avatar_id) {
-          const avRes = await fetch(
-            `${SUPABASE_URL}/rest/v1/avatar_catalog?select=storage_path&id=eq.${prof.avatar_id}&limit=1`,
-            { headers: { apikey: SUPABASE_ANON, Authorization: `Bearer ${accessToken}` } }
-          );
-          const avRows = await avRes.json();
-          const sp = avRows?.[0]?.storage_path;
+          const aR = await fetch(`${SUPABASE_URL}/rest/v1/avatar_catalog?select=storage_path&id=eq.${prof.avatar_id}&limit=1`, { headers: { apikey: SUPABASE_ANON, Authorization: `Bearer ${accessToken}` } });
+          const sp = (await aR.json())?.[0]?.storage_path;
           if (sp) avatar = `${SUPABASE_URL}/storage/v1/object/public/avatars/${sp}`;
         }
-      } catch { /* opzionale */ }
+      } catch { }
       onSuccess({ id: user.id, email: user.email, token: accessToken, name, avatar });
     } catch { setStep('error'); }
   }
+
 
   return (
     <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex items-center justify-center p-4">

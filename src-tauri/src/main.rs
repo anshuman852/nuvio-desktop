@@ -150,21 +150,33 @@ fn main() { run(); }
 
 #[tauri::command]
 async fn resolve_stream_url(url: String) -> Result<String, String> {
-    // Usa reqwest per seguire i redirect e restituire l'URL finale
-    // Questo bypassa le restrizioni CORS di WebView2
     let client = reqwest::Client::builder()
-        .redirect(reqwest::redirect::Policy::limited(10))
-        .timeout(std::time::Duration::from_secs(10))
+        .redirect(reqwest::redirect::Policy::limited(15))
+        .timeout(std::time::Duration::from_secs(15))
         .build()
         .map_err(|e| e.to_string())?;
     
+    // Prova prima HEAD, poi GET con Range se HEAD fallisce
+    let ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36";
+    
     let resp = client
         .head(&url)
-        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+        .header("User-Agent", ua)
         .send()
-        .await
-        .map_err(|e| e.to_string())?;
+        .await;
     
-    // Restituisce l'URL finale dopo redirect
-    Ok(resp.url().to_string())
+    match resp {
+        Ok(r) if r.status().as_u16() < 400 => Ok(r.url().to_string()),
+        _ => {
+            // Fallback: GET con Range per non scaricare l'intero file
+            let r2 = client
+                .get(&url)
+                .header("User-Agent", ua)
+                .header("Range", "bytes=0-0")
+                .send()
+                .await
+                .map_err(|e| e.to_string())?;
+            Ok(r2.url().to_string())
+        }
+    }
 }

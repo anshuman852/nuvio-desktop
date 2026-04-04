@@ -313,36 +313,13 @@ export async function getNuvioAddons(userId: string, userToken?: string): Promis
   );
   const rows = await res.json();
   if (!Array.isArray(rows) || rows.length === 0) return [];
-
-  // Fetcha il manifest per ogni addon (per avere catalogs, resources, types)
-  const addons = await Promise.allSettled(
-    rows.map(async (r: any) => {
-      const manifestUrl = r.url.endsWith('manifest.json') ? r.url : r.url.replace(/\/?$/, '/manifest.json');
-      try {
-        const mRes = await fetch(manifestUrl, { signal: AbortSignal.timeout(5000) });
-        if (mRes.ok) {
-          const m = await mRes.json();
-          return {
-            id: m.id ?? r.url,
-            url: r.url,
-            name: m.name ?? r.name ?? r.url,
-            version: m.version ?? '',
-            description: m.description ?? '',
-            types: m.types ?? [],
-            catalogs: m.catalogs ?? [],
-            resources: Array.isArray(m.resources) ? m.resources.map((res: any) => typeof res === 'string' ? res : res.name) : [],
-            logo: m.logo ?? m.icon ?? null,
-          };
-        }
-      } catch { /* manifest non raggiungibile */ }
-      // Fallback senza manifest
-      return { id: r.url, url: r.url, name: r.name ?? r.url, version: '', description: '', types: [], catalogs: [], resources: [], logo: null };
-    })
-  );
-  return addons.filter(r => r.status === 'fulfilled').map((r: any) => r.value);
+  // Importa installAddon per ottenere il manifest completo
+  const { installAddon } = await import('./stremio');
+  const results = await Promise.allSettled(rows.map((r: any) => installAddon(r.url)));
+  return results
+    .filter(r => r.status === 'fulfilled')
+    .map((r: any) => r.value);
 }
-
-// ─── Account Stats ────────────────────────────────────────────────────────────
 
 export interface AccountStats {
   totalMovies: number; totalEpisodes: number; totalWatched: number;
@@ -362,8 +339,11 @@ export async function getAccountStats(userId: string, userToken?: string): Promi
     // title-level film = content_type=movie AND season IS NULL
     // title-level serie = content_type=series AND season IS NULL  
     // episodi = season IS NOT NULL
-    const movies = (watchedItems as any[]).filter((w: any) => w.content_type === 'movie' && (w.season == null || w.season === undefined)).length;
-    const episodes = (watchedItems as any[]).filter((w: any) => w.season != null && w.episode != null).length;
+    // I watched_items hanno: content_type=movie/series, season=null per titoli, season!=null per episodi
+    // Il sync tool "markWatched" per le serie scrive season=null (title-level watched badge)
+    // Per i film scrive sempre season=null
+    const movies = (watchedItems as any[]).filter((w: any) => w.content_type === 'movie').length;
+    const episodes = (watchedItems as any[]).filter((w: any) => w.content_type === 'series' && w.season != null).length;
     const seriesWatched = (watchedItems as any[]).filter((w: any) => w.content_type === 'series' && (w.season == null || w.season === undefined)).length;
     // Position: auto-detect ms vs sec
     const watchTimeSec = (watchProgress as any[]).reduce((acc: number, w: any) => {
