@@ -1,4 +1,14 @@
 /// <reference types="vite/client" />
+
+  // Quando resolvedUrl viene impostato (dopo il resolve), applicalo al video
+  useEffect(() => {
+    if (!resolvedUrl || isMagnet) return;
+    const v = vidRef.current;
+    if (!v) return;
+    v.src = resolvedUrl;
+    v.load();
+  }, [resolvedUrl, isMagnet]);
+
 /**
  * NuvioPlayer v9 — Player intelligente completo
  * - Auto-hide controlli dopo 5s
@@ -156,29 +166,23 @@ export default function VideoPlayer(props: VideoPlayerProps) {
     setReady(false); setError(null); setBuffering(true);
     setShowNextEpCard(false); setNextEpTriggered(false);
     setPlaying(false); setPaused(false); setRetryCount(0);
-    setRetryCount(0);
     setIsResolvingUrl(false);
-    // Per stream HTTP/HTTPS non HLS: risolvi redirect via Tauri PRIMA del play
+    // Per stream HTTP/HTTPS: risolvi redirect via Tauri prima del play
+    // Non includere .m3u8/.mpd (già gestiti dal browser) né magnet:
     if (url.startsWith('http') && !url.includes('.m3u8') && !url.includes('.mpd') && !url.includes('magnet:')) {
-      setResolvedUrl(''); // svuota src per evitare play prematuro
-      setBuffering(true);
+      setResolvedUrl('');
       setIsResolvingUrl(true);
       invoke<string>('resolve_stream_url', { url })
         .then(finalUrl => {
           const resolved = (finalUrl && finalUrl.startsWith('http')) ? finalUrl : url;
-          console.log('[Player] Resolved:', url.slice(0, 50), '→', resolved.slice(0, 50));
-          setResolvedUrl(resolved);
-          setIsResolvingUrl(false);
+          console.log('[Player] Resolved:', url.slice(0, 60), '→', resolved.slice(0, 60));
+          setResolvedUrl(resolved); // triggera il useEffect sotto
         })
-        .catch(() => {
-          setResolvedUrl(url); // fallback URL originale
-          setIsResolvingUrl(false);
-        });
+        .catch(() => setResolvedUrl(url));
     } else {
       setResolvedUrl(url);
     }
-    v.src = url;
-    v.load();
+    // NON impostare v.src qui — lo fa il useEffect su resolvedUrl
 
     const onCanPlay = () => {
       setBuffering(false); setReady(true);
@@ -222,7 +226,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
           vidRef.current.src = '';
           setTimeout(() => {
             if (vidRef.current) {
-              vidRef.current.src = url;
+              vidRef.current.src = resolvedUrl || url;
               vidRef.current.load();
               vidRef.current.play().catch(() => {});
             }

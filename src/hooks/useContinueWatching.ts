@@ -27,8 +27,13 @@ export function useContinueWatching() {
   const localHistory = useWatchHistory();
   const [items, setItems] = useState<CWItem[]>([]);
   const [loading, setLoading] = useState(true);
-  // useRef: persiste tra re-render E tra cambi sezione (finché il componente è montato)
-  const removedIds = useRef<Set<string>>(new Set()).current;
+  // Persiste in localStorage per sopravvivere a smontaggio/rimontaggio del componente
+  const removedIds = useRef<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem('nuvio:cw-removed');
+      return saved ? new Set(JSON.parse(saved)) : new Set<string>();
+    } catch { return new Set<string>(); }
+  }).current;
 
   // Reload quando cambia la storia locale (guardando qualcosa di nuovo)
   useEffect(() => { load(); }, [traktAuth?.token, simklAuth?.token, nuvioUser?.token, localHistory.length, localHistory[0]?.watchedAt]);
@@ -118,6 +123,7 @@ export function useContinueWatching() {
 
   function removeItem(id: string) {
     removedIds.add(id);
+    try { localStorage.setItem('nuvio:cw-removed', JSON.stringify([...removedIds])); } catch { }
     setItems(prev => prev.filter(i => i.id !== id));
   }
 
