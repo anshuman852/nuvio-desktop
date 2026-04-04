@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 
-  // Quando resolvedUrl viene impostato (dopo il resolve), applicalo al video
+  // Applica resolvedUrl al tag video quando viene risolto (HTTPS redirect)
   useEffect(() => {
     if (!resolvedUrl || isMagnet) return;
     const v = vidRef.current;

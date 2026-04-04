@@ -28,12 +28,13 @@ export function useContinueWatching() {
   const [items, setItems] = useState<CWItem[]>([]);
   const [loading, setLoading] = useState(true);
   // Persiste in localStorage per sopravvivere a smontaggio/rimontaggio del componente
-  const removedIds = useRef<Set<string>>(() => {
+  const _initRemovedIds = (): Set<string> => {
     try {
       const saved = localStorage.getItem('nuvio:cw-removed');
-      return saved ? new Set(JSON.parse(saved)) : new Set<string>();
+      return saved ? new Set<string>(JSON.parse(saved)) : new Set<string>();
     } catch { return new Set<string>(); }
-  }).current;
+  };
+  const removedIds = useRef<Set<string>>(_initRemovedIds()).current;
 
   // Reload quando cambia la storia locale (guardando qualcosa di nuovo)
   useEffect(() => { load(); }, [traktAuth?.token, simklAuth?.token, nuvioUser?.token, localHistory.length, localHistory[0]?.watchedAt]);
