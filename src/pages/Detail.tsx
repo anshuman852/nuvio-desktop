@@ -206,9 +206,7 @@ export default function Detail() {
         setCast((tmdbData.credits?.cast ?? []).slice(0, 30).map((c: any) => ({
           id: c.id, name: c.name, role: c.character ?? '',
           // Se no foto TMDB, usa DiceBear con il nome dell'attore
-          photo: c.profile_path
-            ? tmdbImg(c.profile_path, 'w185')
-            : `https://api.dicebear.com/9.x/personas/svg?seed=${encodeURIComponent(c.name)}&backgroundColor=1a1a2e`,
+          photo: c.profile_path ? tmdbImg(c.profile_path, 'w185') : undefined,
         })));
         setCrew((tmdbData.credits?.crew ?? []).filter((c: any) =>
           ['Director','Screenplay','Writer','Creator'].includes(c.job)
@@ -577,8 +575,9 @@ export default function Detail() {
                     className="flex-shrink-0 w-14 text-center group">
                     <div className="w-14 h-14 rounded-full overflow-hidden bg-white/10 border border-white/10 mx-auto group-hover:border-[color:var(--accent)] transition-colors">
                       {p.photo
-                        ? <img src={p.photo} alt={p.name} className="w-full h-full object-cover object-top" />
-                        : <div className="w-full h-full flex items-center justify-center text-white/30 text-xl font-bold">{p.name.charAt(0)}</div>}
+                        ? <img src={p.photo} alt={p.name} className="w-full h-full object-cover object-top"
+                            onError={e => { (e.target as HTMLImageElement).src = `https://api.dicebear.com/9.x/personas/svg?seed=${encodeURIComponent(p.name)}`; }} />
+                        : <img src={`https://api.dicebear.com/9.x/personas/svg?seed=${encodeURIComponent(p.name)}`} alt={p.name} className="w-full h-full object-cover" />}
                     </div>
                     <p className="text-[10px] text-white/60 mt-1 leading-tight line-clamp-2 group-hover:text-white transition-colors">{p.name}</p>
                     {p.role && <p className="text-[9px] text-white/30 line-clamp-1">{p.role}</p>}

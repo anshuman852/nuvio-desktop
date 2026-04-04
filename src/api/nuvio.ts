@@ -331,14 +331,19 @@ export async function getAccountStats(userId: string, userToken?: string): Promi
       rpc('sync_pull_watch_progress', {}, tok).then((d: any) => { console.log('[stats] watch_progress:', Array.isArray(d) ? d.length : d); return Array.isArray(d) ? d : []; }).catch((e: any) => { console.error('[stats] watch_progress ERR:', e.message); return [] as any[]; }),
       rpc('sync_pull_library', {}, tok).then((d: any) => { console.log('[stats] library:', Array.isArray(d) ? d.length : d); return Array.isArray(d) ? d : []; }).catch((e: any) => { console.error('[stats] library ERR:', e.message); return [] as any[]; }),
     ]);
-    const movies = (watchedItems as any[]).filter((w: any) => w.content_type === 'movie' && w.season == null).length;
-    const episodes = (watchedItems as any[]).filter((w: any) => w.season != null).length;
-    const seriesWatched = (watchedItems as any[]).filter((w: any) => w.content_type === 'series' && w.season == null).length;
-    // position può essere ms (mobile) o sec (sync tool) → auto-detect
+    // Conta correttamente: watched_items ha sia title-level (season=null) che episodi (season!=null)
+    // title-level film = content_type=movie AND season IS NULL
+    // title-level serie = content_type=series AND season IS NULL  
+    // episodi = season IS NOT NULL
+    const movies = (watchedItems as any[]).filter((w: any) => w.content_type === 'movie' && (w.season == null || w.season === undefined)).length;
+    const episodes = (watchedItems as any[]).filter((w: any) => w.season != null && w.episode != null).length;
+    const seriesWatched = (watchedItems as any[]).filter((w: any) => w.content_type === 'series' && (w.season == null || w.season === undefined)).length;
+    // Position: auto-detect ms vs sec
     const watchTimeSec = (watchProgress as any[]).reduce((acc: number, w: any) => {
       const pos = w.position ?? 0;
       return acc + (pos > 3_600_000 ? pos / 1000 : pos);
     }, 0);
+    console.log(`[stats] movies=${movies} episodes=${episodes} series=${seriesWatched} library=${(libraryItems as any[]).length} watchTime=${Math.round(watchTimeSec/3600)}h`);
     return {
       totalMovies: movies,
       totalEpisodes: episodes,

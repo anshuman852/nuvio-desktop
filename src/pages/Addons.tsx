@@ -409,7 +409,7 @@ export default function Addons() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-white">{addon.name}</p>
-                      <p className="text-xs text-white/40">v{addon.version} · {addon.catalogs.length} cataloghi · {addon.types.join(', ')}</p>
+                      <p className="text-xs text-white/40">v{addon.version} · {(addon.catalogs ?? []).length} cataloghi · {(addon.types ?? []).join(', ')}</p>
                     </div>
                     <div className="flex items-center gap-1">
                       <button onClick={() => setConfigureUrl(`${normalizeUrl(addon.url)}/configure`)} title="Configura nell'app"
