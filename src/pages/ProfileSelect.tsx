@@ -67,28 +67,51 @@ function QRLoginModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: 
     setStep('loading');
     clearInterval(pollRef.current);
     try {
-      const storedToken = useStore.getState().nuvioUser?.token ?? SUPABASE_ANON;
-      const deviceNonce = crypto.randomUUID();
+      // STEP 1: Ottieni un JWT anonimo VERO (auth.uid() deve essere non-null per la RPC)
+      // L'anon key da sola NON basta - serve una sessione Supabase reale
+      let anonJwt = useStore.getState().nuvioUser?.token ?? '';
+      if (!anonJwt) {
+        // Crea sessione anonima - prova signup anonimo prima
+        for (const endpoint of ['/auth/v1/signup', '/auth/v1/token?grant_type=anonymous']) {
+          try {
+            const r = await fetch(`${SUPABASE_URL}${endpoint}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON, 'Authorization': `Bearer ${SUPABASE_ANON}` },
+              body: JSON.stringify({}),
+            });
+            if (r.ok) {
+              const d = await r.json();
+              const tok = d.access_token ?? d.session?.access_token;
+              if (tok) { anonJwt = tok; break; }
+            }
+          } catch { }
+        }
+      }
+      if (!anonJwt) { setStep('error'); return; }
 
+      const deviceNonce = crypto.randomUUID();
       let sessionData: any = null;
-      const bodies = [
+
+      // STEP 2: Chiama start_tv_login_session con il JWT anonimo
+      for (const body of [
         { p_device_nonce: deviceNonce, p_redirect_base_url: 'https://web.nuvioapp.space', p_device_name: 'Nuvio Desktop' },
         { p_device_nonce: deviceNonce, p_device_name: 'Nuvio Desktop' },
         { p_device_nonce: deviceNonce },
-      ];
-      for (const body of bodies) {
+      ]) {
         try {
           const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/start_tv_login_session`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON, Authorization: `Bearer ${storedToken}` },
+            headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON, 'Authorization': `Bearer ${anonJwt}` },
             body: JSON.stringify(body),
           });
           if (r.ok) {
             const data = await r.json();
             sessionData = Array.isArray(data) ? data[0] : data;
             if (sessionData?.code) break;
+          } else {
+            console.error('QR start failed:', await r.text());
           }
-        } catch { }
+        } catch (e) { console.error('QR start error:', e); }
       }
 
       if (!sessionData?.code) { setStep('error'); return; }
@@ -107,7 +130,7 @@ function QRLoginModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: 
         try {
           const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/poll_tv_login_session`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON, Authorization: `Bearer ${storedToken}` },
+            headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON, 'Authorization': `Bearer ${anonJwt}` },
             body: JSON.stringify({ p_code: qrCode, p_device_nonce: deviceNonce }),
           });
           if (!r.ok) return;
@@ -118,14 +141,14 @@ function QRLoginModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: 
             try {
               const exchR = await fetch(`${SUPABASE_URL}/functions/v1/tv-logins-exchange`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON, Authorization: `Bearer ${storedToken}` },
+                headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON, 'Authorization': `Bearer ${anonJwt}` },
                 body: JSON.stringify({ code: qrCode, device_nonce: deviceNonce }),
               });
               if (exchR.ok) { const res = await exchR.json(); const tok = res?.access_token ?? res?.session?.access_token; if (tok) { await finalizeLogin(tok); return; } }
             } catch { }
             const cR = await fetch(`${SUPABASE_URL}/rest/v1/rpc/consume_tv_login_session`, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON, Authorization: `Bearer ${storedToken}` },
+              headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON, 'Authorization': `Bearer ${anonJwt}` },
               body: JSON.stringify({ p_code: qrCode, p_device_nonce: deviceNonce }),
             });
             if (cR.ok) { const cd = await cR.json(); const tok2 = (Array.isArray(cd) ? cd[0] : cd)?.access_token; if (tok2) { await finalizeLogin(tok2); return; } }

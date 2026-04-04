@@ -100,14 +100,19 @@ function AccountPage() {
     try {
       const cloudAddons = await getNuvioAddons(nuvioUser.id, nuvioUser.token);
       if (cloudAddons.length > 0) {
-        // Deduplication per ID manifest (es. "com.stremio.cinemeta") E per URL
-        const currentIds = new Set(addons.map((a: any) => a.id));
-        const currentUrls = new Set(addons.map((a: any) => (a.url ?? '').replace(/\/+$/, '').replace(/\/manifest\.json$/, '')));
-        const newAddons = cloudAddons.filter((a: any) => {
+        // SOSTITUISCI tutti gli addon esistenti con dati freschi dal manifest
+        // Mantieni gli addon locali non presenti nel cloud
+        const cloudUrls = new Set(cloudAddons.map((a: any) =>
+          (a.url ?? '').replace(/\/+$/, '').replace(/\/manifest\.json$/, '')
+        ));
+        const cloudIds = new Set(cloudAddons.map((a: any) => a.id));
+        // Addon locali che non sono nel cloud (aggiunti manualmente)
+        const localOnly = addons.filter((a: any) => {
           const normalUrl = (a.url ?? '').replace(/\/+$/, '').replace(/\/manifest\.json$/, '');
-          return !currentIds.has(a.id) && !currentUrls.has(normalUrl);
+          return !cloudUrls.has(normalUrl) && !cloudIds.has(a.id);
         });
-        if (newAddons.length > 0) setAddons([...addons, ...newAddons]);
+        // Cloud addons sostituiscono quelli esistenti (hanno i dati freschi)
+        setAddons([...localOnly, ...cloudAddons]);
       }
       const s = await getAccountStats(nuvioUser.id, nuvioUser.token);
       setStats(s);

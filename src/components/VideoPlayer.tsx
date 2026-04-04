@@ -76,6 +76,9 @@ export default function VideoPlayer(props: VideoPlayerProps) {
 
   const isSeries = contentType === 'series' || (season != null && episode != null);
   const isMagnet = url.startsWith('magnet:');
+  // Stream HTTP diretti (non HLS/DASH): usa mpv che li gestisce meglio di WebView2
+  const isHttpDirect = url.startsWith('http://') ||
+    (url.startsWith('https://') && !url.includes('.m3u8') && !url.includes('.mpd') && !url.includes('googleapis') && !url.includes('tmdb'));
 
   const vidRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -158,18 +161,22 @@ export default function VideoPlayer(props: VideoPlayerProps) {
     setShowNextEpCard(false); setNextEpTriggered(false);
     setPlaying(false); setPaused(false); setRetryCount(0);
     setIsResolvingUrl(false);
-    // Per stream HTTP/HTTPS: risolvi redirect via Tauri prima del play
-    // Non includere .m3u8/.mpd (già gestiti dal browser) né magnet:
-    if (url.startsWith('http') && !url.includes('.m3u8') && !url.includes('.mpd') && !url.includes('magnet:')) {
-      setResolvedUrl('');
-      setIsResolvingUrl(true);
+    // Per stream HTTP diretti: lancia mpv (gestisce redirect, cookies, headers)
+    // Per HLS/DASH: usa il video HTML5 nativo
+    if (isHttpDirect) {
       invoke<string>('resolve_stream_url', { url })
-        .then(finalUrl => {
-          const resolved = (finalUrl && finalUrl.startsWith('http')) ? finalUrl : url;
-          console.log('[Player] Resolved:', url.slice(0, 60), '→', resolved.slice(0, 60));
-          setResolvedUrl(resolved); // triggera il useEffect sotto
+        .then(resolved => {
+          const finalUrl = (resolved && resolved.startsWith('http')) ? resolved : url;
+          console.log('[Player] HTTP→mpv:', finalUrl.slice(0, 80));
+          return invoke('launch_mpv', { url: finalUrl, title: title ?? null });
         })
-        .catch(() => setResolvedUrl(url));
+        .catch(() => invoke('launch_mpv', { url, title: title ?? null }))
+        .then(() => { /* mpv avviato */ })
+        .catch(() => {
+          // mpv fallito: prova HTML5 direttamente
+          setResolvedUrl(url);
+        });
+      return; // non usare video HTML5
     } else {
       setResolvedUrl(url);
     }
