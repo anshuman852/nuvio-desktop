@@ -68,8 +68,9 @@ function QRLoginModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: 
     clearInterval(pollRef.current);
     try {
       // Step 1: Token per le chiamate (usa token utente se disponibile, altrimenti anon)
-      let anonToken = _userToken ?? SUPABASE_ANON;
-      if (!_userToken) {
+      const storedToken = useStore.getState().nuvioUser?.token ?? null;
+      let anonToken = storedToken ?? SUPABASE_ANON;
+      if (!storedToken) {
         try {
           const anonRes = await fetch(`${SUPABASE_URL}/auth/v1/signup`, {
             method: 'POST',
