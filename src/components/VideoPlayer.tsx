@@ -30,7 +30,6 @@ export default function VideoPlayer(props: VideoPlayerProps) {
   const { nuvioUser, upsertWatch } = useStore();
   const vidRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<any>(null);
-  const torrentRef = useRef<any>(null);
   const cwTimer = useRef<ReturnType<typeof setInterval>>();
   const hideTimer = useRef<ReturnType<typeof setTimeout>>();
 
@@ -47,10 +46,10 @@ export default function VideoPlayer(props: VideoPlayerProps) {
   const [nextTriggered, setNextTriggered] = useState(false);
   const bgImg = backdrop || poster;
 
-  const isMagnet = url.startsWith('magnet:') || url.includes('torrent');
+  const isMagnet = url.startsWith('magnet:');
   const isHLS = url.includes('.m3u8') || url.includes('127.0.0.1:11470') || url.includes('localhost:11470');
 
-  // CW sync ogni 5s
+  // CW sync
   const syncCW = useCallback((t: number, d: number) => {
     if (!contentId || d < 5) return;
     const progress = t / d;
@@ -67,41 +66,25 @@ export default function VideoPlayer(props: VideoPlayerProps) {
     return () => clearInterval(cwTimer.current);
   }, [syncCW]);
 
-  // Carica il media
+  // Carica media
   useEffect(() => {
     const v = vidRef.current;
     if (!v) return;
 
-    // Cleanup precedente
     if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
-    if (torrentRef.current) { torrentRef.current.destroy(); torrentRef.current = null; }
     v.src = '';
-
     setReady(false); setBuffering(true); setError(null);
     setPlaying(false); setCurrentTime(0); setDuration(0);
     setShowNextCard(false); setNextTriggered(false);
 
     if (isMagnet) {
-      // WebTorrent
-      import('webtorrent').then(({ default: WebTorrent }) => {
-        const client = new WebTorrent();
-        torrentRef.current = client;
-        client.add(url, (torrent: any) => {
-          const file = torrent.files
-            .filter((f: any) => /\.(mp4|mkv|avi|mov|wmv|webm)$/i.test(f.name))
-            .sort((a: any, b: any) => b.length - a.length)[0];
-          if (!file) { setError('Nessun file video nel torrent'); setBuffering(false); return; }
-          file.renderTo(v, { autoplay: true }, (err: any) => {
-            if (err) { setError(`Torrent: ${err.message}`); setBuffering(false); }
-          });
-        });
-        client.on('error', (err: any) => { setError(String(err)); setBuffering(false); });
-      }).catch(() => setError('WebTorrent non disponibile'));
+      // Magnet → mpv esterno (già gestisce tutto)
+      invoke('launch_mpv', { url, title: title ?? null }).catch(e => setError(String(e)));
+      setBuffering(false);
       return;
     }
 
     if (isHLS) {
-      // HLS.js
       import('hls.js').then(({ default: Hls }) => {
         if (Hls.isSupported()) {
           const hls = new Hls({ enableWorker: true, maxBufferLength: 30, maxMaxBufferLength: 60 });
@@ -113,55 +96,49 @@ export default function VideoPlayer(props: VideoPlayerProps) {
             v.play().catch(() => {});
           });
           hls.on(Hls.Events.ERROR, (_: any, data: any) => {
-            if (data.fatal) {
-              setError(`HLS: ${data.details}`);
-              setBuffering(false);
-            }
+            if (data.fatal) { setError(`HLS: ${data.details}`); setBuffering(false); }
           });
         } else if (v.canPlayType('application/vnd.apple.mpegurl')) {
-          // Safari / WebKit nativo
-          v.src = url;
-          v.load();
+          v.src = url; v.load();
         } else {
-          setError('HLS non supportato su questo browser');
-          setBuffering(false);
+          setError('HLS non supportato'); setBuffering(false);
         }
       }).catch(() => { v.src = url; v.load(); });
       return;
     }
 
-    // Tutto il resto: MP4, WebM, HTTP diretto, debrid, ecc.
+    // MP4, HTTP diretto, debrid, ecc.
     v.src = url;
     v.load();
   }, [url]);
 
-  // Event listeners sul video
+  // Video event listeners
   useEffect(() => {
     const v = vidRef.current;
     if (!v) return;
     const onCanPlay = () => {
       setBuffering(false); setReady(true);
-      if (!isMagnet && !isHLS && initialProgress > 0.01 && v.duration > 0)
-        v.currentTime = v.duration * initialProgress;
+      if (!isHLS && initialProgress > 0.01 && v.duration > 0) v.currentTime = v.duration * initialProgress;
       v.play().catch(() => {});
     };
     const onPlay = () => { setPlaying(true); setBuffering(false); };
     const onPause = () => setPlaying(false);
     const onWaiting = () => setBuffering(true);
-    const onPlaying = () => setBuffering(false);
+    const onPlaying = () => { setBuffering(false); setReady(true); };
     const onTimeUpdate = () => {
       setCurrentTime(v.currentTime);
-      const remaining = v.duration - v.currentTime;
-      if (nextEpisode && remaining < 35 && remaining > 0 && !showNextCard) setShowNextCard(true);
-      if (nextEpisode && onNext && remaining < 5 && !nextTriggered && playing) {
+      const rem = v.duration - v.currentTime;
+      if (nextEpisode && rem < 35 && rem > 0 && !showNextCard) setShowNextCard(true);
+      if (nextEpisode && onNext && rem < 5 && !nextTriggered && !v.paused) {
         setNextTriggered(true); syncCW(v.currentTime, v.duration); onNext();
       }
       if (!nextEpisode && v.duration > 0 && v.currentTime >= v.duration - 0.5) {
-        syncCW(v.currentTime, v.duration); handleClose();
+        syncCW(v.currentTime, v.duration); onClose();
       }
     };
     const onDurationChange = () => setDuration(v.duration);
-    const onError = () => { setError(v.error?.message ?? 'Errore video'); setBuffering(false); };
+    const onError = () => { setError(v.error?.message ?? 'Errore caricamento video'); setBuffering(false); };
+
     v.addEventListener('canplay', onCanPlay);
     v.addEventListener('play', onPlay);
     v.addEventListener('pause', onPause);
@@ -180,12 +157,10 @@ export default function VideoPlayer(props: VideoPlayerProps) {
       v.removeEventListener('durationchange', onDurationChange);
       v.removeEventListener('error', onError);
     };
-  }, [url, showNextCard, nextTriggered, playing]);
+  }, [url, showNextCard, nextTriggered]);
 
-  // Cleanup
   useEffect(() => () => {
     if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
-    if (torrentRef.current) { torrentRef.current.destroy(); torrentRef.current = null; }
   }, []);
 
   function resetHide() {
@@ -195,7 +170,6 @@ export default function VideoPlayer(props: VideoPlayerProps) {
   }
   useEffect(() => { resetHide(); return () => clearTimeout(hideTimer.current); }, []);
 
-  function handleClose() { onClose(); }
   function togglePlay() { const v = vidRef.current; if (!v) return; v.paused ? v.play() : v.pause(); }
   function seek(pct: number) { const v = vidRef.current; if (v && duration > 0) v.currentTime = pct * duration; }
   function setVol(val: number) { const v = vidRef.current; if (v) { v.volume = val; setVolume(val); setMuted(val === 0); } }
@@ -203,6 +177,29 @@ export default function VideoPlayer(props: VideoPlayerProps) {
   function toggleFS() { const v = vidRef.current; if (!v) return; v.requestFullscreen?.(); }
 
   const progress = duration > 0 ? currentTime / duration : 0;
+
+  // Magnet: schermata info mentre mpv gira in background
+  if (isMagnet) return (
+    <div className="fixed inset-0 bg-[#0c0c10] z-[100] flex items-center justify-center">
+      {bgImg && <><img src={bgImg} alt="" className="absolute inset-0 w-full h-full object-cover opacity-10 blur-2xl scale-110" /><div className="absolute inset-0 bg-black/80" /></>}
+      <div className="relative z-10 flex flex-col items-center gap-6 max-w-md text-center px-8">
+        {poster && <img src={poster} alt={title} className="h-28 rounded-xl shadow-2xl" />}
+        {title && <p className="text-white font-bold text-xl">{title}</p>}
+        {subtitle && <p className="text-white/60 text-sm">{subtitle}</p>}
+        <div className="bg-white/5 border border-white/10 rounded-2xl px-6 py-4 flex flex-col items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center">
+            <Play size={18} className="text-white fill-white ml-0.5" />
+          </div>
+          <p className="text-white/80 text-sm font-medium">Riproduzione in corso nel player esterno</p>
+          <p className="text-white/40 text-xs">Lo stream torrent è aperto in mpv</p>
+        </div>
+        {error && <p className="text-red-400 text-xs">{error}</p>}
+        <button onClick={onClose} className="text-white/40 hover:text-white text-sm flex items-center gap-1.5 mt-2">
+          <ArrowLeft size={14} />Indietro
+        </button>
+      </div>
+    </div>
+  );
 
   if (error) return (
     <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black">
@@ -218,7 +215,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
         <div className="flex gap-2">
           <button onClick={() => { setError(null); setBuffering(true); const v = vidRef.current; if(v){v.load(); v.play().catch(()=>{});} }}
             className="flex items-center gap-2 py-2.5 px-5 text-sm text-white bg-white/10 hover:bg-white/20 rounded-xl">↻ Riprova</button>
-          <button onClick={handleClose} className="flex items-center gap-2 py-2.5 px-5 text-sm text-white bg-white/10 hover:bg-white/20 rounded-xl">
+          <button onClick={onClose} className="flex items-center gap-2 py-2.5 px-5 text-sm text-white bg-white/10 hover:bg-white/20 rounded-xl">
             <ArrowLeft size={14} />Cambia stream</button>
         </div>
       </div>
@@ -227,10 +224,9 @@ export default function VideoPlayer(props: VideoPlayerProps) {
 
   return (
     <div className="fixed inset-0 z-[100] bg-black" onMouseMove={resetHide} onClick={resetHide}>
-      {/* Video element — sempre presente, nascosto durante buffering */}
       <video ref={vidRef} className="absolute inset-0 w-full h-full object-contain" playsInline />
 
-      {/* Buffering overlay */}
+      {/* Buffering */}
       {buffering && !error && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/60 z-10 pointer-events-none">
           {bgImg && <img src={bgImg} alt="" className="absolute inset-0 w-full h-full object-cover opacity-20 blur-xl" />}
@@ -241,7 +237,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
         </div>
       )}
 
-      {/* Cast bar */}
+      {/* Cast */}
       {ready && cast.length > 0 && (
         <div className={`absolute bottom-20 left-6 z-10 pointer-events-none transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0'}`}>
           <div className="flex gap-3">
@@ -261,14 +257,14 @@ export default function VideoPlayer(props: VideoPlayerProps) {
 
       {/* Top bar */}
       <div className={`absolute top-0 left-0 right-0 z-20 flex items-center gap-3 px-5 py-4 bg-gradient-to-b from-black/80 to-transparent transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
-        <button onClick={handleClose} className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white"><ArrowLeft size={18} /></button>
+        <button onClick={onClose} className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white"><ArrowLeft size={18} /></button>
         <div className="flex-1 min-w-0">
           {title && <p className="text-white font-semibold text-base truncate">{title}</p>}
           {subtitle && <p className="text-white/50 text-xs truncate">{subtitle}</p>}
         </div>
       </div>
 
-      {/* Next episode card */}
+      {/* Next episode */}
       {showNextCard && nextEpisode && (
         <div className="absolute top-16 right-6 z-20 bg-black/90 border border-white/20 rounded-2xl p-4 flex items-center gap-3 max-w-xs shadow-2xl">
           <div><p className="text-white/50 text-xs">Prossimo</p><p className="text-white text-sm font-medium truncate max-w-[140px]">{nextEpisode.title}</p></div>
@@ -282,14 +278,13 @@ export default function VideoPlayer(props: VideoPlayerProps) {
       {/* Bottom controls */}
       <div className={`absolute bottom-0 left-0 right-0 z-20 transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
         <div className="bg-gradient-to-t from-black/95 via-black/70 to-transparent px-5 pt-10 pb-5">
-          {/* Scrubber */}
-          <div className="mb-3 h-1 bg-white/20 rounded-full cursor-pointer group hover:h-2 transition-all"
+          <div className="mb-3 h-1 bg-white/20 rounded-full cursor-pointer hover:h-2 transition-all"
             onClick={e => { const r = e.currentTarget.getBoundingClientRect(); seek((e.clientX - r.left) / r.width); }}>
             <div className="h-full rounded-full bg-white" style={{ width: `${progress * 100}%` }} />
           </div>
           <div className="flex items-center gap-3">
             {prevEpisode && onPrev && <button onClick={onPrev} className="p-2 text-white/60 hover:text-white"><SkipBack size={18} /></button>}
-            <button onClick={togglePlay} className="p-2.5 rounded-full bg-white text-black hover:bg-white/90 transition-colors">
+            <button onClick={togglePlay} className="p-2.5 rounded-full bg-white text-black hover:bg-white/90">
               {playing ? <Pause size={18} /> : <Play size={18} className="fill-black ml-0.5" />}
             </button>
             {nextEpisode && onNext && <button onClick={onNext} className="p-2 text-white/60 hover:text-white"><SkipForward size={18} /></button>}
@@ -301,7 +296,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
             <input type="range" min={0} max={1} step={0.05} value={muted ? 0 : volume}
               onChange={e => setVol(Number(e.target.value))} className="w-20 accent-white" />
             <button onClick={toggleFS} className="p-2 text-white/60 hover:text-white"><Maximize size={16} /></button>
-            <button onClick={handleClose} className="p-2 text-white/60 hover:text-white"><X size={18} /></button>
+            <button onClick={onClose} className="p-2 text-white/60 hover:text-white"><X size={18} /></button>
           </div>
         </div>
       </div>
