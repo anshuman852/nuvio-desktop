@@ -1,9 +1,8 @@
 /// <reference types="vite/client" />
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useStore } from '../lib/store';
 import { upsertCW } from '../api/nuvio';
-import { traktScrobble } from '../api/nuvio';
 import { ArrowLeft, Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Maximize, X, ChevronRight, ExternalLink } from 'lucide-react';
 
 interface CastMember { name: string; character?: string; photo?: string; }

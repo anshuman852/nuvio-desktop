@@ -184,7 +184,7 @@ async fn launch_mpv_stream(
     // Per magnet: aggiungi ytdl plugin se disponibile
     if url.starts_with("magnet:") {
         // Rimuovi --ytdl=no per i magnet
-        args.retain(|a| a != "--ytdl=no");
+        args.retain(|a| a.as_str() != "--ytdl=no");
     }
 
     let mut mpv = state.mpv.lock().map_err(|e| e.to_string())?;
@@ -192,7 +192,7 @@ async fn launch_mpv_stream(
     let child = std::process::Command::new(&mpv_path)
         .args(&args)
         .spawn()
-        .map_err(|e| format!("Impossibile avviare mpv: {}. Scarica mpv e mettilo nella cartella dell'app.", e))?;
+        .map_err(|e| format!("Impossibile avviare mpv: {}. Assicurati che mpv.exe sia presente.", e))?;
     mpv.process = Some(child);
     mpv.ipc_path = Some(ipc);
     std::thread::sleep(std::time::Duration::from_millis(600));
