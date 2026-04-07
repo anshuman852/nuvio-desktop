@@ -131,6 +131,81 @@ async fn stream_magnet(
     Ok("mpv".to_string()) // segnala che mpv è stato già avviato
 }
 
+
+/// Lancia mpv per qualsiasi tipo di stream con headers personalizzati
+/// Gestisce: HLS, HTTP, HTTPS, magnet, torrent, debrid, WebStreamr, ecc.
+#[tauri::command]
+async fn launch_mpv_stream(
+    state: State<'_, AppState>,
+    window: tauri::Window,
+    url: String,
+    title: Option<String>,
+    referrer: Option<String>,
+    user_agent: Option<String>,
+) -> Result<(), String> {
+    let mpv_path = {
+        // Trova mpv
+        if let Ok(exe) = std::env::current_exe() {
+            let dir = exe.parent().unwrap_or(std::path::Path::new("."));
+            let candidate = dir.join("mpv.exe");
+            if candidate.exists() { candidate.to_string_lossy().to_string() }
+            else { "mpv".to_string() }
+        } else { "mpv".to_string() }
+    };
+
+    let ipc = format!("\\\\.\\pipe\\nuvio-mpv-{}", std::process::id());
+    
+    let mut args: Vec<String> = vec![
+        url.clone(),
+        format!("--input-ipc-server={}", ipc),
+        "--no-terminal".to_string(),
+        "--force-window=yes".to_string(),
+        "--keep-open=yes".to_string(),
+        "--ontop=yes".to_string(),
+        "--geometry=1280x720+100+50".to_string(),
+        "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36".to_string(),
+        "--ytdl=no".to_string(),
+        "--network-timeout=30".to_string(),
+        "--cache=yes".to_string(),
+        "--demuxer-max-bytes=150M".to_string(),
+        "--hwdec=auto".to_string(),
+    ];
+
+    if let Some(t) = &title {
+        args.push(format!("--force-media-title={}", t));
+    }
+
+    // Referrer per WebStreamr e CDN protetti
+    if let Some(ref ref_url) = referrer {
+        args.push(format!("--referrer={}", ref_url));
+    } else if url.contains("supervideo") || url.contains("streamvid") || url.contains("11470") {
+        args.push("--referrer=https://supervideo.cc/".to_string());
+    }
+
+    if let Some(ua) = user_agent {
+        // Override user-agent se fornito
+        let ua_idx = args.iter().position(|a| a.starts_with("--user-agent="));
+        if let Some(i) = ua_idx { args[i] = format!("--user-agent={}", ua); }
+    }
+
+    // Per magnet: aggiungi ytdl plugin se disponibile
+    if url.starts_with("magnet:") {
+        // Rimuovi --ytdl=no per i magnet
+        args.retain(|a| a != "--ytdl=no");
+    }
+
+    let mut mpv = state.mpv.lock().map_err(|e| e.to_string())?;
+    mpv.stop();
+    let child = std::process::Command::new(&mpv_path)
+        .args(&args)
+        .spawn()
+        .map_err(|e| format!("Impossibile avviare mpv: {}. Scarica mpv e mettilo nella cartella dell'app.", e))?;
+    mpv.process = Some(child);
+    mpv.ipc_path = Some(ipc);
+    std::thread::sleep(std::time::Duration::from_millis(600));
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -140,7 +215,7 @@ pub fn run() {
             fetch_manifest, fetch_streams,
             launch_mpv, launch_mpv_embedded, launch_custom_player,
             mpv_command, mpv_stop, mpv_get_position, mpv_get_duration,
-            open_url, stream_magnet, resolve_stream_url,
+            open_url, stream_magnet, resolve_stream_url, launch_mpv_stream,
         ])
         .run(tauri::generate_context!())
         .expect("error while running nuvio-desktop");
