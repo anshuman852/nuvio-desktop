@@ -1,6 +1,6 @@
 {
   "productName": "NuvioDesktop",
-  "version": "1.3.5",
+  "version": "1.3.6",
   "identifier": "space.nuvioapp.desktop",
   "build": {
     "frontendDist": "../dist",
@@ -19,7 +19,8 @@
         "resizable": true,
         "fullscreen": false,
         "decorations": true,
-        "transparent": false
+        "transparent": false,
+        "additionalBrowserArgs": "--disable-web-security --allow-running-insecure-content --autoplay-policy=no-user-gesture-required"
       }
     ],
     "security": {
