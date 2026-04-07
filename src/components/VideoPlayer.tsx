@@ -253,31 +253,55 @@ export default function VideoPlayer(props: VideoPlayerProps) {
     return () => { v.removeEventListener('canplay', onCanPlay); v.removeEventListener('error', onError); };
   }, [url]);
 
-  // Applica resolvedUrl — usa HLS.js per .m3u8, video nativo per il resto
+  // Applica resolvedUrl: prova HLS.js, se fallisce usa mpv come fallback
   useEffect(() => {
     if (!resolvedUrl || isMagnet) return;
     const v = vidRef.current;
     if (!v) return;
 
-    // Distruggi HLS precedente
     if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
 
-    const needsHls = resolvedUrl.includes('.m3u8') || resolvedUrl.includes('127.0.0.1:11470');
+    const isHls = resolvedUrl.includes('.m3u8') || resolvedUrl.includes('127.0.0.1:11470');
 
-    if (needsHls && Hls.isSupported()) {
-      const hls = new Hls({ enableWorker: true, maxBufferLength: 30 });
-      hlsRef.current = hls;
-      hls.loadSource(resolvedUrl);
-      hls.attachMedia(v);
-      hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        setBuffering(false); setReady(true);
-        if (initialProgress > 0.01 && initialProgress < 0.97 && v.duration)
-          v.currentTime = v.duration * initialProgress;
-        v.play().catch(() => {});
-      });
-      hls.on(Hls.Events.ERROR, (_evt: any, data: any) => {
-        if (data.fatal) { setError('Errore stream'); setBuffering(false); }
-      });
+    if (isHls) {
+      if (Hls.isSupported()) {
+        const hls = new Hls({
+          enableWorker: true,
+          maxBufferLength: 30,
+          xhrSetup: (xhr: XMLHttpRequest, xhrUrl: string) => {
+            xhr.withCredentials = false;
+          },
+        });
+        hlsRef.current = hls;
+        let manifestLoaded = false;
+
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          manifestLoaded = true;
+          setBuffering(false); setReady(true);
+          if (initialProgress > 0.01 && initialProgress < 0.97 && v.duration)
+            v.currentTime = v.duration * initialProgress;
+          v.play().catch(() => {});
+        });
+
+        hls.on(Hls.Events.ERROR, (_evt: any, data: any) => {
+          if (data.fatal && !manifestLoaded) {
+            // HLS.js fallito → fallback mpv
+            console.warn('[Player] HLS.js fatal, fallback mpv:', data.type, data.details);
+            hls.destroy(); hlsRef.current = null;
+            invoke('launch_mpv', { url: resolvedUrl, title: title ?? null }).catch(() => {});
+            setBuffering(false);
+            setError(''); // nessun errore visibile, mpv gestisce
+            handleClose(); // chiudi player interno
+          }
+        });
+
+        hls.loadSource(resolvedUrl);
+        hls.attachMedia(v);
+      } else {
+        // MSE non supportato → mpv diretto
+        invoke('launch_mpv', { url: resolvedUrl, title: title ?? null }).catch(() => {});
+        handleClose();
+      }
     } else {
       v.src = resolvedUrl;
       v.load();
