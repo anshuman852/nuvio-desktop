@@ -1,35 +1,32 @@
 /// <reference types="vite/client" />
+import Hls from 'hls.js';
 
 
 // ─── WebStreamr proxy URL parser ──────────────────────────────────────────────
 // Converte http://127.0.0.1:11470/proxy/d=...&h=Referer:.../{path}?{query}
 // nel vero URL CDN https://cdn.example.com/{path}?{query}
-function unwrapWebstreamrUrl(url: string): string {
+interface UnwrappedStream { url: string; referer?: string; }
+
+function unwrapWebstreamrUrl(url: string): UnwrappedStream {
   try {
-    if (!url.includes('127.0.0.1:11470/proxy/')) return url;
-    // Estrai la parte dopo /proxy/
+    if (!url.includes('127.0.0.1:11470/proxy/')) return { url };
     const afterProxy = url.split('127.0.0.1:11470/proxy/')[1];
-    if (!afterProxy) return url;
-
-    // I parametri sono nel formato: d=URL_ENCODED_DOMAIN&h=Referer:URL_ENCODED_REFERER/path?query
-    // Estrai d= (domain)
+    if (!afterProxy) return { url };
+    // Estrai d= (domain CDN)
     const dMatch = afterProxy.match(/(?:^|&)d=([^&/]+)/);
-    if (!dMatch) return url;
+    if (!dMatch) return { url };
     const domain = decodeURIComponent(dMatch[1]);
-
-    // Trova dove finiscono i param (d=...&h=...) e inizia il path reale
-    // Il path reale inizia dopo il valore di h= (che termina con un /)
-    // Pattern: d=DOMAIN&h=Referer:REFERER_URL/REAL_PATH?QUERY
-    const hMatch = afterProxy.match(/&h=[^/]+\/(.*)/);
-    if (!hMatch) {
-      // Nessun h= param, prova d= diretto
-      const pathAfterD = afterProxy.split('&h=')[0];
-      return domain;
-    }
-    const pathAndQuery = hMatch[1]; // es: "hls2/02/.../master.m3u8?t=...&s=..."
-    return `${domain}/${pathAndQuery}`;
+    // Estrai h= (headers, tipicamente Referer:URL)
+    const hMatch = afterProxy.match(/[&?]h=([^/]+)\/(.*)/);
+    if (!hMatch) return { url: domain };
+    const headerStr = decodeURIComponent(hMatch[1]); // es: "Referer:https://supervideo.cc/"
+    const pathAndQuery = hMatch[2];
+    // Estrai referer
+    const refMatch = headerStr.match(/Referer:(.+)/i);
+    const referer = refMatch ? refMatch[1] : undefined;
+    return { url: `${domain}/${pathAndQuery}`, referer };
   } catch {
-    return url;
+    return { url };
   }
 }
 
@@ -109,7 +106,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
 
   const isSeries = contentType === 'series' || (season != null && episode != null);
   // Unwrappa WebStreamr proxy URLs (127.0.0.1:11470) nel CDN reale
-  const unwrappedUrl = unwrapWebstreamrUrl(url);
+  const { url: unwrappedUrl, referer: streamReferer } = unwrapWebstreamrUrl(url);
   const isMagnet = unwrappedUrl.startsWith('magnet:');
   // Stream HTTP diretti (non HLS/DASH): usa mpv che li gestisce meglio di WebView2
   // Stream HTTP diretto (non HLS/DASH): serve risoluzione redirect prima
@@ -117,6 +114,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
     !unwrappedUrl.includes('.m3u8') && !unwrappedUrl.includes('.mpd') && !unwrappedUrl.includes('magnet:');
 
   const vidRef = useRef<HTMLVideoElement>(null);
+  const hlsRef = useRef<Hls | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const progRef = useRef<HTMLDivElement>(null);
   const hideTimer = useRef<ReturnType<typeof setTimeout>>();
