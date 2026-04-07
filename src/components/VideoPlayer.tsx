@@ -5,30 +5,7 @@ import Hls from 'hls.js';
 // ─── WebStreamr proxy URL parser ──────────────────────────────────────────────
 // Converte http://127.0.0.1:11470/proxy/d=...&h=Referer:.../{path}?{query}
 // nel vero URL CDN https://cdn.example.com/{path}?{query}
-interface UnwrappedStream { url: string; referer?: string; }
-
-function unwrapWebstreamrUrl(url: string): UnwrappedStream {
-  try {
-    if (!url.includes('127.0.0.1:11470/proxy/')) return { url };
-    const afterProxy = url.split('127.0.0.1:11470/proxy/')[1];
-    if (!afterProxy) return { url };
-    // Estrai d= (domain CDN)
-    const dMatch = afterProxy.match(/(?:^|&)d=([^&/]+)/);
-    if (!dMatch) return { url };
-    const domain = decodeURIComponent(dMatch[1]);
-    // Estrai h= (headers, tipicamente Referer:URL)
-    const hMatch = afterProxy.match(/[&?]h=([^/]+)\/(.*)/);
-    if (!hMatch) return { url: domain };
-    const headerStr = decodeURIComponent(hMatch[1]); // es: "Referer:https://supervideo.cc/"
-    const pathAndQuery = hMatch[2];
-    // Estrai referer
-    const refMatch = headerStr.match(/Referer:(.+)/i);
-    const referer = refMatch ? refMatch[1] : undefined;
-    return { url: `${domain}/${pathAndQuery}`, referer };
-  } catch {
-    return { url };
-  }
-}
+// URL usato direttamente — HLS.js gestisce il proxy localhost:11470
 
 /**
  * NuvioPlayer v9 — Player intelligente completo
@@ -106,12 +83,13 @@ export default function VideoPlayer(props: VideoPlayerProps) {
 
   const isSeries = contentType === 'series' || (season != null && episode != null);
   // Unwrappa WebStreamr proxy URLs (127.0.0.1:11470) nel CDN reale
-  const { url: unwrappedUrl, referer: streamReferer } = unwrapWebstreamrUrl(url);
+  const unwrappedUrl = url; // URL diretto, HLS.js lo carica senza modifiche
+  const streamReferer: string | undefined = undefined;
   const isMagnet = unwrappedUrl.startsWith('magnet:');
   // Stream HTTP diretti (non HLS/DASH): usa mpv che li gestisce meglio di WebView2
   // Stream HTTP diretto (non HLS/DASH): serve risoluzione redirect prima
-  const isHttpDirect = unwrappedUrl.startsWith('http') &&
-    !unwrappedUrl.includes('.m3u8') && !unwrappedUrl.includes('.mpd') && !unwrappedUrl.includes('magnet:');
+  // Non serve resolve per localhost (11470) o HTTPS diretti
+  const isHttpDirect = unwrappedUrl.startsWith('http') && !unwrappedUrl.includes('127.0.0.1') && !unwrappedUrl.includes('.m3u8') && !unwrappedUrl.includes('.mpd') && !unwrappedUrl.includes('magnet:');
 
   const vidRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
@@ -197,13 +175,13 @@ export default function VideoPlayer(props: VideoPlayerProps) {
     setIsResolvingUrl(false);
     // Per stream HTTP diretti: lancia mpv (gestisce redirect, cookies, headers)
     // Per HLS/DASH: usa il video HTML5 nativo
+    // Per localhost (WebStreamr :11470) e .m3u8: HLS.js li carica direttamente
+    // Per altri HTTP con redirect: risolvi prima lato Rust
     if (isHttpDirect) {
       setResolvedUrl('');
       setBuffering(true);
       invoke<string>('resolve_stream_url', { url: unwrappedUrl })
-        .then(resolved => {
-          setResolvedUrl((resolved && resolved.startsWith('http')) ? resolved : unwrappedUrl);
-        })
+        .then(resolved => setResolvedUrl((resolved && resolved.startsWith('http')) ? resolved : unwrappedUrl))
         .catch(() => setResolvedUrl(unwrappedUrl));
     } else {
       setResolvedUrl(unwrappedUrl);
@@ -275,13 +253,36 @@ export default function VideoPlayer(props: VideoPlayerProps) {
     return () => { v.removeEventListener('canplay', onCanPlay); v.removeEventListener('error', onError); };
   }, [url]);
 
+  // Applica resolvedUrl — usa HLS.js per .m3u8, video nativo per il resto
   useEffect(() => {
     if (!resolvedUrl || isMagnet) return;
     const v = vidRef.current;
     if (!v) return;
-    v.src = resolvedUrl;
-    v.load();
-  }, [resolvedUrl, isMagnet]);
+
+    // Distruggi HLS precedente
+    if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
+
+    const needsHls = resolvedUrl.includes('.m3u8') || resolvedUrl.includes('127.0.0.1:11470');
+
+    if (needsHls && Hls.isSupported()) {
+      const hls = new Hls({ enableWorker: true, maxBufferLength: 30 });
+      hlsRef.current = hls;
+      hls.loadSource(resolvedUrl);
+      hls.attachMedia(v);
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        setBuffering(false); setReady(true);
+        if (initialProgress > 0.01 && initialProgress < 0.97 && v.duration)
+          v.currentTime = v.duration * initialProgress;
+        v.play().catch(() => {});
+      });
+      hls.on(Hls.Events.ERROR, (_evt: any, data: any) => {
+        if (data.fatal) { setError('Errore stream'); setBuffering(false); }
+      });
+    } else {
+      v.src = resolvedUrl;
+      v.load();
+    }
+  }, [resolvedUrl, isMagnet, initialProgress]);
 
   // ── Next episode auto-trigger ──────────────────────────────────────────────
   useEffect(() => {
