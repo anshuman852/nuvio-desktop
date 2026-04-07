@@ -1,5 +1,38 @@
 /// <reference types="vite/client" />
 
+
+// ─── WebStreamr proxy URL parser ──────────────────────────────────────────────
+// Converte http://127.0.0.1:11470/proxy/d=...&h=Referer:.../{path}?{query}
+// nel vero URL CDN https://cdn.example.com/{path}?{query}
+function unwrapWebstreamrUrl(url: string): string {
+  try {
+    if (!url.includes('127.0.0.1:11470/proxy/')) return url;
+    // Estrai la parte dopo /proxy/
+    const afterProxy = url.split('127.0.0.1:11470/proxy/')[1];
+    if (!afterProxy) return url;
+
+    // I parametri sono nel formato: d=URL_ENCODED_DOMAIN&h=Referer:URL_ENCODED_REFERER/path?query
+    // Estrai d= (domain)
+    const dMatch = afterProxy.match(/(?:^|&)d=([^&/]+)/);
+    if (!dMatch) return url;
+    const domain = decodeURIComponent(dMatch[1]);
+
+    // Trova dove finiscono i param (d=...&h=...) e inizia il path reale
+    // Il path reale inizia dopo il valore di h= (che termina con un /)
+    // Pattern: d=DOMAIN&h=Referer:REFERER_URL/REAL_PATH?QUERY
+    const hMatch = afterProxy.match(/&h=[^/]+\/(.*)/);
+    if (!hMatch) {
+      // Nessun h= param, prova d= diretto
+      const pathAfterD = afterProxy.split('&h=')[0];
+      return domain;
+    }
+    const pathAndQuery = hMatch[1]; // es: "hls2/02/.../master.m3u8?t=...&s=..."
+    return `${domain}/${pathAndQuery}`;
+  } catch {
+    return url;
+  }
+}
+
 /**
  * NuvioPlayer v9 — Player intelligente completo
  * - Auto-hide controlli dopo 5s
@@ -75,11 +108,13 @@ export default function VideoPlayer(props: VideoPlayerProps) {
   } = props;
 
   const isSeries = contentType === 'series' || (season != null && episode != null);
-  const isMagnet = url.startsWith('magnet:');
+  // Unwrappa WebStreamr proxy URLs (127.0.0.1:11470) nel CDN reale
+  const unwrappedUrl = unwrapWebstreamrUrl(url);
+  const isMagnet = unwrappedUrl.startsWith('magnet:');
   // Stream HTTP diretti (non HLS/DASH): usa mpv che li gestisce meglio di WebView2
   // Stream HTTP diretto (non HLS/DASH): serve risoluzione redirect prima
-  const isHttpDirect = url.startsWith('http') &&
-    !url.includes('.m3u8') && !url.includes('.mpd') && !url.includes('magnet:');
+  const isHttpDirect = unwrappedUrl.startsWith('http') &&
+    !unwrappedUrl.includes('.m3u8') && !unwrappedUrl.includes('.mpd') && !unwrappedUrl.includes('magnet:');
 
   const vidRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -167,13 +202,13 @@ export default function VideoPlayer(props: VideoPlayerProps) {
     if (isHttpDirect) {
       setResolvedUrl('');
       setBuffering(true);
-      invoke<string>('resolve_stream_url', { url })
+      invoke<string>('resolve_stream_url', { url: unwrappedUrl })
         .then(resolved => {
-          setResolvedUrl((resolved && resolved.startsWith('http')) ? resolved : url);
+          setResolvedUrl((resolved && resolved.startsWith('http')) ? resolved : unwrappedUrl);
         })
-        .catch(() => setResolvedUrl(url));
+        .catch(() => setResolvedUrl(unwrappedUrl));
     } else {
-      setResolvedUrl(url);
+      setResolvedUrl(unwrappedUrl);
     }
     // NON impostare v.src qui — lo fa il useEffect su resolvedUrl
 
@@ -219,7 +254,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
           vidRef.current.src = '';
           setTimeout(() => {
             if (vidRef.current) {
-              vidRef.current.src = resolvedUrl || url;
+              vidRef.current.src = resolvedUrl || unwrappedUrl;
               vidRef.current.load();
               vidRef.current.play().catch(() => {});
             }
