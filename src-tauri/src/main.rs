@@ -4,7 +4,7 @@ mod addon;
 mod mpv;
 
 use std::sync::Mutex;
-use tauri::{State, Emitter};
+use tauri::{State, Emitter, Manager};
 
 pub struct AppState {
     pub mpv: Mutex<mpv::MpvManager>,
@@ -129,53 +129,31 @@ async fn launch_mpv_stream(
     // Aspetta che mpv apra la pipe IPC
     std::thread::sleep(std::time::Duration::from_millis(800));
 
-    // Avvia polling IPC in background: emette eventi Tauri ogni 1s
+    // Avvia polling IPC in background usando std::thread
     let app_handle = app.clone();
-    let state_clone: tauri::State<'_, AppState> = app.state();
-    // Non possiamo clonare State, usiamo un thread separato con AppHandle
-    tokio::spawn(async move {
+    std::thread::spawn(move || {
         loop {
-            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-            // Leggi posizione e durata via IPC
-            let pos_result = {
-                let state: tauri::State<'_, AppState> = app_handle.state();
-                let mpv = state.mpv.lock();
-                match mpv {
-                    Ok(m) => m.get_position(),
-                    Err(_) => break,
-                }
-            };
-            let dur_result = {
-                let state: tauri::State<'_, AppState> = app_handle.state();
-                let mpv = state.mpv.lock();
-                match mpv {
-                    Ok(m) => m.get_duration(),
-                    Err(_) => break,
-                }
-            };
+            std::thread::sleep(std::time::Duration::from_secs(1));
 
-            let _ = app_handle.emit("mpv_position", pos_result);
-            let _ = app_handle.emit("mpv_duration", dur_result);
+            let state: tauri::State<'_, AppState> = app_handle.state();
 
-            // Se mpv è terminato (posizione == durata e > 0), notifica
-            if dur_result > 0.0 && pos_result >= dur_result - 1.0 {
-                let _ = app_handle.emit("mpv_ended", ());
-            }
-
-            // Controlla se il processo è ancora in esecuzione
-            let still_running = {
-                let state: tauri::State<'_, AppState> = app_handle.state();
+            let (pos, dur, still_running) = {
                 let mut mpv = match state.mpv.lock() {
                     Ok(m) => m,
                     Err(_) => break,
                 };
-                match mpv.process {
-                    Some(ref mut child) => {
-                        matches!(child.try_wait(), Ok(None))
-                    }
+                let pos = mpv.get_position();
+                let dur = mpv.get_duration();
+                let alive = match mpv.process {
+                    Some(ref mut child) => child.try_wait().map(|r| r.is_none()).unwrap_or(false),
                     None => false,
-                }
+                };
+                (pos, dur, alive)
             };
+
+            let _ = app_handle.emit("mpv_position", pos);
+            let _ = app_handle.emit("mpv_duration", dur);
+
             if !still_running {
                 let _ = app_handle.emit("mpv_ended", ());
                 break;
