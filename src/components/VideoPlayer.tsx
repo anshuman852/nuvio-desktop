@@ -68,7 +68,6 @@ export default function VideoPlayer(props: VideoPlayerProps) {
       url,
       title: title ?? null,
       referrer: referrer ?? null,
-      userAgent: null,
     })
       .then(() => {
         setMpvLaunched(true);

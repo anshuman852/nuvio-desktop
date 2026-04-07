@@ -31,7 +31,6 @@ async fn launch_mpv(state: State<'_, AppState>, url: String, title: Option<Strin
 #[tauri::command]
 async fn launch_mpv_embedded(
     state: State<'_, AppState>,
-    window: tauri::Window,
     url: String,
     title: Option<String>,
 ) -> Result<(), String> {
@@ -137,11 +136,9 @@ async fn stream_magnet(
 #[tauri::command]
 async fn launch_mpv_stream(
     state: State<'_, AppState>,
-    window: tauri::Window,
     url: String,
     title: Option<String>,
     referrer: Option<String>,
-    user_agent: Option<String>,
 ) -> Result<(), String> {
     let mpv_path = {
         // Trova mpv
@@ -182,11 +179,7 @@ async fn launch_mpv_stream(
         args.push("--referrer=https://supervideo.cc/".to_string());
     }
 
-    if let Some(ua) = user_agent {
-        // Override user-agent se fornito
-        let ua_idx = args.iter().position(|a| a.starts_with("--user-agent="));
-        if let Some(i) = ua_idx { args[i] = format!("--user-agent={}", ua); }
-    }
+// user-agent già impostato negli args di default
 
     // Per magnet: aggiungi ytdl plugin se disponibile
     if url.starts_with("magnet:") {
