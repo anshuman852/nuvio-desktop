@@ -2,7 +2,6 @@
 
 mod addon;
 mod mpv;
-mod proxy;
 
 use std::sync::Mutex;
 use tauri::State;
@@ -90,16 +89,6 @@ async fn mpv_get_duration(state: State<'_, AppState>) -> Result<f64, String> {
 }
 
 #[tauri::command]
-async fn get_proxy_url(url: String) -> Result<String, String> {
-    // Restituisce l'URL del proxy locale per lo stream remoto
-    let encoded = url.chars().map(|c| {
-        if c.is_alphanumeric() || "-_.~:/".contains(c) { c.to_string() }
-        else { format!("%{:02X}", c as u32) }
-    }).collect::<String>();
-    Ok(format!("http://127.0.0.1:9876/proxy?url={}", encoded))
-}
-
-#[tauri::command]
 async fn open_url(url: String) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     std::process::Command::new("cmd").args(["/C", "start", "", &url]).spawn().map_err(|e| e.to_string())?;
@@ -144,13 +133,6 @@ async fn stream_magnet(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // Avvia il proxy HTTP locale in background
-    tokio::spawn(async {
-        if let Err(e) = proxy::start_proxy(9876).await {
-            eprintln!("[proxy] Errore avvio: {}", e);
-        }
-    });
-
     tauri::Builder::default()
         .plugin(tauri_plugin_store::Builder::new().build())
         .manage(AppState { mpv: Mutex::new(mpv::MpvManager::new()) })
@@ -158,7 +140,7 @@ pub fn run() {
             fetch_manifest, fetch_streams,
             launch_mpv, launch_mpv_embedded, launch_custom_player,
             mpv_command, mpv_stop, mpv_get_position, mpv_get_duration,
-            open_url, stream_magnet, resolve_stream_url, get_proxy_url,
+            open_url, stream_magnet, resolve_stream_url,
         ])
         .run(tauri::generate_context!())
         .expect("error while running nuvio-desktop");

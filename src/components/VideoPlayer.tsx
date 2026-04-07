@@ -165,18 +165,13 @@ export default function VideoPlayer(props: VideoPlayerProps) {
     // Per stream HTTP diretti: lancia mpv (gestisce redirect, cookies, headers)
     // Per HLS/DASH: usa il video HTML5 nativo
     if (isHttpDirect) {
-      // Usa proxy locale (localhost:9876) per bypassare CORS/Mixed-Content di WebView2
       setResolvedUrl('');
       setBuffering(true);
-      invoke<string>('get_proxy_url', { url })
-        .then(proxyUrl => {
-          console.log('[Player] Proxy URL:', proxyUrl.slice(0, 100));
-          setResolvedUrl(proxyUrl);
+      invoke<string>('resolve_stream_url', { url })
+        .then(resolved => {
+          setResolvedUrl((resolved && resolved.startsWith('http')) ? resolved : url);
         })
-        .catch(() => {
-          // Fallback: URL diretto
-          setResolvedUrl(url);
-        });
+        .catch(() => setResolvedUrl(url));
     } else {
       setResolvedUrl(url);
     }
