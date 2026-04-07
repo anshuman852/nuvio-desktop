@@ -86,6 +86,8 @@ export default function VideoPlayer(props: VideoPlayerProps) {
   const unwrappedUrl = url; // URL diretto, HLS.js lo carica senza modifiche
   const streamReferer: string | undefined = undefined;
   const isMagnet = unwrappedUrl.startsWith('magnet:');
+  // HLS streams vanno a mpv come i magnet (WebView2 non li supporta)
+  const isHlsStream = unwrappedUrl.includes('.m3u8') || unwrappedUrl.includes('127.0.0.1:11470');
   // Stream HTTP diretti (non HLS/DASH): usa mpv che li gestisce meglio di WebView2
   // Stream HTTP diretto (non HLS/DASH): serve risoluzione redirect prima
   // Non serve resolve per localhost (11470) o HTTPS diretti
@@ -165,7 +167,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
 
   // ── Init video ─────────────────────────────────────────────────────────────
   useEffect(() => {
-    if (isMagnet) return;
+    if (isMagnet || isHlsStream) return;
     const v = vidRef.current;
     if (!v) return;
 
@@ -253,60 +255,21 @@ export default function VideoPlayer(props: VideoPlayerProps) {
     return () => { v.removeEventListener('canplay', onCanPlay); v.removeEventListener('error', onError); };
   }, [url]);
 
-  // Applica resolvedUrl: prova HLS.js, se fallisce usa mpv come fallback
+  // Per HLS: lancia mpv al mount (stesso pattern dei magnet)
   useEffect(() => {
-    if (!resolvedUrl || isMagnet) return;
+    if (!isHlsStream) return;
+    invoke('launch_mpv', { url: unwrappedUrl, title: title ?? null }).catch(() => {});
+  }, [unwrappedUrl]);
+
+  // Per stream normali: applica resolvedUrl al video
+  useEffect(() => {
+    if (!resolvedUrl || isMagnet || isHlsStream) return;
     const v = vidRef.current;
     if (!v) return;
-
     if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
-
-    const isHls = resolvedUrl.includes('.m3u8') || resolvedUrl.includes('127.0.0.1:11470');
-
-    if (isHls) {
-      if (Hls.isSupported()) {
-        const hls = new Hls({
-          enableWorker: true,
-          maxBufferLength: 30,
-          xhrSetup: (xhr: XMLHttpRequest, xhrUrl: string) => {
-            xhr.withCredentials = false;
-          },
-        });
-        hlsRef.current = hls;
-        let manifestLoaded = false;
-
-        hls.on(Hls.Events.MANIFEST_PARSED, () => {
-          manifestLoaded = true;
-          setBuffering(false); setReady(true);
-          if (initialProgress > 0.01 && initialProgress < 0.97 && v.duration)
-            v.currentTime = v.duration * initialProgress;
-          v.play().catch(() => {});
-        });
-
-        hls.on(Hls.Events.ERROR, (_evt: any, data: any) => {
-          if (data.fatal && !manifestLoaded) {
-            // HLS.js fallito → fallback mpv
-            console.warn('[Player] HLS.js fatal, fallback mpv:', data.type, data.details);
-            hls.destroy(); hlsRef.current = null;
-            invoke('launch_mpv', { url: resolvedUrl, title: title ?? null }).catch(() => {});
-            setBuffering(false);
-            setError(''); // nessun errore visibile, mpv gestisce
-            handleClose(); // chiudi player interno
-          }
-        });
-
-        hls.loadSource(resolvedUrl);
-        hls.attachMedia(v);
-      } else {
-        // MSE non supportato → mpv diretto
-        invoke('launch_mpv', { url: resolvedUrl, title: title ?? null }).catch(() => {});
-        handleClose();
-      }
-    } else {
-      v.src = resolvedUrl;
-      v.load();
-    }
-  }, [resolvedUrl, isMagnet, initialProgress]);
+    v.src = resolvedUrl;
+    v.load();
+  }, [resolvedUrl, isMagnet, isHlsStream, initialProgress]);
 
   // ── Next episode auto-trigger ──────────────────────────────────────────────
   useEffect(() => {
@@ -436,6 +399,38 @@ export default function VideoPlayer(props: VideoPlayerProps) {
   const bgImg = backdrop || poster;
 
   // ── Magnet ─────────────────────────────────────────────────────────────────
+  // ── HLS stream → mpv esterno ──────────────────────────────────────────────
+  if (isHlsStream) return (
+    <div className="fixed inset-0 bg-[#0c0c10] z-[100] flex items-center justify-center">
+      {bgImg && <><img src={bgImg} alt="" className="absolute inset-0 w-full h-full object-cover opacity-10 blur-2xl scale-110" /><div className="absolute inset-0 bg-black/80" /></>}
+      <div className="relative z-10 flex flex-col items-center gap-6 max-w-md text-center px-8">
+        {poster && <img src={poster} alt={title} className="h-28 rounded-xl shadow-2xl" />}
+        {title && <p className="text-white font-bold text-xl">{title}</p>}
+        {subtitle && <p className="text-white/60 text-sm">{subtitle}</p>}
+        <div className="bg-white/5 border border-white/10 rounded-2xl px-6 py-4 flex flex-col items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center">
+            <Play size={18} className="text-white fill-white ml-0.5" />
+          </div>
+          <p className="text-white/80 text-sm font-medium">Riproduzione in corso</p>
+          <p className="text-white/40 text-xs">Lo stream è aperto nel player esterno</p>
+        </div>
+        {cast.length > 0 && (
+          <div className="flex gap-3 overflow-x-auto max-w-full pb-1">
+            {cast.slice(0, 6).map((p, i) => (
+              <div key={i} className="flex flex-col items-center gap-1 flex-shrink-0">
+                <div className="w-10 h-10 rounded-full overflow-hidden bg-white/10">
+                  {p.photo ? <img src={p.photo} alt={p.name} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-white/30 text-xs font-bold">{p.name.charAt(0)}</div>}
+                </div>
+                <p className="text-white/40 text-[10px] truncate w-10 text-center">{p.name}</p>
+              </div>
+            ))}
+          </div>
+        )}
+        <button onClick={handleClose} className="text-white/40 hover:text-white text-sm flex items-center gap-1.5 mt-2"><ArrowLeft size={14} />Indietro</button>
+      </div>
+    </div>
+  );
+
   if (isMagnet) return (
     <div className="fixed inset-0 bg-[#0c0c10] z-[100] flex items-center justify-center">
       {bgImg && <><img src={bgImg} alt="" className="absolute inset-0 w-full h-full object-cover opacity-10 blur-2xl scale-110" /><div className="absolute inset-0 bg-black/80" /></>}
