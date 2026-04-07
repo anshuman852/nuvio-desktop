@@ -77,8 +77,9 @@ export default function VideoPlayer(props: VideoPlayerProps) {
   const isSeries = contentType === 'series' || (season != null && episode != null);
   const isMagnet = url.startsWith('magnet:');
   // Stream HTTP diretti (non HLS/DASH): usa mpv che li gestisce meglio di WebView2
-  const isHttpDirect = url.startsWith('http://') ||
-    (url.startsWith('https://') && !url.includes('.m3u8') && !url.includes('.mpd') && !url.includes('googleapis') && !url.includes('tmdb'));
+  // Stream HTTP diretto (non HLS/DASH): serve risoluzione redirect prima
+  const isHttpDirect = url.startsWith('http') &&
+    !url.includes('.m3u8') && !url.includes('.mpd') && !url.includes('magnet:');
 
   const vidRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -164,19 +165,18 @@ export default function VideoPlayer(props: VideoPlayerProps) {
     // Per stream HTTP diretti: lancia mpv (gestisce redirect, cookies, headers)
     // Per HLS/DASH: usa il video HTML5 nativo
     if (isHttpDirect) {
-      invoke<string>('resolve_stream_url', { url })
-        .then(resolved => {
-          const finalUrl = (resolved && resolved.startsWith('http')) ? resolved : url;
-          console.log('[Player] HTTP→mpv:', finalUrl.slice(0, 80));
-          return invoke('launch_mpv', { url: finalUrl, title: title ?? null });
+      // Usa proxy locale (localhost:9876) per bypassare CORS/Mixed-Content di WebView2
+      setResolvedUrl('');
+      setBuffering(true);
+      invoke<string>('get_proxy_url', { url })
+        .then(proxyUrl => {
+          console.log('[Player] Proxy URL:', proxyUrl.slice(0, 100));
+          setResolvedUrl(proxyUrl);
         })
-        .catch(() => invoke('launch_mpv', { url, title: title ?? null }))
-        .then(() => { /* mpv avviato */ })
         .catch(() => {
-          // mpv fallito: prova HTML5 direttamente
+          // Fallback: URL diretto
           setResolvedUrl(url);
         });
-      return; // non usare video HTML5
     } else {
       setResolvedUrl(url);
     }
