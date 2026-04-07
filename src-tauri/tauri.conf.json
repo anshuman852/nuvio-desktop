@@ -1,7 +1,7 @@
 {
-  "productName": "NuvioDesktop",
-  "version": "1.4.6",
-  "identifier": "space.nuvioapp.desktop",
+  "productName": "nuvio-desktop",
+  "version": "1.5.6",
+  "identifier": "com.nuvio.desktop",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
@@ -9,6 +9,7 @@
     "beforeBuildCommand": "npm run build"
   },
   "app": {
+    "withGlobalTauri": false,
     "windows": [
       {
         "title": "Nuvio Desktop",
@@ -18,8 +19,6 @@
         "minHeight": 600,
         "resizable": true,
         "fullscreen": false,
-        "decorations": true,
-        "transparent": false,
         "additionalBrowserArgs": "--disable-web-security --allow-running-insecure-content --autoplay-policy=no-user-gesture-required"
       }
     ],
@@ -36,9 +35,6 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ],
-    "resources": {
-      "binaries/mpv-x86_64-pc-windows-msvc.exe": "mpv.exe"
-    }
+    ]
   }
 }
