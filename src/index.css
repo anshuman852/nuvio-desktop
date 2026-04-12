@@ -19,6 +19,33 @@ body {
   overflow: hidden;
 }
 
+/* FIX per input bianchi */
+input, 
+select, 
+textarea {
+  color: #ffffff !important;
+  background-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: rgba(255, 255, 255, 0.4) !important;
+}
+
+input:focus, 
+select:focus, 
+textarea:focus {
+  outline: none;
+  border-color: var(--accent, #7c3aed) !important;
+  background-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+select option {
+  background-color: #1a1a1f !important;
+  color: #ffffff !important;
+}
+
+/* Scrollbar */
 .scrollbar-hide::-webkit-scrollbar { display: none; }
 .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
 
@@ -27,21 +54,13 @@ body {
 ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
 
-/* ─── Scrollbar globale ───────────────────────────────────────────────────── */
 * { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.15) transparent; }
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 99px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.28); }
-.scrollbar-hide { scrollbar-width: none; }
-.scrollbar-hide::-webkit-scrollbar { display: none; }
 
 /* Smooth scroll */
 html { scroll-behavior: smooth; }
 
-/* ── Disable global right-click ───────────────────────────── */
+/* Disable global right-click */
 * { -webkit-user-select: none; user-select: none; }
 input, textarea, [contenteditable] { -webkit-user-select: text; user-select: text; }
 
-/* Content cards: allow custom context menu */
 .content-card { cursor: pointer; }

@@ -16,7 +16,6 @@ fn normalize(url: &str) -> String {
 
 /// GET manifest — accetta l'URL completo (con o senza /manifest.json)
 pub async fn fetch_manifest(manifest_url: &str) -> Result<serde_json::Value> {
-    // Normalizza: rimuove slash finale, assicura che finisca con /manifest.json
     let base = normalize(manifest_url).replace("/manifest.json", "");
     let url = format!("{}/manifest.json", base);
     Ok(client().get(&url).send().await?.error_for_status()?.json().await?)

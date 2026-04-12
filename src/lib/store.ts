@@ -6,8 +6,6 @@ import {
   SimklAuth, MALAuth, AppSettings, DEFAULT_SETTINGS,
 } from './types';
 
-// ─── Default addon ────────────────────────────────────────────────────────────
-
 export const CINEMETA: Addon = {
   url: 'https://v3-cinemeta.strem.io',
   id: 'com.linvo.cinemeta',
@@ -27,25 +25,22 @@ export const DEFAULT_PROFILE: Profile = {
   id: 'default',
   name: 'Principale',
   avatar: 'red',
+  avatarUrl: '',
   color: '#7c3aed',
   isKids: false,
   createdAt: Date.now(),
 };
 
-// ─── Store ────────────────────────────────────────────────────────────────────
-
 interface Store {
-  // Profili
   profiles: Profile[];
   activeProfileId: string;
   profileSelected: boolean;
-  addProfile: (p: Omit<Profile, 'id' | 'createdAt'>) => void;  // avatarUrl opzionale
+  addProfile: (p: Omit<Profile, 'id' | 'createdAt'>) => void;
   updateProfile: (id: string, patch: Partial<Profile>) => void;
   removeProfile: (id: string) => void;
   setActiveProfile: (id: string) => void;
   setProfileSelected: (v: boolean) => void;
 
-  // Addon
   addons: Addon[];
   addAddon: (a: Addon) => void;
   removeAddon: (id: string) => void;
@@ -53,13 +48,11 @@ interface Store {
   reorderAddon: (id: string, dir: 'up' | 'down') => void;
   updateAddon: (id: string, patch: Partial<Addon>) => void;
 
-  // Watch history (per profilo)
   watchHistory: Record<string, WatchEntry[]>;
   upsertWatch: (e: Omit<WatchEntry, 'watchedAt'>) => void;
   clearHistory: () => void;
   removeWatch: (id: string) => void;
 
-  // Auth
   nuvioUser: NuvioUser | null;
   traktAuth: TraktAuth | null;
   simklAuth: SimklAuth | null;
@@ -69,15 +62,19 @@ interface Store {
   setSimklAuth: (a: SimklAuth | null) => void;
   setMALAuth: (a: MALAuth | null) => void;
 
-  // Settings
   settings: AppSettings;
   updateSettings: (patch: Partial<AppSettings>) => void;
+  
+  posterOrientation: Record<string, 'horizontal' | 'vertical'>;
+  setPosterOrientation: (contentId: string, orientation: 'horizontal' | 'vertical') => void;
+  
+  streamingCustomImages: Record<string, string>;
+  setStreamingCustomImage: (serviceId: string, imageUrl: string | undefined) => void;
 }
 
 export const useStore = create<Store>()(
   persist(
     (set, get) => ({
-      // ── Profili ──────────────────────────────────────────────────────────────
       profiles: [DEFAULT_PROFILE],
       activeProfileId: DEFAULT_PROFILE.id,
       profileSelected: false,
@@ -95,7 +92,6 @@ export const useStore = create<Store>()(
       setActiveProfile: (id) => set({ activeProfileId: id }),
       setProfileSelected: (v) => set({ profileSelected: v }),
 
-      // ── Addon ────────────────────────────────────────────────────────────────
       addons: [CINEMETA],
       addAddon: (a) => set((s) => ({
         addons: [...s.addons.filter((x) => x.id !== a.id), a],
@@ -115,7 +111,6 @@ export const useStore = create<Store>()(
         return { addons: arr };
       }),
 
-      // ── History ──────────────────────────────────────────────────────────────
       watchHistory: {},
       upsertWatch: (entry) => set((s) => {
         const pid = s.activeProfileId;
@@ -138,7 +133,6 @@ export const useStore = create<Store>()(
         return { watchHistory: { ...s.watchHistory, [pid]: (s.watchHistory[pid] ?? []).filter(h => h.id !== id) } };
       }),
 
-      // ── Auth ─────────────────────────────────────────────────────────────────
       nuvioUser: null,
       traktAuth: null,
       simklAuth: null,
@@ -148,10 +142,19 @@ export const useStore = create<Store>()(
       setSimklAuth: (a) => set({ simklAuth: a }),
       setMALAuth: (a) => set({ malAuth: a }),
 
-      // ── Settings ─────────────────────────────────────────────────────────────
       settings: DEFAULT_SETTINGS,
       updateSettings: (patch) => set((s) => ({
         settings: { ...s.settings, ...patch },
+      })),
+      
+      posterOrientation: {},
+      setPosterOrientation: (contentId, orientation) => set((s) => ({
+        posterOrientation: { ...s.posterOrientation, [contentId]: orientation }
+      })),
+      
+      streamingCustomImages: {},
+      setStreamingCustomImage: (serviceId, imageUrl) => set((s) => ({
+        streamingCustomImages: { ...s.streamingCustomImages, [serviceId]: imageUrl }
       })),
     }),
     {
@@ -159,7 +162,6 @@ export const useStore = create<Store>()(
       storage: createJSONStorage(() => localStorage),
       version: 1,
       migrate: (old: any) => {
-        // Recupera addons da store vecchi se presenti
         let addons = old?.addons;
         if (!addons || addons.length === 0) {
           for (const name of ['nuvio-app', 'nuvio-desktop-v2', 'nuvio-desktop']) {
@@ -169,7 +171,7 @@ export const useStore = create<Store>()(
                 const a = JSON.parse(raw)?.state?.addons;
                 if (a?.length > 0) { addons = a; break; }
               }
-            } catch { /* ignore */ }
+            } catch { }
           }
         }
         return {
@@ -178,13 +180,13 @@ export const useStore = create<Store>()(
           settings: { ...DEFAULT_SETTINGS, ...(old?.settings ?? {}) },
           profiles: old?.profiles?.length ? old.profiles : [DEFAULT_PROFILE],
           profileSelected: false,
+          posterOrientation: old?.posterOrientation || {},
+          streamingCustomImages: old?.streamingCustomImages || {},
         };
       },
     }
   )
 );
-
-// ─── Selettori ────────────────────────────────────────────────────────────────
 
 export const useActiveProfile = () => {
   const { profiles, activeProfileId } = useStore();

@@ -1,4 +1,4 @@
-// ─── Stremio ──────────────────────────────────────────────────────────────────
+/// <reference types="vite/client" />
 
 export interface Addon {
   url: string;
@@ -71,6 +71,10 @@ export interface Stream {
     bingeGroup?: string;
     filename?: string;
     videoSize?: number;
+    proxyHeaders?: {
+      request?: Record<string, string>;
+      response?: Record<string, string>;
+    };
   };
 }
 
@@ -80,20 +84,16 @@ export interface StreamGroup {
   streams: Stream[];
 }
 
-// ─── Profile ──────────────────────────────────────────────────────────────────
-
 export interface Profile {
   id: string;
   name: string;
-  avatar: string;          // avatar id
-  avatarUrl?: string;      // URL immagine avatar (Supabase storage)
+  avatar: string;
+  avatarUrl?: string;
   color: string;
   isKids: boolean;
   pin?: string;
   createdAt: number;
 }
-
-// ─── History ──────────────────────────────────────────────────────────────────
 
 export interface WatchEntry {
   id: string;
@@ -103,12 +103,10 @@ export interface WatchEntry {
   videoId?: string;
   season?: number;
   episode?: number;
-  progress: number;       // 0-1
-  duration: number;       // secondi
+  progress: number;
+  duration: number;
   watchedAt: number;
 }
-
-// ─── Auth ─────────────────────────────────────────────────────────────────────
 
 export interface NuvioUser {
   id: string;
@@ -147,45 +145,56 @@ export interface MALAuth {
   expiresAt: number;
 }
 
-// ─── Settings ─────────────────────────────────────────────────────────────────
+export interface StreamingServiceSetting {
+  id: string;
+  enabled: boolean;
+  customImage?: string;
+}
 
 export interface AppSettings {
-  // Player
-  mpvPath: string;
-  hardwareDecode: boolean;
+  showHero: boolean;
+  reduceSidebar: boolean;
+  horizontalPosters: boolean;
+  hideUnavailable: boolean;
   autoplay: boolean;
-  // Language
-  language: string;
-  subtitleLanguage: string;
-  defaultQuality: string;
-  // TMDB
+  skipIntro: boolean;
+  preferredQuality: string;
+  subtitlesEnabled: boolean;
+  customPlayerPath: string;
   tmdbApiKey: string;
   tmdbLanguage: string;
-  // Streaming services visibili
-  visibleServices: string[];
-  // UI
   accentColor: string;
-  // Player esterno custom
-  customPlayerPath: string;
-  customPlayerArgs: string;
+  appLanguage: string;
+  visibleServices: string[];
+  streamingServices: StreamingServiceSetting[];
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  mpvPath: 'mpv',
-  hardwareDecode: true,
+  showHero: true,
+  reduceSidebar: false,
+  horizontalPosters: false,
+  hideUnavailable: false,
   autoplay: true,
-  language: 'it',
-  subtitleLanguage: 'it',
-  defaultQuality: 'best',
+  skipIntro: true,
+  preferredQuality: 'auto',
+  subtitlesEnabled: true,
+  customPlayerPath: '',
   tmdbApiKey: '',
   tmdbLanguage: 'it-IT',
-  visibleServices: ['netflix', 'disney', 'apple', 'paramount', 'amazon', 'hbo', 'crunchyroll', 'raiplay'],
   accentColor: '#7c3aed',
-  customPlayerPath: '',
-  customPlayerArgs: '',
+  appLanguage: 'it',
+  visibleServices: ['netflix', 'disney', 'apple', 'paramount', 'amazon', 'hbo', 'crunchyroll', 'raiplay'],
+  streamingServices: [
+    { id: 'netflix', enabled: true },
+    { id: 'disney', enabled: true },
+    { id: 'apple', enabled: true },
+    { id: 'paramount', enabled: true },
+    { id: 'amazon', enabled: true },
+    { id: 'hbo', enabled: true },
+    { id: 'crunchyroll', enabled: true },
+    { id: 'raiplay', enabled: true },
+  ],
 };
-
-// ─── TMDB ─────────────────────────────────────────────────────────────────────
 
 export interface TMDBPerson {
   id: number;

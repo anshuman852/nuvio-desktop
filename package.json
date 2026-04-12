@@ -13,8 +13,11 @@
     "@tauri-apps/plugin-shell": "^2.0.0",
     "axios": "^1.7.7",
     "clsx": "^2.1.1",
+    "express": "^5.2.1",
     "hls.js": "^1.5.13",
+    "http-proxy-middleware": "^3.0.5",
     "lucide-react": "^0.400.0",
+    "qrcode.react": "^4.2.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.27.0",
@@ -22,6 +25,7 @@
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.1.0",
+    "@types/qrcode.react": "^1.0.5",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.3",
@@ -30,5 +34,19 @@
     "tailwindcss": "^3.4.15",
     "typescript": "^5.6.3",
     "vite": "^5.4.11"
-  }
+  },
+  "description": "[![Release](https://img.shields.io/github/v/release/Davako94/nuvio-desktop?style=for-the-badge&color=7c3aed)](https://github.com/Davako94/nuvio-desktop/releases/latest) [![License](https://img.shields.io/github/license/Davako94/nuvio-desktop?style=for-the-badge)](LICENSE) [![CI](https://img.shields.io/github/actions/workflow/status/Davako94/nuvio-desktop/ci.yml?style=for-the-badge&label=build)](https://github.com/Davako94/nuvio-desktop/actions) [![Windows](https://img.shields.io/badge/platform-Windows-0078d7?style=for-the-badge&logo=windows)](https://github.com/Davako94/nuvio-desktop/releases/latest)",
+  "main": "postcss.config.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Davako94/nuvio-desktop.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Davako94/nuvio-desktop/issues"
+  },
+  "homepage": "https://github.com/Davako94/nuvio-desktop#readme"
 }

@@ -64,7 +64,6 @@ export async function nuvioLogin(email: string, password: string): Promise<Nuvio
 
   _userToken = data.access_token;
 
-  // get_sync_owner per owner reale (come il sync tool)
   let ownerId = data.user.id;
   try {
     const ownerRes = await rpc('get_sync_owner', {}, data.access_token);
@@ -76,7 +75,6 @@ export async function nuvioLogin(email: string, password: string): Promise<Nuvio
   let name = data.user.email.split('@')[0];
   let avatar: string | undefined;
   try {
-    // Carica profilo: usa il user_id dell'autenticazione per trovare il profilo primario
     const pr = await fetch(
       `${SUPABASE_URL}/rest/v1/profiles?select=name,avatar_id,avatar_color_hex&user_id=eq.${data.user.id}&order=profile_index.asc&limit=1`,
       { headers: authHeaders(data.access_token) }
@@ -85,7 +83,6 @@ export async function nuvioLogin(email: string, password: string): Promise<Nuvio
     const p = Array.isArray(rows) ? rows[0] : null;
     if (p) {
       name = p.name ?? p.username ?? p.full_name ?? name;
-      // Carica URL avatar dal catalog se c'è un avatar_id
       if (p.avatar_id) {
         try {
           const avatarRes = await fetch(
@@ -117,6 +114,19 @@ export async function nuvioLogout() {
   } catch { }
 }
 
+// ─── Get profiles from cloud ──────────────────────────────────────────────────
+
+export async function getProfilesFromCloud(userId: string, userToken?: string): Promise<any[]> {
+  const tok = userToken ?? _userToken;
+  if (!tok) return [];
+  try {
+    const data = await rpc('sync_pull_profiles', {}, tok);
+    return Array.isArray(data) ? data : [];
+  } catch {
+    return [];
+  }
+}
+
 // ─── Continue Watching ────────────────────────────────────────────────────────
 
 export interface NuvioCW {
@@ -132,7 +142,6 @@ export async function getContinueWatching(userId: string, userToken?: string): P
     const data = await rpc('sync_pull_watch_progress', {}, tok);
     if (!Array.isArray(data) || data.length === 0) return [];
 
-    // Fetch library per avere name e poster (watch_progress non li ha)
     let libraryMap: Map<string, { name: string; poster: string | null }> = new Map();
     try {
       const lib = await rpc('sync_pull_library', {}, tok);
@@ -154,8 +163,6 @@ export async function getContinueWatching(userId: string, userToken?: string): P
       .sort((a: any, b: any) => (b.last_watched ?? 0) - (a.last_watched ?? 0))
       .slice(0, 20)
       .map((r: any): NuvioCW => {
-        // Dal DB reale: position e duration sono in SECONDI
-        // Verifica: Coco position=1005s, duration=6299s ✓
         const durSec = r.duration ?? 0;
         const posSec = r.position ?? 0;
         const progress = durSec > 0 ? Math.min(posSec / durSec, 1) : 0;
@@ -219,8 +226,6 @@ export async function upsertCW(userId: string, item: {
   const progressKey = item.type === 'movie' ? item.id
     : item.season && item.episode ? `${item.id}_s${item.season}e${item.episode}` : item.id;
 
-  // Formato ufficiale NuvioTV: MILLISECONDI (come il mobile app)
-  // progress * duration * 1000 = posizione in ms
   const posMs = Math.round(item.progress * item.duration * 1000);
   const durMs = Math.round(item.duration * 1000);
 
@@ -239,7 +244,6 @@ export async function upsertCW(userId: string, item: {
   try {
     await rpc('sync_push_watch_progress', { p_entries: [entry] }, tok);
   } catch {
-    // Fallback REST — senza name/poster (non esistono nel schema)
     await fetch(`${SUPABASE_URL}/rest/v1/watch_progress`, {
       method: 'POST',
       headers: { ...authHeaders(tok), Prefer: 'resolution=merge-duplicates,return=minimal' },
@@ -251,7 +255,6 @@ export async function upsertCW(userId: string, item: {
 export async function removeCW(userId: string, contentId: string): Promise<void> {
   const tok = _userToken;
   if (!tok) return;
-  // Usa sync_delete_watch_progress se disponibile, altrimenti REST DELETE
   try {
     await rpc('sync_delete_watch_progress', { p_content_ids: [contentId] }, tok);
   } catch {
@@ -313,7 +316,6 @@ export async function getNuvioAddons(userId: string, userToken?: string): Promis
   );
   const rows = await res.json();
   if (!Array.isArray(rows) || rows.length === 0) return [];
-  // Importa installAddon per ottenere il manifest completo
   const { installAddon } = await import('./stremio');
   const results = await Promise.allSettled(rows.map((r: any) => installAddon(r.url)));
   return results
@@ -331,26 +333,17 @@ export async function getAccountStats(userId: string, userToken?: string): Promi
   if (!tok || !userId) return { totalMovies: 0, totalEpisodes: 0, totalWatched: 0, librarySize: 0, watchTimeHours: 0 };
   try {
     const [watchedItems, watchProgress, libraryItems] = await Promise.all([
-      rpc('sync_pull_watched_items', {}, tok).then((d: any) => { console.log('[stats] watched_items:', d); return Array.isArray(d) ? d : []; }).catch((e: any) => { console.error('[stats] watched_items ERR:', e.message); return [] as any[]; }),
-      rpc('sync_pull_watch_progress', {}, tok).then((d: any) => { console.log('[stats] watch_progress:', Array.isArray(d) ? d.length : d); return Array.isArray(d) ? d : []; }).catch((e: any) => { console.error('[stats] watch_progress ERR:', e.message); return [] as any[]; }),
-      rpc('sync_pull_library', {}, tok).then((d: any) => { console.log('[stats] library:', Array.isArray(d) ? d.length : d); return Array.isArray(d) ? d : []; }).catch((e: any) => { console.error('[stats] library ERR:', e.message); return [] as any[]; }),
+      rpc('sync_pull_watched_items', {}, tok).then((d: any) => Array.isArray(d) ? d : []).catch(() => []),
+      rpc('sync_pull_watch_progress', {}, tok).then((d: any) => Array.isArray(d) ? d : []).catch(() => []),
+      rpc('sync_pull_library', {}, tok).then((d: any) => Array.isArray(d) ? d : []).catch(() => []),
     ]);
-    // Conta correttamente: watched_items ha sia title-level (season=null) che episodi (season!=null)
-    // title-level film = content_type=movie AND season IS NULL
-    // title-level serie = content_type=series AND season IS NULL  
-    // episodi = season IS NOT NULL
-    // I watched_items hanno: content_type=movie/series, season=null per titoli, season!=null per episodi
-    // Il sync tool "markWatched" per le serie scrive season=null (title-level watched badge)
-    // Per i film scrive sempre season=null
     const movies = (watchedItems as any[]).filter((w: any) => w.content_type === 'movie').length;
     const episodes = (watchedItems as any[]).filter((w: any) => w.content_type === 'series' && w.season != null).length;
     const seriesWatched = (watchedItems as any[]).filter((w: any) => w.content_type === 'series' && (w.season == null || w.season === undefined)).length;
-    // Position: auto-detect ms vs sec
     const watchTimeSec = (watchProgress as any[]).reduce((acc: number, w: any) => {
       const pos = w.position ?? 0;
       return acc + (pos > 3_600_000 ? pos / 1000 : pos);
     }, 0);
-    console.log(`[stats] movies=${movies} episodes=${episodes} series=${seriesWatched} library=${(libraryItems as any[]).length} watchTime=${Math.round(watchTimeSec/3600)}h`);
     return {
       totalMovies: movies,
       totalEpisodes: episodes,
@@ -366,7 +359,6 @@ export async function getAccountStats(userId: string, userToken?: string): Promi
 export interface SupabaseAvatar { id: string; display_name: string; storage_path: string; category?: string; bg_color?: string; }
 
 export async function getAvatarCatalog(): Promise<SupabaseAvatar[]> {
-  // Prova con token utente prima
   const tok = _userToken;
   try {
     const endpoint = `${SUPABASE_URL}/rest/v1/rpc/get_avatar_catalog`;
@@ -374,7 +366,6 @@ export async function getAvatarCatalog(): Promise<SupabaseAvatar[]> {
       'Content-Type': 'application/json',
       'apikey': SUPABASE_ANON,
     };
-    // Se c'è token usiamolo, altrimenti anon
     if (tok) headers['Authorization'] = `Bearer ${tok}`;
     else headers['Authorization'] = `Bearer ${SUPABASE_ANON}`;
     const res = await fetch(endpoint, { method: 'POST', headers, body: '{}' });
@@ -383,7 +374,6 @@ export async function getAvatarCatalog(): Promise<SupabaseAvatar[]> {
       if (Array.isArray(data) && data.length > 0) return data;
     }
   } catch { /* fallback */ }
-  // Fallback: leggi avatar_catalog direttamente (potrebbe essere pubblica)
   try {
     const res = await fetch(`${SUPABASE_URL}/rest/v1/avatar_catalog?select=*&is_active=eq.true&order=sort_order.asc`, {
       headers: { 'apikey': SUPABASE_ANON, 'Authorization': `Bearer ${SUPABASE_ANON}` },
@@ -396,11 +386,10 @@ export async function getAvatarCatalog(): Promise<SupabaseAvatar[]> {
   return [];
 }
 
-// ─── Alias per compatibilità ──────────────────────────────────────────────────
+// Alias per compatibilità
 export async function markNuvioWatched(userId: string, contentId: string, contentType = 'movie') { return markWatched(userId, contentId, contentType); }
 export async function removeNuvioWatched(userId: string, contentId: string, _contentType = 'movie') { return unmarkWatched(userId, contentId); }
 
-// traktScrobble stub (usato da VideoPlayer - la vera impl è in trakt.ts)
 export async function traktScrobble(_token: string, _action: string, _item: any, _progress?: number): Promise<void> {
   // Stub - la vera implementazione è in api/trakt.ts
 }

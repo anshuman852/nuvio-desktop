@@ -1,0 +1,327 @@
+import { useEffect, useRef, useState, useCallback } from 'react';
+import { invoke } from '@tauri-apps/api/core';
+import { ArrowLeft, Play, Pause, Volume2, VolumeX, Maximize, X } from 'lucide-react';
+
+interface VideoPlayerProps {
+  url: string;
+  title?: string;
+  subtitle?: string;
+  poster?: string;
+  onClose: () => void;
+}
+
+export default function VideoPlayer({ url, title, subtitle, poster, onClose }: VideoPlayerProps) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const hlsRef = useRef<any>(null);
+  
+  const [playing, setPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [volume, setVolume] = useState(1);
+  const [muted, setMuted] = useState(false);
+  const [showControls, setShowControls] = useState(true);
+  const [buffering, setBuffering] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [manifestUrl, setManifestUrl] = useState<string | null>(null);
+  
+  const hideTimer = useRef<ReturnType<typeof setTimeout>>();
+
+  // Per WebStreamr: scarica il manifest con headers
+  useEffect(() => {
+    const loadStream = async () => {
+      if (url.includes('127.0.0.1:11470') || url.includes('localhost:11470')) {
+        setBuffering(true);
+        try {
+          const localManifest = await invoke<string>('fetch_m3u8_manifest', { url });
+          setManifestUrl(localManifest);
+        } catch (e) {
+          setError(String(e));
+          setBuffering(false);
+        }
+      } else {
+        setManifestUrl(url);
+      }
+    };
+    
+    loadStream();
+  }, [url]);
+
+  // Carica HLS.js
+  useEffect(() => {
+    if (!manifestUrl) return;
+    
+    const video = videoRef.current;
+    if (!video) return;
+    
+    const loadHls = async () => {
+      // @ts-ignore - HLS.js caricato da CDN
+      if (window.Hls && window.Hls.isSupported()) {
+        // @ts-ignore
+        const Hls = window.Hls;
+        if (hlsRef.current) {
+          hlsRef.current.destroy();
+        }
+        
+        const hls = new Hls({
+          xhr: {
+            // @ts-ignore
+            customRequest: async (xhr: XMLHttpRequest, url: string) => {
+              // Per i segmenti, usa il backend Rust per aggiungere headers
+              if (url.includes('.ts')) {
+                try {
+                  const data = await invoke<number[]>('fetch_hls_segment', { url });
+                  const uint8Array = new Uint8Array(data);
+                  xhr.status = 200;
+                  xhr.response = uint8Array.buffer;
+                  // @ts-ignore
+                  xhr.onloadend?.();
+                } catch (e) {
+                  // @ts-ignore
+                  xhr.onerror?.(e);
+                }
+              } else {
+                // Richiesta normale
+                xhr.open('GET', url);
+                xhr.setRequestHeader('Origin', 'https://supervideo.cc');
+                xhr.setRequestHeader('Referer', 'https://supervideo.cc/');
+                xhr.send();
+              }
+            }
+          }
+        });
+        
+        hls.loadSource(manifestUrl);
+        hls.attachMedia(video);
+        hlsRef.current = hls;
+        
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          setBuffering(false);
+          video.play().catch(() => {});
+        });
+        
+        hls.on(Hls.Events.ERROR, (_event: any, data: any) => {
+          console.error('HLS error:', data);
+          setError('Errore riproduzione stream');
+        });
+      } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        // Safari native HLS
+        video.src = manifestUrl;
+        video.addEventListener('loadedmetadata', () => setBuffering(false));
+      } else {
+        setError('HLS non supportato dal browser');
+      }
+    };
+    
+    loadHls();
+    
+    return () => {
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
+        hlsRef.current = null;
+      }
+    };
+  }, [manifestUrl]);
+
+  // Eventi video
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    
+    const onPlay = () => setPlaying(true);
+    const onPause = () => setPlaying(false);
+    const onTimeUpdate = () => setCurrentTime(video.currentTime);
+    const onDurationChange = () => setDuration(video.duration);
+    const onWaiting = () => setBuffering(true);
+    const onPlaying = () => setBuffering(false);
+    const onError = () => setError('Errore riproduzione');
+    
+    video.addEventListener('play', onPlay);
+    video.addEventListener('pause', onPause);
+    video.addEventListener('timeupdate', onTimeUpdate);
+    video.addEventListener('durationchange', onDurationChange);
+    video.addEventListener('waiting', onWaiting);
+    video.addEventListener('playing', onPlaying);
+    video.addEventListener('error', onError);
+    
+    return () => {
+      video.removeEventListener('play', onPlay);
+      video.removeEventListener('pause', onPause);
+      video.removeEventListener('timeupdate', onTimeUpdate);
+      video.removeEventListener('durationchange', onDurationChange);
+      video.removeEventListener('waiting', onWaiting);
+      video.removeEventListener('playing', onPlaying);
+      video.removeEventListener('error', onError);
+    };
+  }, []);
+
+  // Auto-hide controls
+  const resetHide = useCallback(() => {
+    setShowControls(true);
+    clearTimeout(hideTimer.current);
+    if (playing) {
+      hideTimer.current = setTimeout(() => setShowControls(false), 3000);
+    }
+  }, [playing]);
+
+  useEffect(() => {
+    resetHide();
+    return () => clearTimeout(hideTimer.current);
+  }, [resetHide]);
+
+  const togglePlay = () => {
+    const video = videoRef.current;
+    if (video?.paused) video.play();
+    else video?.pause();
+    resetHide();
+  };
+
+  const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const pct = (e.clientX - rect.left) / rect.width;
+    if (videoRef.current && duration) {
+      videoRef.current.currentTime = pct * duration;
+    }
+    resetHide();
+  };
+
+  const toggleMute = () => {
+    if (videoRef.current) {
+      videoRef.current.muted = !videoRef.current.muted;
+      setMuted(videoRef.current.muted);
+    }
+  };
+
+  const handleVolume = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const vol = parseFloat(e.target.value);
+    if (videoRef.current) {
+      videoRef.current.volume = vol;
+      setVolume(vol);
+      setMuted(vol === 0);
+    }
+  };
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      containerRef.current?.requestFullscreen();
+    } else {
+      document.exitFullscreen();
+    }
+  };
+
+  const formatTime = (s: number) => {
+    if (!isFinite(s)) return '0:00';
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = Math.floor(s % 60);
+    return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}` : `${m}:${String(sec).padStart(2, '0')}`;
+  };
+
+  const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
+
+  // Errore
+  if (error) {
+    return (
+      <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black">
+        {poster && <img src={poster} alt={title} className="h-32 rounded-2xl mb-4" />}
+        <div className="bg-red-500/10 border border-red-500/20 rounded-2xl px-6 py-4 text-center">
+          <p className="text-red-400 font-semibold">Stream non disponibile</p>
+          <p className="text-white/50 text-sm mt-1">{error}</p>
+        </div>
+        <button onClick={onClose} className="mt-6 px-6 py-2 bg-white/10 rounded-xl text-white">
+          Chiudi
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      ref={containerRef}
+      className="fixed inset-0 bg-black z-[100] select-none"
+      onMouseMove={resetHide}
+      onClick={resetHide}
+    >
+      {/* Video element */}
+      <video
+        ref={videoRef}
+        className="absolute inset-0 w-full h-full object-contain"
+        playsInline
+      />
+
+      {/* Loading overlay */}
+      {buffering && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+          <div className="w-10 h-10 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+        </div>
+      )}
+
+      {/* Top bar */}
+      <div className={`absolute top-0 left-0 right-0 z-20 flex items-center gap-3 px-5 py-4 bg-gradient-to-b from-black/70 to-transparent transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+        <button onClick={onClose} className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white">
+          <ArrowLeft size={18} />
+        </button>
+        <div className="flex-1">
+          {title && <p className="text-white font-semibold">{title}</p>}
+          {subtitle && <p className="text-white/50 text-xs">{subtitle}</p>}
+        </div>
+      </div>
+
+      {/* Bottom controls */}
+      <div className={`absolute bottom-0 left-0 right-0 z-20 transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+        <div className="bg-gradient-to-t from-black/90 via-black/60 to-transparent px-5 pt-8 pb-5">
+          
+          {/* Progress bar */}
+          <div className="mb-4 group">
+            <div
+              className="h-1 bg-white/20 rounded-full cursor-pointer hover:h-1.5 transition-all"
+              onClick={handleSeek}
+            >
+              <div className="h-full rounded-full bg-white" style={{ width: `${progress}%` }} />
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            {/* Play/Pause */}
+            <button onClick={togglePlay} className="p-2.5 rounded-full bg-white text-black hover:bg-white/90">
+              {playing ? <Pause size={18} /> : <Play size={18} className="ml-0.5" />}
+            </button>
+
+            {/* Time */}
+            <span className="text-white/70 text-sm font-mono">
+              {formatTime(currentTime)} / {formatTime(duration)}
+            </span>
+
+            <div className="flex-1" />
+
+            {/* Volume */}
+            <div className="flex items-center gap-2">
+              <button onClick={toggleMute} className="text-white/60 hover:text-white">
+                {muted || volume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
+              </button>
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.05}
+                value={muted ? 0 : volume}
+                onChange={handleVolume}
+                className="w-20 accent-white"
+              />
+            </div>
+
+            {/* Fullscreen */}
+            <button onClick={toggleFullscreen} className="text-white/60 hover:text-white">
+              <Maximize size={18} />
+            </button>
+
+            {/* Close */}
+            <button onClick={onClose} className="text-white/60 hover:text-white">
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

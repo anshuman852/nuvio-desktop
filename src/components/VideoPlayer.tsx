@@ -3,47 +3,61 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useStore } from '../lib/store';
 import { upsertCW } from '../api/nuvio';
-import { ArrowLeft, Play, Pause, SkipBack, SkipForward, X, ChevronRight, Volume2, VolumeX, Maximize } from 'lucide-react';
-
-const HLS_CONFIG = {
-  debug: false, enableWorker: true, lowLatencyMode: false,
-  backBufferLength: 30, maxBufferLength: 50, maxMaxBufferLength: 80,
-  maxBufferSize: 60 * 1000 * 1000,
-  maxFragLookUpTolerance: 0, maxBufferHole: 0,
-  appendErrorMaxRetry: 20, nudgeMaxRetry: 20,
-  manifestLoadingTimeOut: 30000, manifestLoadingMaxRetry: 10,
-  fragLoadPolicy: { default: {
-    maxTimeToFirstByteMs: 10000, maxLoadTimeMs: 120000,
-    timeoutRetry: { maxNumRetry: 20, retryDelayMs: 0, maxRetryDelayMs: 15 },
-    errorRetry: { maxNumRetry: 6, retryDelayMs: 1000, maxRetryDelayMs: 15 },
-  }},
-};
-
-function isHls(url: string) {
-  return url.includes('127.0.0.1:11470') || url.includes('localhost:11470') || url.includes('.m3u8');
-}
+import {
+  ArrowLeft, Play, Pause, SkipBack, SkipForward, X, ChevronRight,
+  Volume2, VolumeX, Maximize, Settings, ChevronLeft, Check
+} from 'lucide-react';
 
 interface CastMember { name: string; character?: string; photo?: string; }
 interface EpisodeRef { id: string; title: string; thumbnail?: string; streamUrl?: string; }
+interface QualityOption { label: string; url: string; }
+interface SubtitleTrack { label: string; lang: string; url: string; }
+
 interface VideoPlayerProps {
   url: string; title?: string; subtitle?: string;
   contentId?: string; contentType?: string;
   poster?: string; backdrop?: string; cast?: CastMember[];
   season?: number; episode?: number;
-  nextEpisode?: EpisodeRef | null; prevEpisode?: { id: string; title: string } | null;
-  availableQualities?: { label: string; url: string }[];
-  onClose: () => void; onNext?: () => void; onPrev?: () => void; initialProgress?: number;
+  referer?: string;
+  nextEpisode?: EpisodeRef | null;
+  prevEpisode?: { id: string; title: string } | null;
+  availableQualities?: QualityOption[];
+  subtitleTracks?: SubtitleTrack[];
+  onClose: () => void;
+  onNext?: () => void;
+  onPrev?: () => void;
+  onPlayNextEpisode?: () => void;
+  onQualitySelect?: (url: string) => void;
+  initialProgress?: number;
 }
 
 function fmtTime(s: number) {
   if (!s || !isFinite(s)) return '0:00';
-  const h = Math.floor(s/3600), m = Math.floor((s%3600)/60), sec = Math.floor(s%60);
-  return h > 0 ? `${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}` : `${m}:${String(sec).padStart(2,'0')}`;
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = Math.floor(s % 60);
+  return h > 0
+    ? `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
+    : `${m}:${String(sec).padStart(2, '0')}`;
 }
 
+type SettingsPanel = null | 'main' | 'quality' | 'subtitles' | 'speed' | 'display' | 'next_ep';
+type AspectRatio = 'contain' | 'cover' | 'fill' | '16/9' | '4/3' | '2.35/1';
+
+const ASPECT_LABELS: Record<AspectRatio, string> = {
+  'contain': 'Adatta (default)',
+  'cover': 'Riempi schermo',
+  'fill': 'Allunga',
+  '16/9': '16:9 forzato',
+  '4/3': '4:3',
+  '2.35/1': 'Cinemascope 2.35:1',
+};
+
 export default function VideoPlayer(props: VideoPlayerProps) {
-  const { url, title, subtitle, contentId, contentType, poster, backdrop, cast = [],
-    season, episode, nextEpisode, prevEpisode, onClose, onNext, onPrev, initialProgress = 0 } = props;
+  const {
+    url, title, subtitle, contentId, contentType, poster, backdrop, cast = [],
+    season, episode, referer, nextEpisode, prevEpisode,
+    availableQualities = [], subtitleTracks = [],
+    onClose, onNext, onPrev, onPlayNextEpisode, onQualitySelect, initialProgress = 0,
+  } = props;
 
   const { nuvioUser, upsertWatch } = useStore();
   const vidRef    = useRef<HTMLVideoElement>(null);
@@ -51,20 +65,33 @@ export default function VideoPlayer(props: VideoPlayerProps) {
   const cwTimer   = useRef<ReturnType<typeof setInterval>>();
   const hideTimer = useRef<ReturnType<typeof setTimeout>>();
 
-  const [buffering,    setBuffering]    = useState(true);
-  const [ready,        setReady]        = useState(false);
-  const [error,        setError]        = useState<string | null>(null);
-  const [playing,      setPlaying]      = useState(false);
-  const [currentTime,  setCurrentTime]  = useState(0);
-  const [duration,     setDuration]     = useState(0);
-  const [volume,       setVolume]       = useState(1);
-  const [muted,        setMuted]        = useState(false);
-  const [showControls, setShowControls] = useState(true);
-  const [showNextCard, setShowNextCard] = useState(false);
-  const [nextTriggered,setNextTriggered]= useState(false);
+  const [buffering,      setBuffering]      = useState(true);
+  const [ready,          setReady]          = useState(false);
+  const [error,          setError]          = useState<string | null>(null);
+  const [playing,        setPlaying]        = useState(false);
+  const [currentTime,    setCurrentTime]    = useState(0);
+  const [duration,       setDuration]       = useState(0);
+  const [volume,         setVolume]         = useState(1);
+  const [muted,          setMuted]          = useState(false);
+  const [showControls,   setShowControls]   = useState(true);
+  const [showNextCard,   setShowNextCard]   = useState(false);
+  const [nextTriggered,  setNextTriggered]  = useState(false);
+  const [settingsPanel,  setSettingsPanel]  = useState<SettingsPanel>(null);
+  const [activeQuality,  setActiveQuality]  = useState<string>(url);
+  const [activeSub,      setActiveSub]      = useState<string | null>(null);
+  const [playbackSpeed,  setPlaybackSpeed]  = useState(1);
+  const [showCastPanel,  setShowCastPanel]  = useState(false);
+  const [aspectRatio,    setAspectRatio]    = useState<AspectRatio>('contain');
+  const [nextEpThreshold, setNextEpThreshold] = useState(35); // secondi
+  const [hideDelay,      setHideDelay]      = useState(2000); // ms
 
-  const bgImg    = backdrop || poster;
-  const isMagnet = url.startsWith('magnet:');
+  const bgImg = backdrop || poster;
+
+  const usesMpv = url.startsWith('magnet:')
+    || url.includes('127.0.0.1:11470')
+    || url.includes('localhost:11470')
+    || url.includes('127.0.0.1:11473')
+    || url.includes('.m3u8');
 
   const syncCW = useCallback((t: number, d: number) => {
     if (!contentId || d < 5) return;
@@ -84,67 +111,44 @@ export default function VideoPlayer(props: VideoPlayerProps) {
     return () => clearInterval(cwTimer.current);
   }, [syncCW]);
 
-  // Lancia mpv per magnet e si ferma alla chiusura
+  // MPV
   useEffect(() => {
-    if (!isMagnet) return;
+    if (!usesMpv) return;
     setBuffering(false);
-    invoke('launch_mpv', { url, title: title ?? null }).catch(() => {});
+    invoke('launch_mpv', { url, title: title ?? null, referrer: referer ?? null })
+      .catch(e => setError(String(e)));
     return () => { invoke('mpv_stop').catch(() => {}); };
-  }, [url, isMagnet]);
+  }, [url, usesMpv, referer]);
 
-  // Carica stream nel video HTML5
+  // HTML5
   useEffect(() => {
-    if (isMagnet) return;
+    if (usesMpv) return;
     const v = vidRef.current;
     if (!v) return;
-
     if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
     v.src = '';
     setReady(false); setBuffering(true); setError(null);
     setPlaying(false); setCurrentTime(0); setDuration(0);
     setShowNextCard(false); setNextTriggered(false);
-
-    let cancelled = false;
-
-    if (isHls(url)) {
-      import('hls.js').then(({ default: Hls }) => {
-        if (cancelled || !v) return;
-        if (!Hls.isSupported()) { v.src = url; v.load(); return; }
-        const hls = new Hls(HLS_CONFIG as any);
-        hlsRef.current = hls;
-        hls.loadSource(url);
-        hls.attachMedia(v);
-        hls.on(Hls.Events.MANIFEST_PARSED, () => {
-          if (initialProgress > 0.01 && v.duration > 0) v.currentTime = v.duration * initialProgress;
-          v.play().catch(() => {});
-        });
-        hls.on(Hls.Events.ERROR, (_: any, d: any) => {
-          if (d.fatal) { setError(`HLS: ${d.details ?? d.type}`); setBuffering(false); }
-        });
-      });
-    } else {
-      v.src = url;
-      v.load();
-    }
-
-    return () => {
-      cancelled = true;
-      if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
-    };
-  }, [url, isMagnet]);
+    v.src = activeQuality;
+    v.playbackRate = playbackSpeed;
+    v.load();
+    return () => { if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; } };
+  }, [activeQuality, usesMpv]);
 
   useEffect(() => {
     const v = vidRef.current;
-    if (!v || isMagnet) return;
+    if (!v || usesMpv) return;
     const canPlay   = () => { setBuffering(false); setReady(true); v.play().catch(() => {}); };
-    const onPlay    = () => { setPlaying(true); setBuffering(false); };
-    const onPause   = () => setPlaying(false);
+    const onPlay_   = () => { setPlaying(true); setBuffering(false); setShowCastPanel(false); };
+    const onPause_  = () => { setPlaying(false); if (cast.length > 0) setShowCastPanel(true); };
     const onWait    = () => setBuffering(true);
     const onPlaying = () => { setBuffering(false); setReady(true); };
     const onTime    = () => {
       setCurrentTime(v.currentTime);
       const rem = v.duration - v.currentTime;
-      if (nextEpisode && rem < 35 && rem > 0 && !showNextCard) setShowNextCard(true);
+      if (nextEpisode && rem < nextEpThreshold && rem > 0 && !showNextCard && !nextTriggered)
+        setShowNextCard(true);
       if (nextEpisode && onNext && rem < 5 && !nextTriggered && !v.paused) {
         setNextTriggered(true); syncCW(v.currentTime, v.duration); onNext();
       }
@@ -152,52 +156,318 @@ export default function VideoPlayer(props: VideoPlayerProps) {
         syncCW(v.currentTime, v.duration); onClose();
       }
     };
-    const onDur  = () => setDuration(v.duration);
-    const onErr  = () => { setError(v.error?.message ?? 'Errore'); setBuffering(false); };
-    v.addEventListener('canplay', canPlay); v.addEventListener('play', onPlay);
-    v.addEventListener('pause', onPause); v.addEventListener('waiting', onWait);
+    const onDur = () => setDuration(v.duration);
+    const onErr = () => { setError(v.error?.message ?? 'Errore'); setBuffering(false); };
+    v.addEventListener('canplay', canPlay);   v.addEventListener('play', onPlay_);
+    v.addEventListener('pause', onPause_);   v.addEventListener('waiting', onWait);
     v.addEventListener('playing', onPlaying); v.addEventListener('timeupdate', onTime);
     v.addEventListener('durationchange', onDur); v.addEventListener('error', onErr);
     return () => {
-      v.removeEventListener('canplay', canPlay); v.removeEventListener('play', onPlay);
-      v.removeEventListener('pause', onPause); v.removeEventListener('waiting', onWait);
+      v.removeEventListener('canplay', canPlay);   v.removeEventListener('play', onPlay_);
+      v.removeEventListener('pause', onPause_);   v.removeEventListener('waiting', onWait);
       v.removeEventListener('playing', onPlaying); v.removeEventListener('timeupdate', onTime);
       v.removeEventListener('durationchange', onDur); v.removeEventListener('error', onErr);
     };
-  }, [url, isMagnet, showNextCard, nextTriggered]);
+  }, [url, usesMpv, showNextCard, nextTriggered, cast.length, nextEpisode, onNext, onClose, nextEpThreshold]);
+
+  // Aspect ratio
+  useEffect(() => {
+    const v = vidRef.current;
+    if (!v || usesMpv) return;
+    if (aspectRatio === 'contain') { v.style.objectFit = 'contain'; v.style.width = '100%'; v.style.height = '100%'; }
+    else if (aspectRatio === 'cover') { v.style.objectFit = 'cover'; v.style.width = '100%'; v.style.height = '100%'; }
+    else if (aspectRatio === 'fill') { v.style.objectFit = 'fill'; v.style.width = '100%'; v.style.height = '100%'; }
+    else if (aspectRatio === '16/9') { v.style.objectFit = 'contain'; v.style.aspectRatio = '16/9'; v.style.width = '100%'; v.style.height = 'auto'; v.style.maxHeight = '100%'; }
+    else if (aspectRatio === '4/3') { v.style.objectFit = 'contain'; v.style.aspectRatio = '4/3'; v.style.width = 'auto'; v.style.height = '100%'; v.style.maxWidth = '100%'; }
+    else if (aspectRatio === '2.35/1') { v.style.objectFit = 'contain'; v.style.aspectRatio = '2.35/1'; v.style.width = '100%'; v.style.height = 'auto'; v.style.maxHeight = '100%'; }
+  }, [aspectRatio, usesMpv]);
+
+  // Subtitles
+  useEffect(() => {
+    const v = vidRef.current;
+    if (!v || usesMpv) return;
+    Array.from(v.textTracks).forEach(t => { t.mode = 'disabled'; });
+    if (activeSub) {
+      const track = Array.from(v.textTracks).find(t => t.language === activeSub);
+      if (track) track.mode = 'showing';
+    }
+  }, [activeSub, usesMpv]);
+
+  useEffect(() => {
+    const v = vidRef.current;
+    if (v && !usesMpv) v.playbackRate = playbackSpeed;
+  }, [playbackSpeed, usesMpv]);
 
   function resetHide() {
-    setShowControls(true); clearTimeout(hideTimer.current);
-    hideTimer.current = setTimeout(() => setShowControls(false), 4000);
+    setShowControls(true);
+    clearTimeout(hideTimer.current);
+    hideTimer.current = setTimeout(() => {
+      if (!settingsPanel) setShowControls(false);
+    }, hideDelay);
   }
-  useEffect(() => { resetHide(); return () => clearTimeout(hideTimer.current); }, []);
+  useEffect(() => { resetHide(); return () => clearTimeout(hideTimer.current); }, [hideDelay]);
+  useEffect(() => { if (settingsPanel) setShowControls(true); }, [settingsPanel]);
 
   function handleClose() { invoke('mpv_stop').catch(() => {}); onClose(); }
-  function togglePlay() { const v = vidRef.current; if (!v) return; v.paused ? v.play() : v.pause(); }
+  function togglePlay() {
+    const v = vidRef.current;
+    if (!v) return;
+    if (v.paused) { v.play(); setShowCastPanel(false); } else { v.pause(); }
+  }
   function seek(pct: number) { const v = vidRef.current; if (v && duration > 0) v.currentTime = pct * duration; }
+  function seekRelative(secs: number) {
+    const v = vidRef.current;
+    if (v) v.currentTime = Math.max(0, Math.min(v.duration, v.currentTime + secs));
+  }
   function setVol(val: number) { const v = vidRef.current; if (v) { v.volume = val; setVolume(val); setMuted(val === 0); } }
   function toggleMute() { const v = vidRef.current; if (!v) return; v.muted = !v.muted; setMuted(v.muted); }
 
-  const progress = duration > 0 ? currentTime / duration : 0;
+  function handlePlayNextEpisode(e: React.MouseEvent) {
+    e.stopPropagation();
+    setShowNextCard(false);
+    setNextTriggered(true);
+    const v = vidRef.current;
+    if (v && v.duration > 0 && !usesMpv) syncCW(v.currentTime, v.duration);
+    else syncCW(currentTime, duration);
+    if (onPlayNextEpisode) onPlayNextEpisode();
+    else if (onNext) onNext();
+  }
 
-  if (isMagnet) return (
-    <div className="fixed inset-0 bg-black z-[100] flex items-center justify-center">
-      {bgImg && <><img src={bgImg} alt="" className="absolute inset-0 w-full h-full object-cover opacity-10 blur-2xl scale-110" /><div className="absolute inset-0 bg-black/80" /></>}
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (settingsPanel) { if (e.key === 'Escape') setSettingsPanel(null); return; }
+      switch (e.key) {
+        case ' ': case 'k': e.preventDefault(); togglePlay(); break;
+        case 'ArrowLeft':  e.preventDefault(); seekRelative(-10); break;
+        case 'ArrowRight': e.preventDefault(); seekRelative(10); break;
+        case 'ArrowUp':    e.preventDefault(); setVol(Math.min(1, volume + 0.1)); break;
+        case 'ArrowDown':  e.preventDefault(); setVol(Math.max(0, volume - 0.1)); break;
+        case 'm': toggleMute(); break;
+        case 'f': vidRef.current?.requestFullscreen?.(); break;
+        case 'Escape': handleClose(); break;
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [volume, settingsPanel, playing]);
+
+  const progress = duration > 0 ? currentTime / duration : 0;
+  const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
+  const NEXT_EP_THRESHOLDS = [15, 30, 45, 60, 90];
+  const HIDE_DELAYS = [{ label: '1 secondo', ms: 1000 }, { label: '2 secondi', ms: 2000 }, { label: '3 secondi', ms: 3000 }, { label: '5 secondi', ms: 5000 }];
+  const ASPECTS: AspectRatio[] = ['contain', 'cover', 'fill', '16/9', '4/3', '2.35/1'];
+  const secsLeft = Math.max(0, Math.ceil(duration - currentTime - 5));
+
+  const SettingsMenu = () => (
+    <div className="absolute bottom-20 right-5 z-30 bg-black/95 border border-white/10 rounded-2xl overflow-hidden shadow-2xl w-68"
+      style={{ width: 272 }}
+      onClick={e => e.stopPropagation()}>
+
+      {settingsPanel === 'main' && (
+        <div className="py-1">
+          <div className="px-4 py-2.5 text-xs font-bold text-white/40 uppercase tracking-widest border-b border-white/5">Impostazioni</div>
+          {availableQualities.length > 0 && (
+            <button onClick={() => setSettingsPanel('quality')}
+              className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 text-white text-sm">
+              <span className="flex items-center gap-2.5">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-white/50"><path d="M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.42 0l6.58-6.58c.94-.94.94-2.48 0-3.42L12 2Z"/><path d="M7 7h.01"/></svg>
+                Qualità
+              </span>
+              <span className="text-white/40 text-xs flex items-center gap-1">
+                {availableQualities.find(q => q.url === activeQuality)?.label ?? 'Auto'}
+                <ChevronRight size={13} />
+              </span>
+            </button>
+          )}
+          <button onClick={() => setSettingsPanel('subtitles')}
+            className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 text-white text-sm">
+            <span className="flex items-center gap-2.5">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-white/50"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M7 15h4M15 15h2M7 10h2M13 10h4"/></svg>
+              Sottotitoli
+            </span>
+            <span className="text-white/40 text-xs flex items-center gap-1">
+              {activeSub ? (subtitleTracks.find(s => s.lang === activeSub)?.label ?? activeSub) : 'Off'}
+              <ChevronRight size={13} />
+            </span>
+          </button>
+          <button onClick={() => setSettingsPanel('speed')}
+            className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 text-white text-sm">
+            <span className="flex items-center gap-2.5">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-white/50"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+              Velocità
+            </span>
+            <span className="text-white/40 text-xs flex items-center gap-1">
+              {playbackSpeed === 1 ? 'Normale' : `${playbackSpeed}x`}
+              <ChevronRight size={13} />
+            </span>
+          </button>
+          <button onClick={() => setSettingsPanel('display')}
+            className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 text-white text-sm">
+            <span className="flex items-center gap-2.5">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-white/50"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+              Formato video
+            </span>
+            <span className="text-white/40 text-xs flex items-center gap-1">
+              {ASPECT_LABELS[aspectRatio].split(' ')[0]}
+              <ChevronRight size={13} />
+            </span>
+          </button>
+          <button onClick={() => setSettingsPanel('next_ep')}
+            className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 text-white text-sm">
+            <span className="flex items-center gap-2.5">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-white/50"><polygon points="5 3 19 12 5 21 5 3"/><line x1="19" y1="3" x2="19" y2="21"/></svg>
+              Prossimo ep.
+            </span>
+            <span className="text-white/40 text-xs flex items-center gap-1">
+              {nextEpThreshold}s prima
+              <ChevronRight size={13} />
+            </span>
+          </button>
+        </div>
+      )}
+
+      {settingsPanel === 'quality' && (
+        <div className="py-1">
+          <button onClick={() => setSettingsPanel('main')} className="w-full flex items-center gap-2 px-4 py-3 hover:bg-white/5 text-white/60 text-sm border-b border-white/5">
+            <ChevronLeft size={14} />Qualità
+          </button>
+          {availableQualities.map(q => (
+            <button key={q.url} onClick={() => {
+              setActiveQuality(q.url);
+              onQualitySelect?.(q.url);
+              setSettingsPanel(null);
+            }} className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 text-white text-sm">
+              {q.label}
+              {activeQuality === q.url && <Check size={14} className="text-[color:var(--accent)]" />}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {settingsPanel === 'subtitles' && (
+        <div className="py-1">
+          <button onClick={() => setSettingsPanel('main')} className="w-full flex items-center gap-2 px-4 py-3 hover:bg-white/5 text-white/60 text-sm border-b border-white/5">
+            <ChevronLeft size={14} />Sottotitoli
+          </button>
+          <button onClick={() => { setActiveSub(null); setSettingsPanel(null); }}
+            className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 text-white text-sm">
+            Disattivati {!activeSub && <Check size={14} className="text-[color:var(--accent)]" />}
+          </button>
+          {subtitleTracks.length === 0 && (
+            <div className="px-4 py-3 text-white/30 text-xs">Nessun sottotitolo disponibile per questo stream.</div>
+          )}
+          {subtitleTracks.map(s => (
+            <button key={s.lang} onClick={() => { setActiveSub(s.lang); setSettingsPanel(null); }}
+              className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 text-white text-sm">
+              {s.label} {activeSub === s.lang && <Check size={14} className="text-[color:var(--accent)]" />}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {settingsPanel === 'speed' && (
+        <div className="py-1">
+          <button onClick={() => setSettingsPanel('main')} className="w-full flex items-center gap-2 px-4 py-3 hover:bg-white/5 text-white/60 text-sm border-b border-white/5">
+            <ChevronLeft size={14} />Velocità
+          </button>
+          {SPEEDS.map(s => (
+            <button key={s} onClick={() => { setPlaybackSpeed(s); setSettingsPanel(null); }}
+              className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 text-white text-sm">
+              {s === 1 ? 'Normale' : `${s}x`}
+              {playbackSpeed === s && <Check size={14} className="text-[color:var(--accent)]" />}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {settingsPanel === 'display' && (
+        <div className="py-1">
+          <button onClick={() => setSettingsPanel('main')} className="w-full flex items-center gap-2 px-4 py-3 hover:bg-white/5 text-white/60 text-sm border-b border-white/5">
+            <ChevronLeft size={14} />Formato video
+          </button>
+          {ASPECTS.map(a => (
+            <button key={a} onClick={() => { setAspectRatio(a); setSettingsPanel(null); }}
+              className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 text-white text-sm">
+              <span>
+                <span className="block">{ASPECT_LABELS[a]}</span>
+              </span>
+              {aspectRatio === a && <Check size={14} className="text-[color:var(--accent)]" />}
+            </button>
+          ))}
+          <div className="border-t border-white/5 mt-1 pt-1">
+            <div className="px-4 py-2 text-xs text-white/40 uppercase tracking-widest">Nascondi overlay dopo</div>
+            {HIDE_DELAYS.map(d => (
+              <button key={d.ms} onClick={() => { setHideDelay(d.ms); setSettingsPanel(null); }}
+                className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 text-white text-sm">
+                {d.label}
+                {hideDelay === d.ms && <Check size={14} className="text-[color:var(--accent)]" />}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {settingsPanel === 'next_ep' && (
+        <div className="py-1">
+          <button onClick={() => setSettingsPanel('main')} className="w-full flex items-center gap-2 px-4 py-3 hover:bg-white/5 text-white/60 text-sm border-b border-white/5">
+            <ChevronLeft size={14} />Popup prossimo episodio
+          </button>
+          <div className="px-4 py-2 text-xs text-white/40">Mostra il popup X secondi prima della fine</div>
+          {NEXT_EP_THRESHOLDS.map(t => (
+            <button key={t} onClick={() => { setNextEpThreshold(t); setSettingsPanel(null); }}
+              className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 text-white text-sm">
+              {t} secondi prima
+              {nextEpThreshold === t && <Check size={14} className="text-[color:var(--accent)]" />}
+            </button>
+          ))}
+          <button onClick={() => { setNextEpThreshold(9999); setSettingsPanel(null); }}
+            className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 text-white text-sm">
+            Mai
+            {nextEpThreshold === 9999 && <Check size={14} className="text-[color:var(--accent)]" />}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+
+  // ── MPV screen ─────────────────────────────────────────────────────────────
+  if (usesMpv) return (
+    <div className="fixed inset-0 bg-black z-[100] flex items-center justify-center"
+      onMouseMove={resetHide} onClick={() => setSettingsPanel(null)}>
+      {bgImg && <>
+        <img src={bgImg} alt="" className="absolute inset-0 w-full h-full object-cover opacity-10 blur-2xl scale-110" />
+        <div className="absolute inset-0 bg-black/80" />
+      </>}
       <div className="relative z-10 flex flex-col items-center gap-5 text-center max-w-sm px-6">
         {poster && <img src={poster} alt={title} className="h-28 rounded-xl shadow-2xl" />}
         {title && <p className="text-white font-bold text-lg">{title}</p>}
-        <div className="bg-white/5 border border-white/10 rounded-2xl px-6 py-4 flex flex-col items-center gap-2">
-          <div className="w-8 h-8 border-2 border-white/20 border-t-white rounded-full animate-spin" />
-          <p className="text-white/70 text-sm">Riproduzione in mpv...</p>
-        </div>
-        <button onClick={handleClose} className="text-white/40 hover:text-white text-sm flex items-center gap-1.5"><ArrowLeft size={14} />Indietro</button>
+        {subtitle && <p className="text-white/50 text-sm">{subtitle}</p>}
+        {error ? (
+          <div className="bg-red-500/10 border border-red-500/20 rounded-2xl px-5 py-4 w-full text-left space-y-2">
+            <p className="text-red-400 font-semibold text-sm">Impossibile avviare mpv</p>
+            <p className="text-white/50 text-xs">{error}</p>
+            <p className="text-white/30 text-xs">Verifica che mpv.exe sia nella cartella dell'app.</p>
+          </div>
+        ) : (
+          <div className="bg-white/5 border border-white/10 rounded-2xl px-6 py-4 flex flex-col items-center gap-2">
+            <div className="w-8 h-8 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+            <p className="text-white/70 text-sm">Riproduzione in corso...</p>
+          </div>
+        )}
+        <button onClick={handleClose} className="text-white/40 hover:text-white text-sm flex items-center gap-1.5">
+          <ArrowLeft size={14} />Indietro
+        </button>
       </div>
     </div>
   );
 
+  // ── Error screen ───────────────────────────────────────────────────────────
   if (error) return (
     <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black">
-      {bgImg && <><img src={bgImg} alt="" className="absolute inset-0 w-full h-full object-cover opacity-15 blur-2xl scale-110" /><div className="absolute inset-0 bg-black/80" /></>}
+      {bgImg && <>
+        <img src={bgImg} alt="" className="absolute inset-0 w-full h-full object-cover opacity-15 blur-2xl scale-110" />
+        <div className="absolute inset-0 bg-black/80" />
+      </>}
       <div className="relative z-10 flex flex-col items-center gap-5 text-center max-w-sm px-6">
         {poster && <img src={poster} alt={title} className="h-32 rounded-2xl shadow-2xl border border-white/10" />}
         {title && <p className="text-white font-bold text-lg">{title}</p>}
@@ -206,18 +476,36 @@ export default function VideoPlayer(props: VideoPlayerProps) {
           <p className="text-white/50 text-xs">{error}</p>
         </div>
         <div className="flex gap-2">
-          <button onClick={() => { setError(null); setBuffering(true); const v = vidRef.current; if(v){v.load();v.play().catch(()=>{});} }}
-            className="flex items-center gap-2 py-2.5 px-5 text-sm text-white bg-white/10 hover:bg-white/20 rounded-xl">↻ Riprova</button>
-          <button onClick={handleClose} className="flex items-center gap-2 py-2.5 px-5 text-sm text-white bg-white/10 hover:bg-white/20 rounded-xl"><ArrowLeft size={14} />Cambia stream</button>
+          <button onClick={() => { setError(null); setBuffering(true); const v = vidRef.current; if (v) { v.load(); v.play().catch(() => {}); } }}
+            className="flex items-center gap-2 py-2.5 px-5 text-sm text-white bg-white/10 hover:bg-white/20 rounded-xl">Riprova</button>
+          <button onClick={handleClose} className="flex items-center gap-2 py-2.5 px-5 text-sm text-white bg-white/10 hover:bg-white/20 rounded-xl">
+            <ArrowLeft size={14} />Cambia stream
+          </button>
         </div>
       </div>
     </div>
   );
 
+  // ── Main HTML5 player ──────────────────────────────────────────────────────
   return (
-    <div className="fixed inset-0 z-[100] bg-black" onMouseMove={resetHide} onClick={resetHide}>
-      <video ref={vidRef} className="absolute inset-0 w-full h-full object-contain" playsInline />
+    <div
+      className="fixed inset-0 z-[100] bg-black select-none"
+      onMouseMove={resetHide}
+      onClick={() => { if (settingsPanel) { setSettingsPanel(null); } else { togglePlay(); resetHide(); } }}
+    >
+      <video
+        ref={vidRef}
+        className="absolute inset-0 w-full h-full"
+        style={{ objectFit: aspectRatio === 'contain' ? 'contain' : aspectRatio === 'cover' ? 'cover' : aspectRatio === 'fill' ? 'fill' : 'contain' }}
+        playsInline
+      >
+        {subtitleTracks.map(s => (
+          <track key={s.lang} kind="subtitles" label={s.label} srcLang={s.lang} src={s.url}
+            default={s.lang === activeSub} />
+        ))}
+      </video>
 
+      {/* Buffering */}
       {buffering && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/50 z-10 pointer-events-none">
           {bgImg && <img src={bgImg} alt="" className="absolute inset-0 w-full h-full object-cover opacity-20 blur-xl" />}
@@ -228,62 +516,153 @@ export default function VideoPlayer(props: VideoPlayerProps) {
         </div>
       )}
 
-      {ready && cast.length > 0 && (
-        <div className={`absolute bottom-20 left-6 z-10 pointer-events-none transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0'}`}>
-          <div className="flex gap-3">
-            {cast.slice(0, 8).map((p, i) => (
-              <div key={i} className="flex flex-col items-center gap-1">
-                <div className="w-10 h-10 rounded-full overflow-hidden border border-white/20 bg-white/10">
-                  {p.photo
-                    ? <img src={p.photo} alt={p.name} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).src = `https://api.dicebear.com/9.x/personas/svg?seed=${encodeURIComponent(p.name)}`; }} />
-                    : <img src={`https://api.dicebear.com/9.x/personas/svg?seed=${encodeURIComponent(p.name)}`} alt={p.name} className="w-full h-full object-cover" />}
+      {/* Cast overlay su pausa */}
+      {showCastPanel && cast.length > 0 && !playing && (
+        <div className="absolute inset-0 z-10 flex items-end pointer-events-none"
+          style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.3) 40%, transparent 70%)' }}>
+          <div className="w-full px-6 pb-28">
+            <p className="text-xs font-bold text-white/40 uppercase tracking-widest mb-3">Cast</p>
+            <div className="flex gap-4 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
+              {cast.slice(0, 12).map((p, i) => (
+                <div key={i} className="flex-shrink-0 flex flex-col items-center gap-1.5 w-16">
+                  <div className="w-14 h-14 rounded-full overflow-hidden border-2 border-white/20 bg-white/10">
+                    {p.photo
+                      ? <img src={p.photo} alt={p.name} className="w-full h-full object-cover object-top"
+                          onError={e => { (e.target as HTMLImageElement).src = `https://api.dicebear.com/9.x/personas/svg?seed=${encodeURIComponent(p.name)}`; }} />
+                      : <img src={`https://api.dicebear.com/9.x/personas/svg?seed=${encodeURIComponent(p.name)}`} alt={p.name} className="w-full h-full object-cover" />}
+                  </div>
+                  <p className="text-white/80 text-[10px] font-semibold text-center leading-tight line-clamp-2">{p.name}</p>
+                  {p.character && <p className="text-white/40 text-[9px] text-center leading-tight line-clamp-1">{p.character}</p>}
                 </div>
-                <p className="text-white/40 text-[9px] truncate w-10 text-center">{p.name}</p>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         </div>
       )}
 
-      <div className={`absolute top-0 left-0 right-0 z-20 flex items-center gap-3 px-5 py-4 bg-gradient-to-b from-black/80 to-transparent transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
-        <button onClick={handleClose} className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white"><ArrowLeft size={18} /></button>
+      {/* Top bar */}
+      <div className={`absolute top-0 left-0 right-0 z-20 flex items-center gap-3 px-5 py-4
+        bg-gradient-to-b from-black/80 to-transparent transition-opacity duration-300
+        ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+        <button onClick={e => { e.stopPropagation(); handleClose(); }}
+          className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white">
+          <ArrowLeft size={18} />
+        </button>
         <div className="flex-1 min-w-0">
           {title && <p className="text-white font-semibold text-base truncate">{title}</p>}
           {subtitle && <p className="text-white/50 text-xs truncate">{subtitle}</p>}
         </div>
       </div>
 
-      {showNextCard && nextEpisode && (
-        <div className="absolute top-16 right-6 z-20 bg-black/90 border border-white/20 rounded-2xl p-4 flex items-center gap-3 max-w-xs shadow-2xl">
-          <div><p className="text-white/50 text-xs">Prossimo</p><p className="text-white text-sm font-medium truncate max-w-[140px]">{nextEpisode.title}</p></div>
-          {onNext && <button onClick={() => { setShowNextCard(false); syncCW(currentTime, duration); onNext(); }}
-            className="flex items-center gap-1 px-3 py-1.5 rounded-full text-sm text-white font-medium flex-shrink-0" style={{ backgroundColor: 'var(--accent,#7c3aed)' }}>
-            <ChevronRight size={14} />Vai</button>}
-          <button onClick={() => setShowNextCard(false)} className="text-white/40 hover:text-white flex-shrink-0"><X size={14} /></button>
+      {/* Next episode card — bottom right */}
+      {showNextCard && nextEpisode && nextEpThreshold < 9999 && (
+        <div className="absolute bottom-24 right-6 z-20 w-72">
+          <div className="bg-black/95 border border-white/15 rounded-2xl overflow-hidden shadow-2xl">
+            {nextEpisode.thumbnail ? (
+              <div className="relative w-full h-36">
+                <img src={nextEpisode.thumbnail} alt={nextEpisode.title} className="w-full h-full object-cover" />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
+                <div className="absolute top-2 left-3">
+                  <span className="text-[10px] text-white/60 uppercase tracking-widest font-bold bg-black/40 px-2 py-0.5 rounded">
+                    Prossimo episodio
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div className="w-full h-12 bg-white/5 flex items-center px-4">
+                <p className="text-[10px] text-white/40 uppercase tracking-widest">Prossimo episodio</p>
+              </div>
+            )}
+            <div className="p-3 flex items-center gap-3">
+              <div className="flex-1 min-w-0">
+                <p className="text-white text-sm font-semibold truncate">{nextEpisode.title}</p>
+                <p className="text-white/40 text-xs mt-0.5">
+                  {secsLeft > 0 ? `Avvio automatico tra ${secsLeft}s` : 'Caricamento...'}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {onPlayNextEpisode && (
+                  <button onClick={handlePlayNextEpisode}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm text-white font-semibold"
+                    style={{ backgroundColor: 'var(--accent,#7c3aed)' }}>
+                    <Play size={12} className="fill-white" />Guarda
+                  </button>
+                )}
+                <button onClick={e => { e.stopPropagation(); setShowNextCard(false); }}
+                  className="p-1.5 text-white/40 hover:text-white rounded-lg hover:bg-white/10">
+                  <X size={14} />
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
-      <div className={`absolute bottom-0 left-0 right-0 z-20 transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+      {/* Settings menu */}
+      {settingsPanel && <SettingsMenu />}
+
+      {/* Bottom controls */}
+      <div className={`absolute bottom-0 left-0 right-0 z-20 transition-opacity duration-300
+        ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
         <div className="bg-gradient-to-t from-black/95 via-black/70 to-transparent px-5 pt-10 pb-5">
-          <div className="mb-3 h-1 bg-white/20 rounded-full cursor-pointer hover:h-2 transition-all"
-            onClick={e => { const r = e.currentTarget.getBoundingClientRect(); seek((e.clientX - r.left) / r.width); }}>
-            <div className="h-full rounded-full bg-white" style={{ width: `${progress * 100}%` }} />
+          <div className="mb-3 group cursor-pointer"
+            onClick={e => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); seek((e.clientX - r.left) / r.width); }}>
+            <div className="h-1 group-hover:h-2 transition-all rounded-full bg-white/20 relative">
+              <div className="h-full rounded-full bg-white transition-all" style={{ width: `${progress * 100}%` }} />
+              <div className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-white shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"
+                style={{ left: `calc(${progress * 100}% - 6px)` }} />
+            </div>
           </div>
-          <div className="flex items-center gap-3">
-            {prevEpisode && onPrev && <button onClick={onPrev} className="p-2 text-white/60 hover:text-white"><SkipBack size={18} /></button>}
+          <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+            {prevEpisode && onPrev && (
+              <button onClick={onPrev} className="p-2 text-white/60 hover:text-white" title={prevEpisode.title}>
+                <SkipBack size={18} />
+              </button>
+            )}
+            <button onClick={() => seekRelative(-10)} className="p-2 text-white/60 hover:text-white" title="-10s">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12.5 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zm0 16a7 7 0 1 1 0-14 7 7 0 0 1 0 14z" opacity=".3"/>
+                <path d="M12.5 3a9 9 0 0 0-9 9h2a7 7 0 0 1 7-7V3z"/>
+                <path d="M6.5 5.5 5.09 4.09A9 9 0 0 0 3.5 12h2a7 7 0 0 1 1.2-3.95L5.5 6.8 6.5 5.5z"/>
+                <text x="8.5" y="15" fontSize="6" fontWeight="bold" fill="currentColor">10</text>
+              </svg>
+            </button>
             <button onClick={togglePlay} className="p-2.5 rounded-full bg-white text-black hover:bg-white/90">
               {playing ? <Pause size={18} /> : <Play size={18} className="fill-black ml-0.5" />}
             </button>
-            {nextEpisode && onNext && <button onClick={onNext} className="p-2 text-white/60 hover:text-white"><SkipForward size={18} /></button>}
-            <span className="text-white/70 text-sm font-mono tabular-nums">{fmtTime(currentTime)} / {fmtTime(duration)}</span>
+            <button onClick={() => seekRelative(10)} className="p-2 text-white/60 hover:text-white" title="+10s">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M11.5 3a9 9 0 1 1 0 18 9 9 0 0 1 0-18zm0 16a7 7 0 1 0 0-14 7 7 0 0 0 0 14z" opacity=".3"/>
+                <path d="M11.5 3a9 9 0 0 1 9 9h-2a7 7 0 0 0-7-7V3z"/>
+                <path d="M17.5 5.5 18.91 4.09A9 9 0 0 1 20.5 12h-2a7 7 0 0 0-1.2-3.95l1.2-1.25L17.5 5.5z"/>
+                <text x="8" y="15" fontSize="6" fontWeight="bold" fill="currentColor">10</text>
+              </svg>
+            </button>
+            {nextEpisode && onPlayNextEpisode && (
+              <button onClick={handlePlayNextEpisode} className="p-2 text-white/60 hover:text-white" title={nextEpisode.title}>
+                <SkipForward size={18} />
+              </button>
+            )}
+            <span className="text-white/70 text-sm font-mono tabular-nums ml-1">
+              {fmtTime(currentTime)} / {fmtTime(duration)}
+            </span>
             <div className="flex-1" />
             <button onClick={toggleMute} className="p-2 text-white/60 hover:text-white">
               {muted || volume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
             </button>
             <input type="range" min={0} max={1} step={0.05} value={muted ? 0 : volume}
               onChange={e => setVol(Number(e.target.value))} className="w-20 accent-white" />
-            <button onClick={() => vidRef.current?.requestFullscreen?.()} className="p-2 text-white/60 hover:text-white"><Maximize size={16} /></button>
-            <button onClick={handleClose} className="p-2 text-white/60 hover:text-white"><X size={18} /></button>
+            <button
+              onClick={e => { e.stopPropagation(); setSettingsPanel(p => p ? null : 'main'); }}
+              className={`p-2 transition-colors ${settingsPanel ? 'text-white' : 'text-white/60 hover:text-white'}`}>
+              <Settings size={16} />
+            </button>
+            <button onClick={() => vidRef.current?.requestFullscreen?.()} className="p-2 text-white/60 hover:text-white">
+              <Maximize size={16} />
+            </button>
+            <button onClick={handleClose} className="p-2 text-white/60 hover:text-white">
+              <X size={18} />
+            </button>
           </div>
         </div>
       </div>

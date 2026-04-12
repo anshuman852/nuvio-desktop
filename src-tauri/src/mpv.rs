@@ -20,9 +20,7 @@ impl MpvManager {
         }
     }
 
-    /// Trova il binario mpv (sidecar bundled o nel PATH)
     fn find_mpv() -> Result<PathBuf, Box<dyn std::error::Error>> {
-        // 1. Sidecar bundled nella cartella dell'app
         if let Ok(exe) = std::env::current_exe() {
             let dir = exe.parent().unwrap_or(Path::new("."));
             for name in &["mpv.exe", "mpv"] {
@@ -32,7 +30,6 @@ impl MpvManager {
                 }
             }
         }
-        // 2. Nel PATH di sistema tramite where/which
         #[cfg(target_os = "windows")]
         {
             if let Ok(out) = Command::new("where").arg("mpv.exe").output() {
@@ -66,7 +63,6 @@ impl MpvManager {
     }
 
     fn base_args(url: &str, title: Option<&str>, ipc: &str) -> Vec<String> {
-        let is_magnet = url.starts_with("magnet:");
         let mut args = vec![
             url.to_string(),
             format!("--input-ipc-server={}", ipc),
@@ -77,48 +73,62 @@ impl MpvManager {
         if let Some(t) = title {
             args.push(format!("--force-media-title={}", t));
         }
-        if is_magnet {
-            // Per i magnet, mpv usa il protocollo torrent se disponibile
-            args.push("--ytdl=no".to_string());
-        }
         args
     }
 
-    /// Lancia mpv in finestra separata (external mode)
-    pub fn launch(&mut self, url: &str, title: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+    /// Lancia mpv con referrer opzionale — usato per tutti i tipi di stream
+    pub fn launch_with_referrer(&mut self, url: &str, title: Option<&str>, referrer: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
         self.stop();
         let mpv = Self::find_mpv()?;
         let ipc = Self::ipc_name();
         let mut args = Self::base_args(url, title, &ipc);
         args.push("--ontop=yes".to_string());
         args.push("--geometry=900x506+100+100".to_string());
-
-        let child = Command::new(&mpv).args(&args).spawn()?;
+        args.push("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36".to_string());
+        args.push("--network-timeout=30".to_string());
+        args.push("--cache=yes".to_string());
+        args.push("--demuxer-max-bytes=150M".to_string());
+        args.push("--hwdec=auto".to_string());
+        if !url.starts_with("magnet:") {
+            args.push("--ytdl=no".to_string());
+        }
+        if let Some(r) = referrer {
+            args.push(format!("--referrer={}", r));
+            eprintln!("[mpv] referrer={}", r);
+        }
+        eprintln!("[mpv] launch_with_referrer url={}", url);
+        eprintln!("[mpv] path={}", mpv.display());
+        let child = Command::new(&mpv)
+    .args(&args)
+    .args(&["--log-file=C:\\Users\\dakos\\Desktop\\mpv-debug.log"])
+    .spawn()?;
         self.process = Some(child);
         self.ipc_path = Some(ipc);
-
-        // Aspetta che la pipe sia pronta
         std::thread::sleep(std::time::Duration::from_millis(500));
         Ok(())
     }
 
-    /// Lancia mpv embedded nella finestra Tauri tramite HWND (Windows only)
+    /// Lancia mpv in finestra separata (legacy, senza referrer)
+    pub fn launch(&mut self, url: &str, title: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+        self.launch_with_referrer(url, title, None)
+    }
+
     #[cfg(target_os = "windows")]
     pub fn launch_embedded(&mut self, url: &str, title: Option<&str>, hwnd: isize) -> Result<(), Box<dyn std::error::Error>> {
         self.stop();
         let mpv = Self::find_mpv()?;
         let ipc = Self::ipc_name();
         let mut args = Self::base_args(url, title, &ipc);
-
-        // Embedding: usa HWND del panel nativo
         args.push(format!("--wid={}", hwnd));
         args.push("--no-border".to_string());
         args.push("--no-osc".to_string());
         args.push("--no-input-default-bindings".to_string());
         args.push("--keepaspect=yes".to_string());
         args.push("--video-unscaled=downscale-big".to_string());
-
-        let child = Command::new(&mpv).args(&args).spawn()?;
+        let child = Command::new(&mpv)
+    .args(&args)
+    .args(&["--log-file=C:\\Users\\dakos\\Desktop\\mpv-debug.log"])
+    .spawn()?;
         self.process = Some(child);
         self.ipc_path = Some(ipc);
         std::thread::sleep(std::time::Duration::from_millis(500));
@@ -130,12 +140,10 @@ impl MpvManager {
             Some(p) => p.clone(),
             None => return Err("mpv non in esecuzione".into()),
         };
-
         let mut command_args = vec![Value::String(cmd.to_string())];
         command_args.extend_from_slice(args);
         let payload = serde_json::json!({ "command": command_args });
         let msg = format!("{}\n", payload.to_string());
-
         #[cfg(target_os = "windows")]
         {
             use std::fs::OpenOptions;
@@ -147,7 +155,6 @@ impl MpvManager {
             let v: Value = serde_json::from_str(&response).unwrap_or(Value::Null);
             return Ok(v.get("data").cloned().unwrap_or(Value::Null));
         }
-
         #[cfg(not(target_os = "windows"))]
         {
             use std::os::unix::net::UnixStream;
@@ -163,14 +170,12 @@ impl MpvManager {
 
     pub fn get_position(&self) -> f64 {
         self.send_command("get_property", &[serde_json::json!("time-pos")])
-            .map(|v| v.as_f64().unwrap_or(0.0))
-            .unwrap_or(0.0)
+            .map(|v| v.as_f64().unwrap_or(0.0)).unwrap_or(0.0)
     }
 
     pub fn get_duration(&self) -> f64 {
         self.send_command("get_property", &[serde_json::json!("duration")])
-            .map(|v| v.as_f64().unwrap_or(0.0))
-            .unwrap_or(0.0)
+            .map(|v| v.as_f64().unwrap_or(0.0)).unwrap_or(0.0)
     }
 
     pub fn stop(&mut self) {

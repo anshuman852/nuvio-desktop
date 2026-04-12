@@ -22,6 +22,7 @@ const POPULAR_ADDONS = [
     types: ['movie', 'series'],
     official: true,
     category: 'Metadata',
+    configUrl: 'https://v3-cinemeta.strem.io/configure',
   },
   {
     id: 'com.stremio.torrentio',
@@ -32,7 +33,7 @@ const POPULAR_ADDONS = [
     types: ['movie', 'series'],
     official: false,
     category: 'Stream',
-    configUrl: 'https://torrentio.strem.fun',
+    configUrl: 'https://torrentio.strem.fun/configure',
   },
   {
     id: 'org.opensubtitles.v3',
@@ -43,6 +44,7 @@ const POPULAR_ADDONS = [
     types: ['movie', 'series'],
     official: true,
     category: 'Sottotitoli',
+    configUrl: 'https://opensubtitles-v3.strem.io/configure',
   },
   {
     id: 'com.stremio.rpdb',
@@ -64,6 +66,7 @@ const POPULAR_ADDONS = [
     types: ['series', 'anime'],
     official: false,
     category: 'Anime',
+    configUrl: 'https://anime-kitsu.strem.fun/configure',
   },
   {
     id: 'community.thepiratebay',
@@ -74,6 +77,7 @@ const POPULAR_ADDONS = [
     types: ['movie', 'series'],
     official: false,
     category: 'Stream',
+    configUrl: 'https://thepiratebay.strem.fun/configure',
   },
   {
     id: 'com.stremio.imvdb',
@@ -84,6 +88,7 @@ const POPULAR_ADDONS = [
     types: ['movie'],
     official: false,
     category: 'Musica',
+    configUrl: 'https://imvdb.strem.io/configure',
   },
   {
     id: 'community.subsource',
@@ -94,6 +99,7 @@ const POPULAR_ADDONS = [
     types: ['movie', 'series'],
     official: false,
     category: 'Sottotitoli',
+    configUrl: 'https://subsource.strem.fun/configure',
   },
   {
     id: 'community.dlive',
@@ -104,6 +110,7 @@ const POPULAR_ADDONS = [
     types: ['tv'],
     official: false,
     category: 'Live TV',
+    configUrl: 'https://dlive.strem.fun/configure',
   },
   {
     id: 'community.stremio-jackett',
@@ -114,6 +121,7 @@ const POPULAR_ADDONS = [
     types: ['movie', 'series'],
     official: false,
     category: 'Stream',
+    configUrl: 'http://localhost:9117/stremio/manifest.json',
   },
 ];
 
@@ -122,7 +130,6 @@ const CATEGORIES = ['Tutti', ...Array.from(new Set(POPULAR_ADDONS.map(a => a.cat
 // ─── Fetch da stremio-addons.net con fallback ─────────────────────────────────
 
 async function fetchFromStremioNet(search = '', page = 1): Promise<{ addons: any[]; total: number; fromNet: boolean }> {
-  // Prova vari endpoint
   const endpoints = [
     `https://stremio-addons.net/api/v2/list?take=30&skip=${(page-1)*30}${search ? `&search=${encodeURIComponent(search)}` : ''}`,
     `https://stremio-addons.net/api/v1/list?page=${page}${search ? `&q=${encodeURIComponent(search)}` : ''}`,
@@ -144,7 +151,6 @@ async function fetchFromStremioNet(search = '', page = 1): Promise<{ addons: any
     } catch { /* prova prossimo endpoint */ }
   }
 
-  // Fallback: lista locale filtrata
   const filtered = POPULAR_ADDONS.filter(a =>
     !search || a.name.toLowerCase().includes(search.toLowerCase()) || a.description.toLowerCase().includes(search.toLowerCase())
   );
@@ -158,7 +164,15 @@ function GearDialog({ addon, onClose, onConfigure }: { addon: Addon; onClose: ()
   const [name, setName] = useState(addon.name);
   const [logo, setLogo] = useState(addon.logo ?? '');
   const [saved, setSaved] = useState(false);
-  const configUrl = `${normalizeUrl(addon.url)}/configure`;
+  
+  // Costruisci l'URL di configurazione
+  const getConfigUrl = () => {
+    const baseUrl = normalizeUrl(addon.url);
+    // Rimuovi /manifest.json se presente
+    const cleanUrl = baseUrl.replace(/\/manifest\.json$/, '').replace(/\/$/, '');
+    return `${cleanUrl}/configure`;
+  };
+  const configUrl = getConfigUrl();
 
   function save() {
     updateAddon(addon.id, { name, logo: logo || undefined });
@@ -191,9 +205,9 @@ function GearDialog({ addon, onClose, onConfigure }: { addon: Addon; onClose: ()
           <div>
             <label className="text-xs text-white/40 uppercase tracking-wider mb-1.5 block">URL Manifest</label>
             <div className="flex gap-2">
-              <input value={`${addon.url}/manifest.json`} readOnly
+              <input value={`${normalizeUrl(addon.url)}/manifest.json`} readOnly
                 className="flex-1 px-3 py-2.5 rounded-xl bg-white/5 border border-white/5 text-xs text-white/40 font-mono" />
-              <button onClick={() => openExternal(`${addon.url}/manifest.json`)}
+              <button onClick={() => openExternal(`${normalizeUrl(addon.url)}/manifest.json`)}
                 className="p-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-white/40 hover:text-white">
                 <ExternalLink size={14} />
               </button>
@@ -206,7 +220,7 @@ function GearDialog({ addon, onClose, onConfigure }: { addon: Addon; onClose: ()
           <div className="space-y-2">
             <button onClick={() => { onClose(); setTimeout(() => onConfigure?.(configUrl), 100); }}
               className="flex items-center gap-2 w-full px-4 py-2.5 text-white rounded-xl text-sm font-medium transition-colors" style={{ backgroundColor: 'var(--accent)' }}>
-              <Globe size={14} />Configura nell'app
+              <Settings2 size={14} />Configura nell'app
             </button>
             <button onClick={() => openExternal(configUrl)}
               className="flex items-center gap-2 w-full px-4 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-sm text-white/70 hover:text-white transition-colors">
@@ -228,8 +242,8 @@ function GearDialog({ addon, onClose, onConfigure }: { addon: Addon; onClose: ()
 
 // ─── Addon Card (catalogo) ────────────────────────────────────────────────────
 
-function CatalogAddonCard({ item, installed, onInstall, installing }: {
-  item: any; installed: boolean; onInstall: () => void; installing: boolean;
+function CatalogAddonCard({ item, installed, onInstall, installing, onConfigure }: {
+  item: any; installed: boolean; onInstall: () => void; installing: boolean; onConfigure?: (url: string) => void;
 }) {
   const [imgErr, setImgErr] = useState(false);
   const logo = item.logo ?? item.manifest?.logo;
@@ -238,7 +252,15 @@ function CatalogAddonCard({ item, installed, onInstall, installing }: {
   const types: string[] = item.types ?? item.manifest?.types ?? [];
   const official = item.official ?? item.flags?.official ?? false;
   const category = item.category ?? '';
-  const configUrl = item.configUrl;
+  
+  // Costruisci URL di configurazione
+  const getConfigUrl = () => {
+    if (item.configUrl) return item.configUrl;
+    const baseUrl = item.url ?? item.transportUrl ?? '';
+    const cleanUrl = baseUrl.replace(/\/manifest\.json$/, '').replace(/\/$/, '');
+    return `${cleanUrl}/configure`;
+  };
+  const configUrl = getConfigUrl();
 
   return (
     <div className="flex items-start gap-3 p-4 rounded-xl bg-white/5 border border-white/10 hover:border-white/20 transition-colors group">
@@ -260,12 +282,10 @@ function CatalogAddonCard({ item, installed, onInstall, installing }: {
       </div>
 
       <div className="flex items-center gap-1.5 flex-shrink-0">
-        {configUrl && (
-          <button onClick={() => openExternal(configUrl)} title="Configura"
-            className="p-1.5 rounded-lg hover:bg-white/10 text-white/30 hover:text-white transition-colors">
-            <Settings2 size={13} />
-          </button>
-        )}
+        <button onClick={() => onConfigure?.(configUrl)} title="Configura"
+          className="p-1.5 rounded-lg hover:bg-white/10 text-white/30 hover:text-white transition-colors">
+          <Settings2 size={13} />
+        </button>
         <button onClick={() => openExternal(item.url ?? item.transportUrl ?? '')} title="Apri pagina"
           className="p-1.5 rounded-lg hover:bg-white/10 text-white/30 hover:text-white transition-colors">
           <ExternalLink size={13} />
@@ -311,7 +331,7 @@ export default function Addons() {
   }, [catalogSearch]);
 
   useEffect(() => {
-    if (catalogTab === 'catalog') { //
+    if (catalogTab === 'catalog') {
       setCatalogPage(1);
       loadCatalog(searchDebounce, 1, true);
     }
@@ -344,6 +364,11 @@ export default function Addons() {
   }
 
   const isInstalled = (id: string) => addons.some(a => a.id === id);
+
+  // Funzione per aprire la configurazione
+  const handleConfigure = (configUrl: string) => {
+    setConfigureUrl(configUrl);
+  };
 
   // Filtro per categoria (solo lista locale)
   const displayItems = catalogCategory === 'Tutti'
@@ -400,41 +425,44 @@ export default function Addons() {
               </div>
             ) : (
               <div className="space-y-2">
-                {addons.map((addon, i) => (
-                  <div key={addon.id} className="flex items-center gap-3 p-3 rounded-xl bg-white/5 border border-white/10 hover:border-white/20 transition-colors">
-                    <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center flex-shrink-0 overflow-hidden">
-                      {addon.logo
-                        ? <img src={addon.logo} alt={addon.name} className="w-full h-full object-contain p-1" onError={e => { (e.target as HTMLImageElement).style.display='none'; }} />
-                        : <Package size={18} className="text-white/30" />}
+                {addons.map((addon, i) => {
+                  const configUrl = `${normalizeUrl(addon.url).replace(/\/manifest\.json$/, '').replace(/\/$/, '')}/configure`;
+                  return (
+                    <div key={addon.id} className="flex items-center gap-3 p-3 rounded-xl bg-white/5 border border-white/10 hover:border-white/20 transition-colors">
+                      <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                        {addon.logo
+                          ? <img src={addon.logo} alt={addon.name} className="w-full h-full object-contain p-1" onError={e => { (e.target as HTMLImageElement).style.display='none'; }} />
+                          : <Package size={18} className="text-white/30" />}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-white">{addon.name}</p>
+                        <p className="text-xs text-white/40">v{addon.version} · {(addon.catalogs ?? []).length} cataloghi · {(addon.types ?? []).join(', ')}</p>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button onClick={() => handleConfigure(configUrl)} title="Configura"
+                          className="p-1.5 rounded-lg hover:bg-white/10 text-white/40 hover:text-white transition-colors">
+                          <Settings2 size={15} />
+                        </button>
+                        <button onClick={() => setGearAddon(addon)} title="Opzioni addon"
+                          className="p-1.5 rounded-lg hover:bg-white/10 text-white/40 hover:text-white transition-colors">
+                          <ExternalLink size={14} />
+                        </button>
+                        <button onClick={() => reorderAddon(addon.id, 'up')} disabled={i === 0}
+                          className="p-1.5 rounded-lg hover:bg-white/10 text-white/40 hover:text-white disabled:opacity-20 transition-colors">
+                          <ArrowUp size={14} />
+                        </button>
+                        <button onClick={() => reorderAddon(addon.id, 'down')} disabled={i === addons.length - 1}
+                          className="p-1.5 rounded-lg hover:bg-white/10 text-white/40 hover:text-white disabled:opacity-20 transition-colors">
+                          <ArrowDown size={14} />
+                        </button>
+                        <button onClick={() => { if (confirm(`Rimuovere ${addon.name}?`)) removeAddon(addon.id); }}
+                          className="p-1.5 rounded-lg hover:bg-red-500/10 text-white/40 hover:text-red-400 transition-colors">
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-white">{addon.name}</p>
-                      <p className="text-xs text-white/40">v{addon.version} · {(addon.catalogs ?? []).length} cataloghi · {(addon.types ?? []).join(', ')}</p>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <button onClick={() => setConfigureUrl(`${normalizeUrl(addon.url)}/configure`)} title="Configura nell'app"
-                        className="p-1.5 rounded-lg hover:bg-white/10 text-white/40 hover:text-white transition-colors">
-                        <Settings2 size={15} />
-                      </button>
-                      <button onClick={() => setGearAddon(addon)} title="Opzioni addon"
-                        className="p-1.5 rounded-lg hover:bg-white/10 text-white/40 hover:text-white transition-colors">
-                        <ExternalLink size={14} />
-                      </button>
-                      <button onClick={() => reorderAddon(addon.id, 'up')} disabled={i === 0}
-                        className="p-1.5 rounded-lg hover:bg-white/10 text-white/40 hover:text-white disabled:opacity-20 transition-colors">
-                        <ArrowUp size={14} />
-                      </button>
-                      <button onClick={() => reorderAddon(addon.id, 'down')} disabled={i === addons.length - 1}
-                        className="p-1.5 rounded-lg hover:bg-white/10 text-white/40 hover:text-white disabled:opacity-20 transition-colors">
-                        <ArrowDown size={14} />
-                      </button>
-                      <button onClick={() => { if (confirm(`Rimuovere ${addon.name}?`)) removeAddon(addon.id); }}
-                        className="p-1.5 rounded-lg hover:bg-red-500/10 text-white/40 hover:text-red-400 transition-colors">
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </>
@@ -492,6 +520,7 @@ export default function Addons() {
                         installed={isInstalled(id)}
                         onInstall={() => install(url)}
                         installing={installing === url}
+                        onConfigure={handleConfigure}
                       />
                     );
                   })}
@@ -512,30 +541,30 @@ export default function Addons() {
       </div>
 
       {/* ── WEB TAB ───────────────────────────────────────────────────── */}
-        {catalogTab === 'web' && (
-          <div style={{ position: 'absolute', inset: 0, top: '48px', display: 'flex', flexDirection: 'column' }} className="bg-[#0f0f13]">
-            {/* Toolbar */}
-            <div className="flex items-center gap-3 px-4 py-2 border-b border-white/[0.06] flex-shrink-0 bg-[#1a1a1f] z-10">
-              <button onClick={() => setCatalogTab('installed')}
-                className="flex items-center gap-1.5 text-xs text-white/60 hover:text-white bg-white/5 hover:bg-white/10 px-3 py-1.5 rounded-lg transition-colors flex-shrink-0">
-                <ArrowUp size={11} style={{ transform: 'rotate(-90deg)' }} />Chiudi
-              </button>
-              <span className="text-xs text-white/30 truncate flex-1">stremio-addons.net · installa addon, poi copia l'URL manifest nel tab Installati</span>
-              <button onClick={() => openExternal('https://stremio-addons.net')}
-                className="flex items-center gap-1 text-xs text-[color:var(--accent)] hover:underline flex-shrink-0 whitespace-nowrap">
-                <ExternalLink size={11} />Apri nel browser
-              </button>
-            </div>
-            {/* iframe a pieno schermo con scrollbar */}
-            <iframe
-              src="https://stremio-addons.net"
-              style={{ flex: 1, width: '100%', border: 'none', display: 'block', minHeight: 0, overflow: 'auto' }}
-              sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
-              title="Stremio Addons"
-              scrolling="yes"
-            />
+      {catalogTab === 'web' && (
+        <div style={{ position: 'absolute', inset: 0, top: '48px', display: 'flex', flexDirection: 'column' }} className="bg-[#0f0f13]">
+          {/* Toolbar */}
+          <div className="flex items-center gap-3 px-4 py-2 border-b border-white/[0.06] flex-shrink-0 bg-[#1a1a1f] z-10">
+            <button onClick={() => setCatalogTab('installed')}
+              className="flex items-center gap-1.5 text-xs text-white/60 hover:text-white bg-white/5 hover:bg-white/10 px-3 py-1.5 rounded-lg transition-colors flex-shrink-0">
+              <ArrowUp size={11} style={{ transform: 'rotate(-90deg)' }} />Chiudi
+            </button>
+            <span className="text-xs text-white/30 truncate flex-1">stremio-addons.net · installa addon, poi copia l'URL manifest nel tab Installati</span>
+            <button onClick={() => openExternal('https://stremio-addons.net')}
+              className="flex items-center gap-1 text-xs text-[color:var(--accent)] hover:underline flex-shrink-0 whitespace-nowrap">
+              <ExternalLink size={11} />Apri nel browser
+            </button>
           </div>
-        )}
+          {/* iframe a pieno schermo con scrollbar */}
+          <iframe
+            src="https://stremio-addons.net"
+            style={{ flex: 1, width: '100%', border: 'none', display: 'block', minHeight: 0, overflow: 'auto' }}
+            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
+            title="Stremio Addons"
+            scrolling="yes"
+          />
+        </div>
+      )}
 
       {/* ── Configure In-App (iframe) ─────────────────────────────── */}
       {configureUrl && (
