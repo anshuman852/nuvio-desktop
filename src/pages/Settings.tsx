@@ -538,7 +538,7 @@ function StreamingServicesPage() {
   };
   
   const removeCustomImage = (serviceId: string) => {
-    setStreamingCustomImage(serviceId, undefined);
+    setStreamingCustomImage(serviceId, null);
     
     const current = getSetting(serviceId);
     if (current) {
