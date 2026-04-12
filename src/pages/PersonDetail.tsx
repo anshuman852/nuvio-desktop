@@ -419,7 +419,7 @@ export default function Detail() {
         poster={meta?.poster}
         backdrop={bg ?? undefined}
         referer={streamReferer}
-        cast={displayCast.map(p => ({ name: p.name, character: p.role, photo: p.photo }))}
+        cast={displayCast.map((p: any) => ({ name: p.name, character: p.role, photo: p.photo }))}
         season={selectedVideo?.season}
         episode={selectedVideo?.episode}
         nextEpisode={nextEpisodeData ? {
