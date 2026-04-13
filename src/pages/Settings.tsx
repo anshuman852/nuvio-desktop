@@ -717,17 +717,17 @@ function LinguePage() {
   const { settings, updateSettings } = useStore();
   
   const languages = [
-    { code: 'en', name: 'English', flag: '🇬🇧', tmdbCode: 'en-US' },
-    { code: 'it', name: 'Italiano', flag: '🇮🇹', tmdbCode: 'it-IT' },
-    { code: 'es', name: 'Español', flag: '🇪🇸', tmdbCode: 'es-ES' },
-    { code: 'fr', name: 'Français', flag: '🇫🇷', tmdbCode: 'fr-FR' },
-    { code: 'de', name: 'Deutsch', flag: '🇩🇪', tmdbCode: 'de-DE' },
-    { code: 'pt', name: 'Português', flag: '🇧🇷', tmdbCode: 'pt-BR' },
-    { code: 'ja', name: '日本語', flag: '🇯🇵', tmdbCode: 'ja-JP' },
-    { code: 'ko', name: '한국어', flag: '🇰🇷', tmdbCode: 'ko-KR' },
-    { code: 'zh', name: '中文', flag: '🇨🇳', tmdbCode: 'zh-CN' },
-    { code: 'ru', name: 'Русский', flag: '🇷🇺', tmdbCode: 'ru-RU' },
-  ];
+  { code: 'en', name: 'English', flag: '🇬🇧', tmdbCode: 'en-US' },
+  { code: 'it', name: 'Italiano', flag: '🇮🇹', tmdbCode: 'it-IT' },
+  { code: 'es', name: 'Español', flag: '🇪🇸', tmdbCode: 'es-ES' },
+  { code: 'fr', name: 'Français', flag: '🇫🇷', tmdbCode: 'fr-FR' },
+  { code: 'de', name: 'Deutsch', flag: '🇩🇪', tmdbCode: 'de-DE' },
+  { code: 'pt', name: 'Português', flag: '🇧🇷', tmdbCode: 'pt-BR' },
+  { code: 'ja', name: '日本語', flag: '🇯🇵', tmdbCode: 'ja-JP' },
+  { code: 'ko', name: '한국어', flag: '🇰🇷', tmdbCode: 'ko-KR' },
+  { code: 'zh', name: '中文', flag: '🇨🇳', tmdbCode: 'zh-CN' },
+  { code: 'ru', name: 'Русский', flag: '🇷🇺', tmdbCode: 'ru-RU' },
+];
   
   const handleLanguageChange = (langCode: string, tmdbCode: string) => {
     updateSettings({ appLanguage: langCode, tmdbLanguage: tmdbCode });

@@ -17,6 +17,7 @@ import LibraryPage from './pages/Library';
 import PersonDetailPage from './pages/PersonDetail';
 import ProfileSelectPage from './pages/ProfileSelect';
 import DiscoverPage from './pages/Discover';
+import LanguageSetup from './pages/LanguageSetup';
 
 function TokenRestorer() {
   const { nuvioUser, profiles, activeProfileId, updateProfile } = useStore();
@@ -75,6 +76,9 @@ function LanguageInitializer() {
   const { settings, updateSettings } = useStore();
   const [initialized, setInitialized] = useState(false);
 
+  // Tutte le lingue supportate
+  const supportedLanguages = ['en', 'it', 'es', 'fr', 'de', 'pt', 'ja', 'ko', 'zh', 'ru'];
+
   useEffect(() => {
     // Legge la lingua salvata in localStorage (gestito da persist di Zustand)
     const saved = localStorage.getItem('nuvio-v1');
@@ -87,12 +91,17 @@ function LanguageInitializer() {
       } catch (e) {}
     }
 
-    if (savedLang && ['en', 'it', 'es'].includes(savedLang)) {
+    if (savedLang && supportedLanguages.includes(savedLang)) {
       // Usa la lingua salvata se valida
       if (settings.appLanguage !== savedLang) {
         updateSettings({ 
           appLanguage: savedLang,
-          tmdbLanguage: savedLang === 'en' ? 'en-US' : `${savedLang}-${savedLang.toUpperCase()}`
+          tmdbLanguage: savedLang === 'en' ? 'en-US' : 
+                        savedLang === 'pt' ? 'pt-BR' :
+                        savedLang === 'zh' ? 'zh-CN' :
+                        savedLang === 'ko' ? 'ko-KR' :
+                        savedLang === 'ja' ? 'ja-JP' :
+                        `${savedLang}-${savedLang.toUpperCase()}`
         });
       }
     } else {
@@ -263,6 +272,21 @@ function Layout() {
 
 export default function App() {
   const { profileSelected } = useStore();
+  const [showLanguageSetup, setShowLanguageSetup] = useState(() => {
+    // Mostra LanguageSetup solo se l'utente non ha ancora selezionato una lingua
+    return !localStorage.getItem('language_selected');
+  });
+
+  // Se deve mostrare la schermata di selezione lingua iniziale
+  if (showLanguageSetup) {
+    return (
+      <BrowserRouter>
+        <AccentApplier />
+        <LanguageSetup />
+      </BrowserRouter>
+    );
+  }
+
   return (
     <BrowserRouter>
       <AccentApplier />

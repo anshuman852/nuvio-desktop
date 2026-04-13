@@ -35,12 +35,15 @@
     "resources": ["resources/*"],
     "copyright": "",
     "category": "Video",
-    "shortDescription": "",
-    "longDescription": "",
+    "shortDescription": "Nuvio Desktop App",
+    "longDescription": "A streaming app for movies and TV series",
     "windows": {
       "certificateThumbprint": null,
       "digestAlgorithm": "sha256",
-      "timestampUrl": ""
+      "timestampUrl": "",
+      "nsis": {
+        "installerIcon": "icons/icon.ico"
+      }
     }
   }
 }
