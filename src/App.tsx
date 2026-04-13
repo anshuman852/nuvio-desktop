@@ -64,10 +64,51 @@ function AccentApplier() {
 function LanguageApplier() {
   const { settings } = useStore();
   useEffect(() => {
-    const langCode = settings.appLanguage || 'it';
+    const langCode = settings.appLanguage || 'en';
     document.documentElement.lang = langCode;
-    // Forza il re-render dei componenti che usano useT()
   }, [settings.appLanguage]);
+  return null;
+}
+
+// Inizializzatore lingua - legge da localStorage o usa inglese di default
+function LanguageInitializer() {
+  const { settings, updateSettings } = useStore();
+  const [initialized, setInitialized] = useState(false);
+
+  useEffect(() => {
+    // Legge la lingua salvata in localStorage (gestito da persist di Zustand)
+    const saved = localStorage.getItem('nuvio-v1');
+    let savedLang: string | null = null;
+    
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        savedLang = parsed.state?.settings?.appLanguage;
+      } catch (e) {}
+    }
+
+    if (savedLang && ['en', 'it', 'es'].includes(savedLang)) {
+      // Usa la lingua salvata se valida
+      if (settings.appLanguage !== savedLang) {
+        updateSettings({ 
+          appLanguage: savedLang,
+          tmdbLanguage: savedLang === 'en' ? 'en-US' : `${savedLang}-${savedLang.toUpperCase()}`
+        });
+      }
+    } else {
+      // Prima installazione o lingua non valida: usa inglese
+      if (settings.appLanguage !== 'en') {
+        updateSettings({ 
+          appLanguage: 'en',
+          tmdbLanguage: 'en-US'
+        });
+      }
+    }
+    
+    setInitialized(true);
+  }, []);
+
+  if (!initialized) return null;
   return null;
 }
 
@@ -225,6 +266,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <AccentApplier />
+      <LanguageInitializer />
       <LanguageApplier />
       <TokenRestorer />
       {profileSelected ? <Layout /> : <ProfileSelectPage />}

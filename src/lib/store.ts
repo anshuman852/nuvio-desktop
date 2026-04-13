@@ -62,7 +62,6 @@ interface Store {
   updateSettings: (patch: Partial<AppSettings>) => void;
   posterOrientation: Record<string, 'horizontal' | 'vertical'>;
   setPosterOrientation: (contentId: string, orientation: 'horizontal' | 'vertical') => void;
-  // Immagini custom per servizi streaming (serviceId -> dataURL o URL)
   streamingCustomImages: Record<string, string>;
   setStreamingCustomImage: (serviceId: string, imageUrl: string | null) => void;
 }
@@ -131,7 +130,6 @@ export const useStore = create<Store>()(
       setPosterOrientation: (contentId, orientation) => set((s) => ({
         posterOrientation: { ...s.posterOrientation, [contentId]: orientation }
       })),
-      // Immagini custom streaming
       streamingCustomImages: {},
       setStreamingCustomImage: (serviceId, imageUrl) => set((s) => {
         const next: Record<string, string> = { ...s.streamingCustomImages };

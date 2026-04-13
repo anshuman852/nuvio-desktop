@@ -180,9 +180,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   subtitlesEnabled: true,
   customPlayerPath: '',
   tmdbApiKey: '',
-  tmdbLanguage: 'it-IT',
+  tmdbLanguage: 'en-US',        // INGLESE DI DEFAULT
   accentColor: '#7c3aed',
-  appLanguage: 'it',
+  appLanguage: 'en',             // INGLESE DI DEFAULT
   visibleServices: ['netflix', 'disney', 'apple', 'paramount', 'amazon', 'hbo', 'crunchyroll', 'raiplay'],
   streamingServices: [
     { id: 'netflix', enabled: true },

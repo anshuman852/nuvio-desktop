@@ -717,8 +717,8 @@ function LinguePage() {
   const { settings, updateSettings } = useStore();
   
   const languages = [
-    { code: 'it', name: 'Italiano', flag: '🇮🇹', tmdbCode: 'it-IT' },
     { code: 'en', name: 'English', flag: '🇬🇧', tmdbCode: 'en-US' },
+    { code: 'it', name: 'Italiano', flag: '🇮🇹', tmdbCode: 'it-IT' },
     { code: 'es', name: 'Español', flag: '🇪🇸', tmdbCode: 'es-ES' },
     { code: 'fr', name: 'Français', flag: '🇫🇷', tmdbCode: 'fr-FR' },
     { code: 'de', name: 'Deutsch', flag: '🇩🇪', tmdbCode: 'de-DE' },
@@ -731,10 +731,10 @@ function LinguePage() {
   
   const handleLanguageChange = (langCode: string, tmdbCode: string) => {
     updateSettings({ appLanguage: langCode, tmdbLanguage: tmdbCode });
-    // Forza il reload per ricaricare tutte le traduzioni
+    // Forza il reload completo per applicare la lingua a TUTTI i componenti
     setTimeout(() => {
       window.location.reload();
-    }, 150);
+    }, 100);
   };
   
   return (
@@ -818,9 +818,9 @@ function IntegrazioniPage() {
         {tmdbStatus === 'err' && <p className="text-xs text-red-400 flex items-center gap-1"><AlertCircle size={12} />Non valida</p>}
         <div>
           <label className="text-xs text-white/40 mb-1.5 block">Lingua</label>
-          <select value={settings.tmdbLanguage ?? 'it-IT'} onChange={e => updateSettings({ tmdbLanguage: e.target.value })} className={ic + ' cursor-pointer'}>
-            <option value="it-IT">Italiano</option>
+          <select value={settings.tmdbLanguage ?? 'en-US'} onChange={e => updateSettings({ tmdbLanguage: e.target.value })} className={ic + ' cursor-pointer'}>
             <option value="en-US">English</option>
+            <option value="it-IT">Italiano</option>
             <option value="es-ES">Español</option>
             <option value="de-DE">Deutsch</option>
           </select>
