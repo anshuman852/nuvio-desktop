@@ -31,7 +31,6 @@ async fn fetch_streams(base_url: String, type_: String, id: String) -> Result<se
     addon::fetch_streams(&base_url, &type_, &id).await.map_err(|e| e.to_string())
 }
 
-// launch_mpv ora accetta referrer opzionale
 #[tauri::command]
 async fn launch_mpv(state: State<'_, AppState>, url: String, title: Option<String>, referrer: Option<String>) -> Result<(), String> {
     let mut mpv = state.mpv.lock().map_err(|e| e.to_string())?;
@@ -116,6 +115,34 @@ async fn resolve_stream_url(url: String) -> Result<String, String> {
     }
 }
 
+// Nuova funzione proxy per stream HTTP
+#[tauri::command]
+async fn proxy_stream(url: String, referer: Option<String>) -> Result<Vec<u8>, String> {
+    use reqwest::header::{HeaderMap, HeaderValue, REFERER, USER_AGENT};
+    
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| e.to_string())?;
+    
+    let mut headers = HeaderMap::new();
+    headers.insert(USER_AGENT, HeaderValue::from_static("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"));
+    
+    if let Some(r) = referer {
+        headers.insert(REFERER, HeaderValue::from_str(&r).map_err(|e| e.to_string())?);
+    }
+    
+    let response = client
+        .get(&url)
+        .headers(headers)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    
+    let bytes = response.bytes().await.map_err(|e| e.to_string())?;
+    Ok(bytes.to_vec())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let proxy = proxy::StreamProxy::new();
@@ -135,6 +162,7 @@ pub fn run() {
             launch_mpv, launch_custom_player, launch_mpv_stream,
             mpv_command, mpv_stop, mpv_get_position, mpv_get_duration,
             open_url, stream_magnet, resolve_stream_url,
+            proxy_stream,  // <-- AGGIUNTA
         ])
         .run(tauri::generate_context!())
         .expect("error while running nuvio-desktop");

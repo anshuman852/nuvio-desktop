@@ -7,7 +7,7 @@ import { fetchCatalog } from '../api/stremio';
 import { useContinueWatching } from '../hooks/useContinueWatching';
 import { MetaItem } from '../lib/types';
 import { STREAMING_SERVICES, getDiscoverMovies } from '../api/tmdb';
-import { Play, Plus, ChevronLeft, ChevronRight, Info } from 'lucide-react';
+import { Play, Plus, ChevronLeft, ChevronRight, Info, ChevronRight as MoreIcon } from 'lucide-react';
 import clsx from 'clsx';
 import { useT } from '../lib/i18n';
 
@@ -214,20 +214,48 @@ function PosterCard({ item, onRemove, showWatched }: { item: any; onRemove?: (id
   );
 }
 
-function CatalogRow({ title, subtitle, items, loading, onRemoveItem }: {
-  title: string; subtitle?: string; items: any[]; loading: boolean; onRemoveItem?: (id: string) => void;
+function CatalogRow({ title, subtitle, items, loading, onRemoveItem, catalogId, catalogType, addonId }: { 
+  title: string; 
+  subtitle?: string; 
+  items: any[]; 
+  loading: boolean; 
+  onRemoveItem?: (id: string) => void;
+  catalogId?: string;
+  catalogType?: string;
+  addonId?: string;
 }) {
+  const { t } = useT();
   const rowRef = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
+  
   function scroll(dir: 'left' | 'right') {
     if (!rowRef.current) return;
     rowRef.current.scrollBy({ left: dir === 'right' ? 400 : -400, behavior: 'smooth' });
   }
+
+  const handleViewAll = () => {
+    if (catalogId && catalogType && addonId) {
+      navigate(`/catalog/${addonId}/${catalogType}/${catalogId}`);
+    }
+  };
+  
   if (!loading && items.length === 0) return null;
+  
   return (
     <section className="mb-8">
-      <div className="flex items-baseline gap-2 mb-3 px-6">
-        <h2 className="text-base font-semibold text-white">{title}</h2>
-        {subtitle && <span className="text-xs text-white/30">{subtitle}</span>}
+      <div className="flex items-center justify-between mb-3 px-6">
+        <div className="flex items-baseline gap-2">
+          <h2 className="text-base font-semibold text-white">{title}</h2>
+          {subtitle && <span className="text-xs text-white/30">{subtitle}</span>}
+        </div>
+        {catalogId && items.length > 6 && (
+          <button 
+            onClick={handleViewAll}
+            className="flex items-center gap-1 text-xs text-white/40 hover:text-white transition-colors"
+          >
+            View All <MoreIcon size={12} />
+          </button>
+        )}
       </div>
       <div className="relative group/row">
         <button onClick={() => scroll('left')}
@@ -251,7 +279,16 @@ function CatalogRow({ title, subtitle, items, loading, onRemoveItem }: {
   );
 }
 
-interface Row { key: string; title: string; subtitle: string; items: MetaItem[]; loading: boolean }
+interface Row { 
+  key: string; 
+  title: string; 
+  subtitle: string; 
+  items: MetaItem[]; 
+  loading: boolean;
+  catalogId: string;
+  catalogType: string;
+  addonId: string;
+}
 
 export default function Home() {
   const { t } = useT();
@@ -286,7 +323,11 @@ export default function Home() {
         key: `${addon.id}::${catalog.type}::${catalog.id}`,
         title: catalog.name ?? catalog.id,
         subtitle: addon.name,
-        items: [], loading: true,
+        items: [], 
+        loading: true,
+        catalogId: catalog.id,
+        catalogType: catalog.type,
+        addonId: addon.id,
       }))
     );
     setRows(list);
@@ -334,7 +375,16 @@ export default function Home() {
         )}
         <StreamingServicesBar />
         {rows.map(row => (
-          <CatalogRow key={row.key} title={row.title} subtitle={row.subtitle} items={row.items} loading={row.loading} />
+          <CatalogRow 
+            key={row.key} 
+            title={row.title} 
+            subtitle={row.subtitle} 
+            items={row.items} 
+            loading={row.loading}
+            catalogId={row.catalogId}
+            catalogType={row.catalogType}
+            addonId={row.addonId}
+          />
         ))}
       </div>
     </div>

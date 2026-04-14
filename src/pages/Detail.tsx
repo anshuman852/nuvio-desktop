@@ -5,7 +5,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useStore } from '../lib/store';
 import { getAllWatchedItems, markWatched, unmarkWatched } from '../api/nuvio';
 import { fetchMeta, fetchAllStreams, openExternal, launchPlayer } from '../api/stremio';
-import { tmdbImg, hasTMDBKey, getCachedTMDB, STREAMING_SERVICES } from '../api/tmdb';
+import { getDetails, tmdbImg, hasTMDBKey, STREAMING_SERVICES } from '../api/tmdb';
 import { MetaItem, Stream, StreamGroup, Video } from '../lib/types';
 import VideoPlayer from '../components/VideoPlayer';
 import { invoke } from '@tauri-apps/api/core';
@@ -123,67 +123,57 @@ export default function Detail() {
       let found: MetaItem | null = null;
       const tmdbNumId = isTmdbId ? parseInt(decodedId.replace('tmdb:', '')) : null;
       const imdbId = decodedId.startsWith('tt') ? decodedId : null;
-      
-      // Carica meta dagli addon (timeout 3 secondi)
-      const addonPromise = isTmdbId ? Promise.resolve(null) : Promise.race([
-        Promise.any(
-          addons.slice(0, 4).map(addon =>
-            fetchMeta(addon.url, type!, decodedId).then(m => {
-              if (!m?.name) throw new Error('no meta');
-              return m;
-            })
-          )
-        ).catch(() => null),
-        new Promise<null>(res => setTimeout(() => res(null), 3000)),
-      ]);
-      
-      // Carica TMDB in parallelo (timeout 5 secondi)
-      let tmdbData = null;
-      if (hasTMDBKey() && settings.tmdbApiKey) {
-        try {
-          let tmdbId = tmdbNumId;
-          if (!tmdbId && imdbId) {
-            const fr = await fetch(
-              `https://api.themoviedb.org/3/find/${imdbId}?api_key=${settings.tmdbApiKey}&external_source=imdb_id`
-            ).then(r => r.json()).catch(() => null);
-            const arr = type === 'series' ? (fr?.tv_results ?? []) : (fr?.movie_results ?? []);
-            tmdbId = arr[0]?.id ?? null;
-          }
-          
-          if (tmdbId) {
+      const [addonResult, tmdbData] = await Promise.all([
+        isTmdbId ? Promise.resolve(null) : Promise.race([
+          Promise.any(
+            addons.slice(0, 8).map(addon =>
+              fetchMeta(addon.url, type!, decodedId).then(m => {
+                if (!m?.name) throw new Error('no meta');
+                return m;
+              })
+            )
+          ).catch(() => null),
+          new Promise<null>(res => setTimeout(() => res(null), 5000)),
+        ]),
+        hasTMDBKey() ? (async () => {
+          try {
+            let tmdbId = tmdbNumId;
+            if (!tmdbId && imdbId) {
+              const fr = await fetch(
+                `https://api.themoviedb.org/3/find/${imdbId}?api_key=${settings.tmdbApiKey}&external_source=imdb_id`
+              ).then(r => r.json()).catch(() => null);
+              const arr = type === 'series' ? (fr?.tv_results ?? []) : (fr?.movie_results ?? []);
+              tmdbId = arr[0]?.id ?? null;
+            }
+            if (!tmdbId) return null;
             const tmdbType = type === 'series' ? 'tv' : 'movie';
-            tmdbData = await Promise.race([
-              getCachedTMDB(tmdbType, tmdbId, settings.tmdbApiKey),
-              new Promise(resolve => setTimeout(() => resolve(null), 5000))
+            // Fetch dettagli + credits in inglese in parallelo (inglese ha più cast con foto)
+            const [details, creditsEn] = await Promise.all([
+              getDetails(tmdbType, tmdbId),
+              fetch(`https://api.themoviedb.org/3/${tmdbType}/${tmdbId}/credits?api_key=${settings.tmdbApiKey}&language=en-US`)
+                .then(r => r.json()).catch(() => null),
             ]);
-          }
-        } catch (e) {
-          console.error('TMDB error:', e);
-        }
-      }
-      
-      const addonResult = await addonPromise;
+            // Usa credits inglese se ha più attori con foto
+            if (creditsEn?.cast && creditsEn.cast.length > (details.credits?.cast?.length ?? 0)) {
+              details.credits = creditsEn;
+            }
+            return details;
+          } catch { return null; }
+        })() : Promise.resolve(null),
+      ]);
       found = addonResult as MetaItem | null;
-      
       if (tmdbData) {
         setTmdb(tmdbData);
-        
-        const fullCast = (tmdbData.credits?.cast ?? []).map((c: any) => ({
-          id: c.id,
-          name: c.name,
-          role: c.character ?? '',
-          photo: c.profile_path ? `https://image.tmdb.org/t/p/w185${c.profile_path}` : undefined,
-        }));
-        setCast(fullCast);
-        
+        setCast((tmdbData.credits?.cast ?? []).slice(0, 30).map((c: any) => ({
+          id: c.id, name: c.name, role: c.character ?? '',
+          photo: c.profile_path ? tmdbImg(c.profile_path, 'w185') : undefined,
+        })));
         setCrew((tmdbData.credits?.crew ?? []).filter((c: any) =>
           ['Director','Screenplay','Writer','Creator'].includes(c.job)
         ).slice(0, 6).map((c: any) => ({
           id: c.id, name: c.name, role: c.job,
-          photo: c.profile_path ? `https://image.tmdb.org/t/p/w185${c.profile_path}` : undefined,
+          photo: c.profile_path ? tmdbImg(c.profile_path, 'w185') : undefined,
         })));
-        
-        // Crea meta da TMDB se necessario
         if (!found || isTmdbId) {
           const imdbFromTmdb = tmdbData.external_ids?.imdb_id;
           const episodes: Video[] = [];
@@ -220,15 +210,9 @@ export default function Detail() {
           if (eps.length > 0) found = { ...found, videos: eps };
         }
       }
-      
       if (found) {
-        if (cast.length === 0 && (found as any).cast && (found as any).cast.length > 0) {
-          setCast(((found as any).cast as string[]).map((name: string, i: number) => ({ 
-            id: i, 
-            name, 
-            role: '',
-            photo: undefined 
-          })));
+        if (cast.length === 0 && (found as any).cast?.length > 0) {
+          setCast(((found as any).cast as string[]).slice(0, 30).map((name: string, i: number) => ({ id: i, name, role: '' })));
         }
         const seasons = [...new Set((found.videos ?? []).map(v => v.season ?? 0))].filter(Boolean).sort((a, b) => a - b);
         if (seasons.length > 0) setActiveSeason(seasons[0]);
@@ -259,32 +243,25 @@ export default function Detail() {
     }
   }, [addons, type]);
 
-  function getCastFromMeta() {
-    if (cast.length > 0) return cast;
-    if (meta && (meta as any).cast && (meta as any).cast.length > 0) {
-      return (meta as any).cast.map((name: string, i: number) => ({ 
-        id: i, 
-        name: name, 
-        role: '',
-        photo: undefined 
-      }));
-    }
-    return [];
-  }
-
   function handleEpisodeSelect(video: Video) {
-    setSelectedVideo(video);
+    // Reset completo per forzare reload stream anche sullo stesso episodio
+    setSelectedVideo(null);
     setStreamGroups([]);
     setStreamError(null);
     setPlayError(null);
+    setActiveStreamKey(null);
+    // Piccolo delay per garantire che React abbia resettato lo stato
+    setTimeout(() => {
+      setSelectedVideo(video);
     const allVids = meta?.videos ?? [];
     const idx = allVids.findIndex(v => v.id === video.id);
     setPrevEpData(idx > 0 ? allVids[idx - 1] : null);
-    const imdbBase = meta?.id?.startsWith('tt') ? meta.id : (decodedId.startsWith('tt') ? decodedId : null);
-    const streamId = imdbBase && video.season && video.episode
-      ? `${imdbBase}:${video.season}:${video.episode}`
-      : video.id;
-    loadStreams(streamId);
+      const imdbBase = meta?.id?.startsWith('tt') ? meta.id : (decodedId.startsWith('tt') ? decodedId : null);
+      const streamId = imdbBase && video.season && video.episode
+        ? `${imdbBase}:${video.season}:${video.episode}`
+        : video.id;
+      loadStreams(streamId);
+    }, 50);
   }
 
   function buildProxyUrl(streamUrl: string, requestHeaders: Record<string, string>): string {
@@ -386,7 +363,6 @@ export default function Detail() {
   const seasons = [...new Set(allVideos.map(v => v.season ?? 0))].filter(Boolean).sort((a, b) => a - b);
   const episodesForSeason = allVideos.filter(v => (v.season ?? 0) === activeSeason);
   const showEpisodePanel = isSeries && allVideos.length > 0;
-  const displayCast = getCastFromMeta();
 
   if (playerStream) {
     const titleStr = meta ? (selectedVideo
@@ -416,7 +392,7 @@ export default function Detail() {
         poster={meta?.poster}
         backdrop={bg ?? undefined}
         referer={streamReferer}
-        cast={displayCast.map((p: any) => ({ name: p.name, character: p.role, photo: p.photo }))}
+        cast={cast.slice(0, 15).map(p => ({ name: p.name, character: p.role, photo: p.photo }))}
         season={selectedVideo?.season}
         episode={selectedVideo?.episode}
         nextEpisode={nextEpisodeData ? {
@@ -428,12 +404,14 @@ export default function Detail() {
         prevEpisode={prevEpData ? { id: prevEpData.id, title: prevEpData.title ?? '' } : null}
         onClose={() => {
           setPlayerStream(null);
-          setStreamGroups([]);
           setActiveStreamKey(null);
           window.dispatchEvent(new CustomEvent('nuvio:cw-updated'));
           if (type === 'movie' && meta?.id) {
+            // Film: ricarica stream freschi
+            setStreamGroups([]);
             setTimeout(() => loadStreams(meta.id), 100);
           }
+          // Serie: NON svuotare streamGroups — restano visibili per riselezionare
         }}
         availableQualities={availableQualities}
         onQualitySelect={(qUrl) => {
@@ -443,6 +421,14 @@ export default function Detail() {
         onNext={nextEpisodeData ? handleNextFromPlayer : undefined}
         onPrev={prevEpData ? () => { setPlayerStream(null); handleEpisodeSelect(prevEpData!); } : undefined}
         onPlayNextEpisode={nextEpisodeData ? () => handleEpisodeSelect(nextEpisodeData) : undefined}
+        allEpisodes={isSeries ? (meta?.videos ?? []).map(v => ({
+          id: v.id, title: v.title ?? `Ep. ${v.episode}`,
+          season: v.season, episode: v.episode, thumbnail: v.thumbnail,
+        })) : []}
+        onEpisodeSelect={isSeries ? (epId) => {
+          const ep = meta?.videos?.find(v => v.id === epId);
+          if (ep) { setPlayerStream(null); handleEpisodeSelect(ep); }
+        } : undefined}
         initialProgress={0}
       />
     );
@@ -501,37 +487,19 @@ export default function Detail() {
               <p className="text-sm text-white/75 leading-relaxed line-clamp-4">{overview}</p>
             </div>
           )}
-          {displayCast.length > 0 && (
+          {cast.length > 0 && (
             <div className="mb-4">
               <p className="text-xs text-white/40 uppercase tracking-wider mb-2">Cast</p>
-              <div className="flex gap-4 overflow-x-auto scrollbar-hide pb-1">
-                {displayCast.map((p: any) => (
-                  <Link key={p.id} to={`/person/${p.id}`} className="flex-shrink-0 w-16 text-center group">
-                    <div className="w-16 h-16 rounded-full overflow-hidden bg-white/10 border border-white/10 mx-auto group-hover:border-[color:var(--accent)] transition-colors">
-                      {p.photo ? (
-                        <img 
-                          src={p.photo} 
-                          alt={p.name} 
-                          className="w-full h-full object-cover object-top" 
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).style.display = 'none';
-                            const parent = (e.target as HTMLImageElement).parentElement;
-                            if (parent) {
-                              const div = document.createElement('div');
-                              div.className = 'w-full h-full flex items-center justify-center text-white/40 text-sm font-bold bg-white/5';
-                              div.textContent = p.name.charAt(0).toUpperCase();
-                              parent.appendChild(div);
-                            }
-                          }}
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-white/40 text-sm font-bold bg-white/5">
-                          {p.name.charAt(0).toUpperCase()}
-                        </div>
-                      )}
+              <div className="flex gap-3 overflow-x-auto scrollbar-hide pb-1">
+                {cast.slice(0, 15).map((p: any) => (
+                  <Link key={p.id} to={`/person/${p.id}`} className="flex-shrink-0 w-14 text-center group">
+                    <div className="w-14 h-14 rounded-full overflow-hidden bg-white/10 border border-white/10 mx-auto group-hover:border-[color:var(--accent)] transition-colors">
+                      {p.photo
+                        ? <img src={p.photo} alt={p.name} className="w-full h-full object-cover object-top" onError={e => { (e.target as HTMLImageElement).src = `https://api.dicebear.com/9.x/personas/svg?seed=${encodeURIComponent(p.name)}`; }} />
+                        : <img src={`https://api.dicebear.com/9.x/personas/svg?seed=${encodeURIComponent(p.name)}`} alt={p.name} className="w-full h-full object-cover" />}
                     </div>
-                    <p className="text-[10px] text-white/60 mt-1.5 leading-tight line-clamp-2 group-hover:text-white transition-colors font-medium">{p.name}</p>
-                    {p.role && <p className="text-[9px] text-white/30 line-clamp-1 mt-0.5">{p.role}</p>}
+                    <p className="text-[10px] text-white/60 mt-1 leading-tight line-clamp-2 group-hover:text-white transition-colors">{p.name}</p>
+                    {p.role && <p className="text-[9px] text-white/30 line-clamp-1">{p.role}</p>}
                   </Link>
                 ))}
               </div>

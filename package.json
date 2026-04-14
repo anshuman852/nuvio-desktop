@@ -14,7 +14,7 @@
     "axios": "^1.7.7",
     "clsx": "^2.1.1",
     "express": "^5.2.1",
-    "hls.js": "^1.5.13",
+    "hls.js": "^1.6.16",
     "http-proxy-middleware": "^3.0.5",
     "lucide-react": "^0.400.0",
     "qrcode.react": "^4.2.0",

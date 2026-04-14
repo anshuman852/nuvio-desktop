@@ -18,6 +18,7 @@ import PersonDetailPage from './pages/PersonDetail';
 import ProfileSelectPage from './pages/ProfileSelect';
 import DiscoverPage from './pages/Discover';
 import LanguageSetup from './pages/LanguageSetup';
+import CatalogPage from './pages/CatalogPage';
 
 function TokenRestorer() {
   const { nuvioUser, profiles, activeProfileId, updateProfile } = useStore();
@@ -263,6 +264,7 @@ function Layout() {
             <Route path="/library"              element={<LibraryPage />} />
             <Route path="/person/:personId"     element={<PersonDetailPage />} />
             <Route path="/discover"             element={<DiscoverPage />} />
+            <Route path="/catalog/:addonId/:catalogType/:catalogId" element={<CatalogPage />} />
           </Routes>
         </main>
       </div>

@@ -51,13 +51,14 @@ export default function Discover() {
       };
       if (genreId) options.withGenres = genreId.toString();
       if (year) options.primaryReleaseYear = year;
+      
+      // Filtro per servizio streaming - IMPORTANTE: usa watch_region IT per avere risultati italiani
       if (serviceId) {
         const service = STREAMING_SERVICES.find(s => s.id === serviceId);
         if (service) {
           options.withWatchProviders = service.tmdbId.toString();
-          if (service.forceRegion) {
-            options.watchRegion = service.forceRegion;
-          }
+          // Forza la regione IT per i servizi italiani
+          options.watchRegion = service.forceRegion || 'IT';
         }
       }
       
@@ -144,22 +145,28 @@ export default function Discover() {
       )}
       
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-        {items.map(item => (
-          <Link key={item.id} to={`/detail/${type}/${item.id}`} className="group block">
-            <div className="aspect-[2/3] rounded-xl overflow-hidden bg-white/5 border border-white/10 group-hover:border-[color:var(--accent)] transition-all group-hover:scale-[1.02]">
-              {item.poster_path ? (
-                <img src={tmdbImg(item.poster_path, 'w342')} alt={item.title || item.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center text-white/20 text-4xl">{type === 'movie' ? '🎬' : '📺'}</div>
+        {items.map(item => {
+          // Determina il tipo corretto per il routing
+          const itemType = item.title ? 'movie' : 'tv';
+          // Usa tmdb:${id} per il routing (come nel Search)
+          const detailId = `tmdb:${item.id}`;
+          return (
+            <Link key={item.id} to={`/detail/${itemType}/${detailId}`} className="group block">
+              <div className="aspect-[2/3] rounded-xl overflow-hidden bg-white/5 border border-white/10 group-hover:border-[color:var(--accent)] transition-all group-hover:scale-[1.02]">
+                {item.poster_path ? (
+                  <img src={tmdbImg(item.poster_path, 'w342')} alt={item.title || item.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-white/20 text-4xl">{itemType === 'movie' ? '🎬' : '📺'}</div>
+                )}
+              </div>
+              <p className="mt-2 text-xs text-white/70 group-hover:text-white truncate">{item.title || item.name}</p>
+              <p className="text-xs text-white/30">{item.release_date?.slice(0,4) || item.first_air_date?.slice(0,4) || ''}</p>
+              {item.vote_average && item.vote_average > 0 && (
+                <p className="text-[10px] text-yellow-500/70">⭐ {item.vote_average.toFixed(1)}</p>
               )}
-            </div>
-            <p className="mt-2 text-xs text-white/70 group-hover:text-white truncate">{item.title || item.name}</p>
-            <p className="text-xs text-white/30">{item.release_date?.slice(0,4) || item.first_air_date?.slice(0,4) || ''}</p>
-            {item.vote_average && (
-              <p className="text-[10px] text-yellow-500/70">⭐ {item.vote_average.toFixed(1)}</p>
-            )}
-          </Link>
-        ))}
+            </Link>
+          );
+        })}
       </div>
       
       {items.length > 0 && page < totalPages && (

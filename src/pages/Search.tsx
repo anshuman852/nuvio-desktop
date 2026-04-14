@@ -26,7 +26,7 @@ export default function SearchPage() {
     }
 
     if (!settings.tmdbApiKey || !hasTMDBKey()) {
-      setError('Configura la chiave API TMDB nelle impostazioni');
+      setError('Configure TMDB API key in Settings');
       return;
     }
 
@@ -69,13 +69,13 @@ export default function SearchPage() {
           }
         }
         
-        console.log(`[Search] Trovati: ${moviesList.length} film, ${seriesList.length} serie per "${query}"`);
+        console.log(`[Search] Found: ${moviesList.length} movies, ${seriesList.length} series for "${query}"`);
         
         setMovies(moviesList);
         setSeries(seriesList);
       } catch (err: any) {
         console.error('Search error:', err);
-        setError(err.message || 'Errore durante la ricerca');
+        setError(err.message || 'Error during search');
       } finally {
         setLoading(false);
       }
@@ -86,9 +86,9 @@ export default function SearchPage() {
   }, [query, settings.tmdbApiKey]);
 
   const categories = [
-    { id: 'all', label: 'Tutti', icon: SearchIcon, count: movies.length + series.length },
-    { id: 'movie', label: 'Film', icon: Film, count: movies.length },
-    { id: 'tv', label: 'Serie TV', icon: Tv, count: series.length },
+    { id: 'all', label: 'All', icon: SearchIcon, count: movies.length + series.length },
+    { id: 'movie', label: 'Movies', icon: Film, count: movies.length },
+    { id: 'tv', label: 'TV Series', icon: Tv, count: series.length },
   ];
 
   const getCurrentItems = () => {
@@ -104,9 +104,9 @@ export default function SearchPage() {
   if (!settings.tmdbApiKey) {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-4 text-center px-8">
-        <p className="text-white/50">Configura la chiave API TMDB nelle Impostazioni per effettuare ricerche.</p>
+        <p className="text-white/50">Configure TMDB API key in Settings to search.</p>
         <Link to="/settings" className="px-5 py-2.5 rounded-xl text-white text-sm" style={{ backgroundColor: 'var(--accent)' }}>
-          Vai alle impostazioni
+          Go to Settings
         </Link>
       </div>
     );
@@ -117,7 +117,7 @@ export default function SearchPage() {
       <div className="flex items-center gap-2 mb-4">
         <SearchIcon size={18} className="text-white/40" />
         <h1 className="text-lg font-bold text-white">
-          {query ? `Risultati per "${query}"` : 'Cerca'}
+          {query ? `Results for "${query}"` : 'Search'}
         </h1>
         {loading && <Loader2 size={16} className="animate-spin text-white/40" />}
       </div>
@@ -127,8 +127,8 @@ export default function SearchPage() {
           <div className="w-20 h-20 mx-auto mb-4 rounded-full bg-white/5 flex items-center justify-center">
             <SearchIcon size={32} className="text-white/20" />
           </div>
-          <p className="text-white/40 text-sm">Usa la barra di ricerca in alto per trovare film, serie TV e anime.</p>
-          <p className="text-white/25 text-xs mt-2">Prova a cercare "Bluey", "Stranger Things" o "Inception"</p>
+          <p className="text-white/40 text-sm">Use the search bar above to find movies, TV series and anime.</p>
+          <p className="text-white/25 text-xs mt-2">Try searching "Bluey", "Stranger Things" or "Inception"</p>
         </div>
       )}
 
@@ -166,13 +166,14 @@ export default function SearchPage() {
 
           {currentItems.length === 0 ? (
             <div className="text-center py-12">
-              <p className="text-white/40 text-sm">Nessun risultato trovato in questa categoria.</p>
-              <p className="text-white/25 text-xs mt-1">Prova con un termine diverso.</p>
+              <p className="text-white/40 text-sm">No results found in this category.</p>
+              <p className="text-white/25 text-xs mt-1">Try a different term.</p>
             </div>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
               {currentItems.map(item => (
-                <Link key={`${item.type}-${item.id}`} to={`/detail/${item.type}/${item.id}`} className="group">
+                // FIX: Usa il formato tmdb:${id} per il routing
+                <Link key={`${item.type}-${item.id}`} to={`/detail/${item.type}/tmdb:${item.id}`} className="group">
                   <div className="aspect-[2/3] rounded-xl overflow-hidden bg-white/5 border border-white/10 group-hover:border-[color:var(--accent)] transition-all group-hover:scale-[1.02]">
                     {item.poster ? (
                       <img 
