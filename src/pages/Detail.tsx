@@ -5,13 +5,13 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useStore } from '../lib/store';
 import { getAllWatchedItems, markWatched, unmarkWatched } from '../api/nuvio';
 import { fetchMeta, fetchAllStreams, openExternal, launchPlayer } from '../api/stremio';
-import { getDetails, tmdbImg, hasTMDBKey, STREAMING_SERVICES } from '../api/tmdb';
+import { getDetails, tmdbImg, hasTMDBKey, STREAMING_SERVICES, getPerson } from '../api/tmdb';
 import { MetaItem, Stream, StreamGroup, Video } from '../lib/types';
 import VideoPlayer from '../components/VideoPlayer';
 import { invoke } from '@tauri-apps/api/core';
 import {
   Play, ArrowLeft, Star, ChevronLeft, ChevronRight,
-  Loader2, AlertCircle, Bookmark,
+  Loader2, AlertCircle, Bookmark, Users,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -119,61 +119,93 @@ export default function Detail() {
     setMeta(null); setTmdb(null); setCast([]); setCrew([]);
     setPlayerStream(null); setStreamGroups([]);
     setSelectedVideo(null);
+    
     (async () => {
       let found: MetaItem | null = null;
       const tmdbNumId = isTmdbId ? parseInt(decodedId.replace('tmdb:', '')) : null;
       const imdbId = decodedId.startsWith('tt') ? decodedId : null;
-      const [addonResult, tmdbData] = await Promise.all([
-        isTmdbId ? Promise.resolve(null) : Promise.race([
-          Promise.any(
-            addons.slice(0, 8).map(addon =>
-              fetchMeta(addon.url, type!, decodedId).then(m => {
-                if (!m?.name) throw new Error('no meta');
-                return m;
-              })
-            )
-          ).catch(() => null),
-          new Promise<null>(res => setTimeout(() => res(null), 5000)),
-        ]),
-        hasTMDBKey() ? (async () => {
-          try {
-            let tmdbId = tmdbNumId;
-            if (!tmdbId && imdbId) {
-              const fr = await fetch(
-                `https://api.themoviedb.org/3/find/${imdbId}?api_key=${settings.tmdbApiKey}&external_source=imdb_id`
-              ).then(r => r.json()).catch(() => null);
-              const arr = type === 'series' ? (fr?.tv_results ?? []) : (fr?.movie_results ?? []);
-              tmdbId = arr[0]?.id ?? null;
-            }
-            if (!tmdbId) return null;
-            const tmdbType = type === 'series' ? 'tv' : 'movie';
-            // Fetch dettagli + credits in inglese in parallelo (inglese ha più cast con foto)
-            const [details, creditsEn] = await Promise.all([
-              getDetails(tmdbType, tmdbId),
-              fetch(`https://api.themoviedb.org/3/${tmdbType}/${tmdbId}/credits?api_key=${settings.tmdbApiKey}&language=en-US`)
-                .then(r => r.json()).catch(() => null),
-            ]);
-            // Usa credits inglese se ha più attori con foto
-            if (creditsEn?.cast && creditsEn.cast.length > (details.credits?.cast?.length ?? 0)) {
-              details.credits = creditsEn;
-            }
-            return details;
-          } catch { return null; }
-        })() : Promise.resolve(null),
+      
+      // Carica meta dagli addon (Cinemeta, AIOMetadata, ecc.)
+      const addonResult = isTmdbId ? Promise.resolve(null) : Promise.race([
+        Promise.any(
+          addons.slice(0, 8).map(addon =>
+            fetchMeta(addon.url, type!, decodedId).then(m => {
+              if (!m?.name) throw new Error('no meta');
+              return m;
+            })
+          )
+        ).catch(() => null),
+        new Promise<null>(res => setTimeout(() => res(null), 5000)),
       ]);
-      found = addonResult as MetaItem | null;
+      
+      // Carica TMDB in parallelo (PER IL CAST)
+      let tmdbData = null;
+      let localCast: any[] = [];
+      if (hasTMDBKey() && settings.tmdbApiKey) {
+        try {
+          let tmdbId = tmdbNumId;
+          if (!tmdbId && imdbId) {
+            const fr = await fetch(
+              `https://api.themoviedb.org/3/find/${imdbId}?api_key=${settings.tmdbApiKey}&external_source=imdb_id`
+            ).then(r => r.json()).catch(() => null);
+            const arr = type === 'series' ? (fr?.tv_results ?? []) : (fr?.movie_results ?? []);
+            tmdbId = arr[0]?.id ?? null;
+          }
+          
+          if (tmdbId) {
+            const tmdbType = type === 'series' ? 'tv' : 'movie';
+            const details = await getDetails(tmdbType, tmdbId);
+            
+            // Carica credits in italiano e inglese per avere più cast
+            const [creditsIT, creditsEN] = await Promise.all([
+              fetch(`https://api.themoviedb.org/3/${tmdbType}/${tmdbId}/credits?api_key=${settings.tmdbApiKey}&language=it-IT`).then(r => r.json()).catch(() => null),
+              fetch(`https://api.themoviedb.org/3/${tmdbType}/${tmdbId}/credits?api_key=${settings.tmdbApiKey}&language=en-US`).then(r => r.json()).catch(() => null),
+            ]);
+            
+            let bestCredits = details.credits;
+            if (creditsEN?.cast && creditsEN.cast.length > (bestCredits?.cast?.length ?? 0)) {
+              bestCredits = creditsEN;
+            }
+            if (creditsIT?.cast && creditsIT.cast.length > (bestCredits?.cast?.length ?? 0)) {
+              bestCredits = creditsIT;
+            }
+            if (bestCredits) {
+              details.credits = bestCredits;
+            }
+            tmdbData = details;
+          }
+        } catch (e) {
+          console.error('TMDB error:', e);
+        }
+      }
+      
+      const addonResultData = await addonResult;
+      found = addonResultData as MetaItem | null;
+      
+      // IMPORANTE: Estrai cast da TMDB (priorità assoluta)
       if (tmdbData) {
         setTmdb(tmdbData);
-        setCast((tmdbData.credits?.cast ?? []).slice(0, 30).map((c: any) => ({
-          id: c.id, name: c.name, role: c.character ?? '',
-          photo: c.profile_path ? tmdbImg(c.profile_path, 'w185') : undefined,
-        })));
+        
+        // Prendi TUTTO il cast (non limitato) con foto
+        const fullCast = (tmdbData.credits?.cast ?? [])
+          .filter((c: any) => c.name) // Solo quelli con nome
+          .map((c: any) => ({
+            id: c.id,
+            name: c.name,
+            role: c.character ?? '',
+            photo: c.profile_path ? `https://image.tmdb.org/t/p/w185${c.profile_path}` : undefined,
+          }));
+        setCast(fullCast); localCast = fullCast;
+        
+        // Crew importante
         setCrew((tmdbData.credits?.crew ?? []).filter((c: any) =>
-          ['Director','Screenplay','Writer','Creator'].includes(c.job)
-        ).slice(0, 6).map((c: any) => ({
+          ['Director', 'Screenplay', 'Writer', 'Creator', 'Producer'].includes(c.job)
+        ).slice(0, 8).map((c: any) => ({
           id: c.id, name: c.name, role: c.job,
-          photo: c.profile_path ? tmdbImg(c.profile_path, 'w185') : undefined,
+          photo: c.profile_path ? `https://image.tmdb.org/t/p/w185${c.profile_path}` : undefined,
         })));
+        
+        // Se non abbiamo meta da addon, crealo da TMDB
         if (!found || isTmdbId) {
           const imdbFromTmdb = tmdbData.external_ids?.imdb_id;
           const episodes: Video[] = [];
@@ -182,7 +214,7 @@ export default function Detail() {
               if (!season.season_number) continue;
               const baseId = imdbFromTmdb ?? decodedId;
               for (let ep = 1; ep <= (season.episode_count ?? 0); ep++) {
-                episodes.push({ id: `${baseId}:${season.season_number}:${ep}`, title: `Episodio ${ep}`, season: season.season_number, episode: ep });
+                episodes.push({ id: `${baseId}:${season.season_number}:${ep}`, title: `Episode ${ep}`, season: season.season_number, episode: ep });
               }
             }
           }
@@ -204,20 +236,30 @@ export default function Detail() {
           for (const season of tmdbData.seasons) {
             if (!season.season_number) continue;
             for (let ep = 1; ep <= (season.episode_count ?? 0); ep++) {
-              eps.push({ id: `${baseId}:${season.season_number}:${ep}`, title: `Episodio ${ep}`, season: season.season_number, episode: ep });
+              eps.push({ id: `${baseId}:${season.season_number}:${ep}`, title: `Episode ${ep}`, season: season.season_number, episode: ep });
             }
           }
           if (eps.length > 0) found = { ...found, videos: eps };
         }
       }
+      
+      // Se ancora non abbiamo cast, prova a prendere dal meta (fallback)
+      if (localCast.length === 0 && found && (found as any).cast && (found as any).cast.length > 0) {
+  const fallbackCast = ((found as any).cast as string[]).map((name: string, i: number) => ({
+    id: `fallback_${i}_${name}`,  // ← non numerico, evita Mark Hamill (id=2)
+    name,
+    role: '',
+    photo: undefined
+  }));
+  setCast(fallbackCast);
+}
+      
       if (found) {
-        if (cast.length === 0 && (found as any).cast?.length > 0) {
-          setCast(((found as any).cast as string[]).slice(0, 30).map((name: string, i: number) => ({ id: i, name, role: '' })));
-        }
         const seasons = [...new Set((found.videos ?? []).map(v => v.season ?? 0))].filter(Boolean).sort((a, b) => a - b);
         if (seasons.length > 0) setActiveSeason(seasons[0]);
         setMeta(found);
       }
+      
       setMetaLoading(false);
       if ((found?.type === 'movie' || type === 'movie') && found) loadStreams(found.id);
     })();
@@ -243,25 +285,34 @@ export default function Detail() {
     }
   }, [addons, type]);
 
+  function getCastFromMeta() {
+    // Priorità assoluta: cast da TMDB
+    if (cast.length > 0) return cast;
+    // Fallback: cast dal meta degli addon
+    if (meta && (meta as any).cast && (meta as any).cast.length > 0) {
+      return (meta as any).cast.map((name: string, i: number) => ({ 
+        id: i, 
+        name: name, 
+        role: '',
+        photo: undefined 
+      }));
+    }
+    return [];
+  }
+
   function handleEpisodeSelect(video: Video) {
-    // Reset completo per forzare reload stream anche sullo stesso episodio
-    setSelectedVideo(null);
+    setSelectedVideo(video);
     setStreamGroups([]);
     setStreamError(null);
     setPlayError(null);
-    setActiveStreamKey(null);
-    // Piccolo delay per garantire che React abbia resettato lo stato
-    setTimeout(() => {
-      setSelectedVideo(video);
     const allVids = meta?.videos ?? [];
     const idx = allVids.findIndex(v => v.id === video.id);
     setPrevEpData(idx > 0 ? allVids[idx - 1] : null);
-      const imdbBase = meta?.id?.startsWith('tt') ? meta.id : (decodedId.startsWith('tt') ? decodedId : null);
-      const streamId = imdbBase && video.season && video.episode
-        ? `${imdbBase}:${video.season}:${video.episode}`
-        : video.id;
-      loadStreams(streamId);
-    }, 50);
+    const imdbBase = meta?.id?.startsWith('tt') ? meta.id : (decodedId.startsWith('tt') ? decodedId : null);
+    const streamId = imdbBase && video.season && video.episode
+      ? `${imdbBase}:${video.season}:${video.episode}`
+      : video.id;
+    loadStreams(streamId);
   }
 
   function buildProxyUrl(streamUrl: string, requestHeaders: Record<string, string>): string {
@@ -363,13 +414,14 @@ export default function Detail() {
   const seasons = [...new Set(allVideos.map(v => v.season ?? 0))].filter(Boolean).sort((a, b) => a - b);
   const episodesForSeason = allVideos.filter(v => (v.season ?? 0) === activeSeason);
   const showEpisodePanel = isSeries && allVideos.length > 0;
+  const displayCast = getCastFromMeta();
 
   if (playerStream) {
     const titleStr = meta ? (selectedVideo
       ? `${meta.name} – S${selectedVideo.season}E${selectedVideo.episode}`
       : meta.name) : undefined;
     const subtitleStr = selectedVideo
-      ? `${selectedVideo.title ?? `Episodio ${selectedVideo.episode}`}`
+      ? `${selectedVideo.title ?? `Episode ${selectedVideo.episode}`}`
       : undefined;
     const currentAddonUrl = activeStreamKey?.split(':')[0] ?? '';
     const currentGroup = streamGroups.find(g => g.addonUrl === currentAddonUrl) ?? streamGroups[0];
@@ -392,7 +444,7 @@ export default function Detail() {
         poster={meta?.poster}
         backdrop={bg ?? undefined}
         referer={streamReferer}
-        cast={cast.slice(0, 15).map(p => ({ name: p.name, character: p.role, photo: p.photo }))}
+        cast={displayCast.slice(0, 12).map((p: any) => ({ name: p.name, character: p.role, photo: p.photo }))}
         season={selectedVideo?.season}
         episode={selectedVideo?.episode}
         nextEpisode={nextEpisodeData ? {
@@ -404,14 +456,12 @@ export default function Detail() {
         prevEpisode={prevEpData ? { id: prevEpData.id, title: prevEpData.title ?? '' } : null}
         onClose={() => {
           setPlayerStream(null);
+          setStreamGroups([]);
           setActiveStreamKey(null);
           window.dispatchEvent(new CustomEvent('nuvio:cw-updated'));
           if (type === 'movie' && meta?.id) {
-            // Film: ricarica stream freschi
-            setStreamGroups([]);
             setTimeout(() => loadStreams(meta.id), 100);
           }
-          // Serie: NON svuotare streamGroups — restano visibili per riselezionare
         }}
         availableQualities={availableQualities}
         onQualitySelect={(qUrl) => {
@@ -421,14 +471,6 @@ export default function Detail() {
         onNext={nextEpisodeData ? handleNextFromPlayer : undefined}
         onPrev={prevEpData ? () => { setPlayerStream(null); handleEpisodeSelect(prevEpData!); } : undefined}
         onPlayNextEpisode={nextEpisodeData ? () => handleEpisodeSelect(nextEpisodeData) : undefined}
-        allEpisodes={isSeries ? (meta?.videos ?? []).map(v => ({
-          id: v.id, title: v.title ?? `Ep. ${v.episode}`,
-          season: v.season, episode: v.episode, thumbnail: v.thumbnail,
-        })) : []}
-        onEpisodeSelect={isSeries ? (epId) => {
-          const ep = meta?.videos?.find(v => v.id === epId);
-          if (ep) { setPlayerStream(null); handleEpisodeSelect(ep); }
-        } : undefined}
         initialProgress={0}
       />
     );
@@ -436,14 +478,14 @@ export default function Detail() {
 
   if (metaLoading) return (
     <div className="flex items-center justify-center h-full gap-3 text-white/40">
-      <Loader2 size={28} className="animate-spin" /><span className="text-sm">Caricamento...</span>
+      <Loader2 size={28} className="animate-spin" /><span className="text-sm">Loading...</span>
     </div>
   );
   if (!meta && !tmdb) return (
     <div className="flex flex-col items-center justify-center h-full gap-4">
       <AlertCircle size={32} className="text-red-400" />
-      <p className="text-white/60 text-sm">Impossibile caricare i dettagli.</p>
-      <button onClick={() => navigate(-1)} className="px-4 py-2 bg-white/10 text-white rounded-xl text-sm">Indietro</button>
+      <p className="text-white/60 text-sm">Unable to load details.</p>
+      <button onClick={() => navigate(-1)} className="px-4 py-2 bg-white/10 text-white rounded-xl text-sm">Back</button>
     </div>
   );
 
@@ -462,7 +504,7 @@ export default function Detail() {
       <div className="relative z-10 flex-1 min-w-0 flex flex-col justify-between p-6 pr-2 overflow-y-auto">
         <button onClick={() => navigate(-1)}
           className="flex items-center gap-1.5 text-white/60 hover:text-white bg-black/30 backdrop-blur-sm px-3 py-1.5 rounded-full text-sm w-fit mb-4 transition-colors">
-          <ArrowLeft size={14} />Indietro
+          <ArrowLeft size={14} />Back
         </button>
         <div className="flex-1 flex flex-col justify-end pb-2">
           {poster && <div className="mb-4 w-24 hidden sm:block"><img src={poster} alt={name} className="w-24 rounded-xl shadow-2xl border border-white/10" /></div>}
@@ -475,7 +517,7 @@ export default function Detail() {
           </div>
           {genres.length > 0 && (
             <div className="mb-3">
-              <p className="text-xs text-white/40 uppercase tracking-wider mb-1.5">Generi</p>
+              <p className="text-xs text-white/40 uppercase tracking-wider mb-1.5">Genres</p>
               <div className="flex flex-wrap gap-1.5">
                 {genres.slice(0, 6).map((g: string) => <span key={g} className="text-xs px-2.5 py-1 rounded-full bg-white/10 text-white/70">{g}</span>)}
               </div>
@@ -483,23 +525,44 @@ export default function Detail() {
           )}
           {overview && (
             <div className="mb-4 max-w-lg">
-              <p className="text-xs text-white/40 uppercase tracking-wider mb-1">Trama</p>
+              <p className="text-xs text-white/40 uppercase tracking-wider mb-1">Synopsis</p>
               <p className="text-sm text-white/75 leading-relaxed line-clamp-4">{overview}</p>
             </div>
           )}
-          {cast.length > 0 && (
+          {/* CAST SECTION - Now visible for all content! */}
+          {displayCast.length > 0 && (
             <div className="mb-4">
-              <p className="text-xs text-white/40 uppercase tracking-wider mb-2">Cast</p>
-              <div className="flex gap-3 overflow-x-auto scrollbar-hide pb-1">
-                {cast.slice(0, 15).map((p: any) => (
-                  <Link key={p.id} to={`/person/${p.id}`} className="flex-shrink-0 w-14 text-center group">
-                    <div className="w-14 h-14 rounded-full overflow-hidden bg-white/10 border border-white/10 mx-auto group-hover:border-[color:var(--accent)] transition-colors">
-                      {p.photo
-                        ? <img src={p.photo} alt={p.name} className="w-full h-full object-cover object-top" onError={e => { (e.target as HTMLImageElement).src = `https://api.dicebear.com/9.x/personas/svg?seed=${encodeURIComponent(p.name)}`; }} />
-                        : <img src={`https://api.dicebear.com/9.x/personas/svg?seed=${encodeURIComponent(p.name)}`} alt={p.name} className="w-full h-full object-cover" />}
+              <p className="text-xs text-white/40 uppercase tracking-wider mb-2 flex items-center gap-1">
+                <Users size={12} /> Cast ({displayCast.length})
+              </p>
+              <div className="flex gap-4 overflow-x-auto scrollbar-hide pb-1">
+                {displayCast.slice(0, 12).map((p: any) => (
+                  <Link key={p.id} to={`/person/${p.id}`} className="flex-shrink-0 w-16 text-center group">
+                    <div className="w-16 h-16 rounded-full overflow-hidden bg-white/10 border border-white/10 mx-auto group-hover:border-[color:var(--accent)] transition-colors">
+                      {p.photo ? (
+                        <img 
+                          src={p.photo} 
+                          alt={p.name} 
+                          className="w-full h-full object-cover object-top" 
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).style.display = 'none';
+                            const parent = (e.target as HTMLImageElement).parentElement;
+                            if (parent) {
+                              const div = document.createElement('div');
+                              div.className = 'w-full h-full flex items-center justify-center text-white/40 text-sm font-bold bg-white/5';
+                              div.textContent = p.name.charAt(0).toUpperCase();
+                              parent.appendChild(div);
+                            }
+                          }}
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-white/40 text-sm font-bold bg-white/5">
+                          {p.name.charAt(0).toUpperCase()}
+                        </div>
+                      )}
                     </div>
-                    <p className="text-[10px] text-white/60 mt-1 leading-tight line-clamp-2 group-hover:text-white transition-colors">{p.name}</p>
-                    {p.role && <p className="text-[9px] text-white/30 line-clamp-1">{p.role}</p>}
+                    <p className="text-[10px] text-white/60 mt-1.5 leading-tight line-clamp-2 group-hover:text-white transition-colors font-medium">{p.name}</p>
+                    {p.role && <p className="text-[9px] text-white/30 line-clamp-1 mt-0.5">{p.role}</p>}
                   </Link>
                 ))}
               </div>
@@ -511,11 +574,11 @@ export default function Detail() {
                 disabled={streamGroups.length === 0}
                 className="flex items-center gap-2 px-5 py-2.5 text-black font-semibold rounded-full bg-white hover:bg-white/90 disabled:opacity-40 disabled:cursor-not-allowed transition-all">
                 <Play size={16} className="fill-black" />
-                {streamsLoading ? 'Caricamento...' : 'Riproduci'}
+                {streamsLoading ? 'Loading...' : 'Play'}
               </button>
             )}
             <button className="flex items-center gap-2 px-4 py-2.5 text-white/80 hover:text-white bg-white/10 hover:bg-white/20 rounded-full text-sm transition-all">
-              <Bookmark size={14} />Libreria
+              <Bookmark size={14} />Library
             </button>
             {tmdb?.['watch/providers']?.results && (() => {
               const regions = ['IT', 'US'];
@@ -552,7 +615,7 @@ export default function Detail() {
         {isSeries && selectedVideo && (
           <div className="flex items-center gap-2 px-4 py-3 border-b border-white/[0.08] flex-shrink-0">
             <button onClick={() => { setSelectedVideo(null); setStreamGroups([]); setStreamError(null); }} className="p-1.5 rounded-lg hover:bg-white/10 text-white/50 hover:text-white transition-colors"><ChevronLeft size={16} /></button>
-            <p className="text-sm font-semibold text-white flex-1 truncate">S{selectedVideo.season}E{selectedVideo.episode} · {selectedVideo.title ?? `Episodio ${selectedVideo.episode}`}</p>
+            <p className="text-sm font-semibold text-white flex-1 truncate">S{selectedVideo.season}E{selectedVideo.episode} · {selectedVideo.title ?? `Episode ${selectedVideo.episode}`}</p>
           </div>
         )}
         {showEpisodePanel && !selectedVideo && (
@@ -561,13 +624,13 @@ export default function Detail() {
               <div className="flex items-center gap-2 px-4 py-2.5 border-b border-white/[0.08] flex-shrink-0">
                 <button onClick={() => { const idx = seasons.indexOf(activeSeason); if (idx > 0) setActiveSeason(seasons[idx - 1]); }} disabled={seasons.indexOf(activeSeason) === 0} className="p-1.5 rounded-lg hover:bg-white/10 text-white/50 disabled:opacity-25 flex-shrink-0"><ChevronLeft size={16} /></button>
                 <select value={activeSeason} onChange={e => setActiveSeason(Number(e.target.value))} className="flex-1 bg-white/10 border border-white/10 rounded-lg px-2 py-1 text-sm text-white focus:outline-none focus:border-[color:var(--accent)] cursor-pointer" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}>
-                  {seasons.map(s => <option key={s} value={s} style={{ backgroundColor: '#1a1a22', color: 'white' }}>{s === 0 ? 'Speciali' : `Stagione ${s}`}</option>)}
+                  {seasons.map(s => <option key={s} value={s} style={{ backgroundColor: '#1a1a22', color: 'white' }}>{s === 0 ? 'Specials' : `Season ${s}`}</option>)}
                 </select>
                 <button onClick={() => { const idx = seasons.indexOf(activeSeason); if (idx < seasons.length - 1) setActiveSeason(seasons[idx + 1]); }} disabled={seasons.indexOf(activeSeason) === seasons.length - 1} className="p-1.5 rounded-lg hover:bg-white/10 text-white/50 disabled:opacity-25 flex-shrink-0"><ChevronRight size={16} /></button>
                 <span className="text-xs text-white/30 flex-shrink-0">{episodesForSeason.length} ep</span>
               </div>
             )}
-            {seasons.length <= 1 && <div className="px-4 py-2.5 border-b border-white/[0.08] flex-shrink-0"><p className="text-xs text-white/40">{episodesForSeason.length} episodi</p></div>}
+            {seasons.length <= 1 && <div className="px-4 py-2.5 border-b border-white/[0.08] flex-shrink-0"><p className="text-xs text-white/40">{episodesForSeason.length} episodes</p></div>}
             <div className="flex-1 overflow-y-auto">
               {episodesForSeason.map((ep, i) => (
                 <button key={ep.id} type="button" onClick={() => handleEpisodeSelect(ep)} data-context-menu="true"
@@ -581,9 +644,9 @@ export default function Detail() {
                     return <div className={`w-24 h-[54px] rounded-lg flex-shrink-0 flex items-center justify-center text-white/30 text-sm font-bold ${shouldBlur ? 'bg-white/3' : 'bg-white/5'}`}>{ep.episode}</div>;
                   })()}
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-white leading-tight">{i + 1}. {ep.title ?? `Episodio ${ep.episode}`}</p>
+                    <p className="text-sm font-medium text-white leading-tight">{i + 1}. {ep.title ?? `Episode ${ep.episode}`}</p>
                     {ep.overview && <p className="text-xs text-white/40 mt-0.5 line-clamp-2">{ep.overview}</p>}
-                    {ep.released && <p className="text-[10px] text-white/30 mt-0.5">{new Date(ep.released).toLocaleDateString('it-IT', { day: 'numeric', month: 'short', year: 'numeric' })}</p>}
+                    {ep.released && <p className="text-[10px] text-white/30 mt-0.5">{new Date(ep.released).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}</p>}
                   </div>
                 </button>
               ))}
@@ -592,8 +655,8 @@ export default function Detail() {
         )}
         {epCtxMenu && (
           <div className="fixed z-[9999] bg-[#1e1e26] border border-white/10 rounded-xl shadow-2xl py-1.5 min-w-[200px]" style={{ left: epCtxMenu.x, top: epCtxMenu.y }} onMouseDown={e => e.stopPropagation()}>
-            <button onMouseDown={e => { e.stopPropagation(); handleEpisodeSelect(epCtxMenu.ep); setEpCtxMenu(null); }} className="w-full text-left px-4 py-2.5 text-sm text-white/80 hover:bg-white/5 flex items-center gap-2">▶ Riproduci</button>
-            <button onMouseDown={async e => { e.stopPropagation(); setEpCtxMenu(null); if (nuvioUser?.id) await markWatched(nuvioUser.id, epCtxMenu.ep.id.split(':')[0], 'series', epCtxMenu.ep.season, epCtxMenu.ep.episode).catch(() => {}); setWatchedEpIds(prev => new Set([...prev, epCtxMenu.ep.id])); }} className="w-full text-left px-4 py-2.5 text-sm text-green-400 hover:bg-white/5 flex items-center gap-2">✓ Segna come visto</button>
+            <button onMouseDown={e => { e.stopPropagation(); handleEpisodeSelect(epCtxMenu.ep); setEpCtxMenu(null); }} className="w-full text-left px-4 py-2.5 text-sm text-white/80 hover:bg-white/5 flex items-center gap-2">▶ Play</button>
+            <button onMouseDown={async e => { e.stopPropagation(); setEpCtxMenu(null); if (nuvioUser?.id) await markWatched(nuvioUser.id, epCtxMenu.ep.id.split(':')[0], 'series', epCtxMenu.ep.season, epCtxMenu.ep.episode).catch(() => {}); setWatchedEpIds(prev => new Set([...prev, epCtxMenu.ep.id])); }} className="w-full text-left px-4 py-2.5 text-sm text-green-400 hover:bg-white/5 flex items-center gap-2">✓ Mark as watched</button>
             <button onMouseDown={async e => {
               e.stopPropagation(); setEpCtxMenu(null);
               const epIdx = episodesForSeason.findIndex(e => e.id === epCtxMenu.ep.id);
@@ -604,8 +667,8 @@ export default function Detail() {
                 episodesForSeason.slice(0, epIdx + 1).forEach(e => newIds.add(e.id));
                 setWatchedEpIds(newIds);
               }
-            }} className="w-full text-left px-4 py-2.5 text-sm text-blue-400 hover:bg-white/5 flex items-center gap-2">✓✓ Segna visti fino a qui</button>
-            <button onMouseDown={async e => { e.stopPropagation(); setEpCtxMenu(null); if (nuvioUser?.id) await unmarkWatched(nuvioUser.id, epCtxMenu.ep.id.split(':')[0], 'series').catch(() => {}); setWatchedEpIds(prev => { const s = new Set(prev); s.delete(epCtxMenu.ep.id); return s; }); }} className="w-full text-left px-4 py-2.5 text-sm text-red-400 hover:bg-white/5 flex items-center gap-2">✕ Segna come non visto</button>
+            }} className="w-full text-left px-4 py-2.5 text-sm text-blue-400 hover:bg-white/5 flex items-center gap-2">✓✓ Mark up to here</button>
+            <button onMouseDown={async e => { e.stopPropagation(); setEpCtxMenu(null); if (nuvioUser?.id) await unmarkWatched(nuvioUser.id, epCtxMenu.ep.id.split(':')[0], 'series').catch(() => {}); setWatchedEpIds(prev => { const s = new Set(prev); s.delete(epCtxMenu.ep.id); return s; }); }} className="w-full text-left px-4 py-2.5 text-sm text-red-400 hover:bg-white/5 flex items-center gap-2">✕ Mark as unwatched</button>
           </div>
         )}
         {(!showEpisodePanel || selectedVideo) && (
@@ -613,16 +676,16 @@ export default function Detail() {
             <div className="px-3 py-2 border-b border-white/[0.08] flex-shrink-0 flex items-center gap-2">
               {streamGroups.length > 1 ? (
                 <select value={selectedAddon ?? 'all'} onChange={e => setSelectedAddon(e.target.value === 'all' ? null : e.target.value)} className="flex-1 bg-white/10 border border-white/10 rounded-lg px-2 py-1 text-xs text-white focus:outline-none focus:border-[color:var(--accent)] cursor-pointer" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}>
-                  <option value="all" style={{ backgroundColor: '#1a1a22' }}>Tutti gli addon ({streamGroups.reduce((t, g) => t + g.streams.length, 0)})</option>
+                  <option value="all" style={{ backgroundColor: '#1a1a22' }}>All addons ({streamGroups.reduce((t, g) => t + g.streams.length, 0)})</option>
                   {streamGroups.map(g => <option key={g.addonUrl} value={g.addonUrl} style={{ backgroundColor: '#1a1a22' }}>{g.addonName} ({g.streams.length})</option>)}
                 </select>
-              ) : <p className="text-xs font-bold text-white/50 uppercase tracking-wider flex-1">Stream disponibili</p>}
+              ) : <p className="text-xs font-bold text-white/50 uppercase tracking-wider flex-1">Available streams</p>}
               {streamsLoading && <div className="flex items-center gap-1 flex-shrink-0"><Loader2 size={11} className="animate-spin text-white/40" /><span className="text-[10px] text-white/30">{streamGroups.length}</span></div>}
             </div>
             {streamsLoading && <div className="h-0.5 bg-white/5 flex-shrink-0"><div className="h-full animate-pulse" style={{ backgroundColor: 'var(--accent)', width: '60%' }} /></div>}
             <div className="flex-1 overflow-y-auto">
               {streamGroups.length === 0 && !streamsLoading && streamError && <div className="px-4 py-6 text-center"><AlertCircle size={20} className="text-white/30 mx-auto mb-2" /><p className="text-xs text-white/40">{streamError}</p></div>}
-              {streamGroups.length === 0 && !streamsLoading && !streamError && isSeries && !selectedVideo && <div className="px-4 py-6 text-center text-xs text-white/30">Seleziona un episodio per caricare gli stream</div>}
+              {streamGroups.length === 0 && !streamsLoading && !streamError && isSeries && !selectedVideo && <div className="px-4 py-6 text-center text-xs text-white/30">Select an episode to load streams</div>}
               {(selectedAddon ? streamGroups.filter(g => g.addonUrl === selectedAddon) : streamGroups).map((group) => (
                 <div key={group.addonUrl}>
                   <div className="sticky top-0 bg-[#111115]/95 backdrop-blur-sm px-3 py-2 border-b border-white/[0.05] z-10">
@@ -632,7 +695,7 @@ export default function Detail() {
                   {group.streams.slice(0, 20).map((stream: Stream, si: number) => (
                     <StreamRow key={si} stream={stream} onPlay={() => handlePlay(stream, group.addonUrl, si)} active={activeStreamKey === `${group.addonUrl}:${si}`} />
                   ))}
-                  {group.streams.length > 20 && <p className="text-[10px] text-white/25 text-center py-1.5">+{group.streams.length - 20} altri</p>}
+                  {group.streams.length > 20 && <p className="text-[10px] text-white/25 text-center py-1.5">+{group.streams.length - 20} more</p>}
                 </div>
               ))}
             </div>

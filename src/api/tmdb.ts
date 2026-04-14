@@ -243,5 +243,7 @@ export async function validateTMDBKey(key: string): Promise<boolean> {
 }
 
 export function hasTMDBKey(): boolean {
-  return Boolean(apiKey());
+  const key = apiKey();
+  console.log('[TMDB] hasTMDBKey - key exists:', !!key, 'key length:', key?.length);
+  return Boolean(key && key.length > 0);
 }
