@@ -9,4 +9,13 @@ export default defineConfig(async () => ({
     strictPort: true,
     watch: { ignored: ["**/src-tauri/**"] },
   },
+  // AGGIUNGI QUESTA SEZIONE
+  optimizeDeps: {
+    include: ['hls.js']
+  },
+  build: {
+    commonjsOptions: {
+      include: [/hls.js/, /node_modules/]
+    }
+  }
 }));
