@@ -9,8 +9,9 @@
     "tauri": "tauri"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2.1.0",
+    "@tauri-apps/api": "^2.10.1",
     "@tauri-apps/plugin-shell": "^2.0.0",
+    "@tauri-apps/plugin-store": "^2.4.2",
     "axios": "^1.7.7",
     "clsx": "^2.1.1",
     "express": "^5.2.1",

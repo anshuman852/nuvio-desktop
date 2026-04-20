@@ -3,7 +3,6 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useStore } from '../lib/store';
 import { upsertCW } from '../api/nuvio';
-import Hls from 'hls.js';
 import {
   ArrowLeft, Play, Pause, SkipBack, SkipForward, X, ChevronRight,
   Volume2, VolumeX, Maximize, Settings, ChevronLeft, Check, List
@@ -51,6 +50,42 @@ const ASPECT_LABELS: Record<AspectRatio, string> = {
   '16/9': '16:9 forzato', '4/3': '4:3', '2.35/1': 'Cinemascope 2.35:1',
 };
 
+// Carica HLS.js dinamicamente dal CDN
+let hlsPromise: Promise<any> | null = null;
+
+function loadHls(): Promise<any> {
+  if (hlsPromise) return hlsPromise;
+  
+  hlsPromise = new Promise((resolve, reject) => {
+    if (typeof window !== 'undefined' && (window as any).Hls) {
+      resolve((window as any).Hls);
+      return;
+    }
+    
+    const script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/hls.js@1.4.12/dist/hls.min.js';
+    script.onload = () => {
+      if ((window as any).Hls) {
+        resolve((window as any).Hls);
+      } else {
+        reject(new Error('Hls non caricato'));
+      }
+    };
+    script.onerror = () => reject(new Error('Impossibile caricare HLS.js'));
+    document.head.appendChild(script);
+  });
+  
+  return hlsPromise;
+}
+
+// Funzione per determinare il tipo di stream
+function getStreamType(url: string): 'magnet' | 'hls' | 'mp4' | 'other' {
+  if (url.startsWith('magnet:')) return 'magnet';
+  if (url.endsWith('.m3u8') || url.includes('.m3u8')) return 'hls';
+  if (url.endsWith('.mp4') || url.endsWith('.mkv') || url.endsWith('.webm') || url.endsWith('.avi')) return 'mp4';
+  return 'other';
+}
+
 export default function VideoPlayer(props: VideoPlayerProps) {
   const {
     url, title, subtitle, contentId, contentType, poster, backdrop, cast = [],
@@ -91,10 +126,9 @@ export default function VideoPlayer(props: VideoPlayerProps) {
 
   const bgImg = backdrop || poster;
 
-  const usesMpv = url.startsWith('magnet:')
-    || url.includes('127.0.0.1:11470')
-    || url.includes('localhost:11470')
-    || url.includes('127.0.0.1:11473');
+  const streamType = getStreamType(url);
+  const usesMpv = streamType === 'magnet';
+  const isHls = streamType === 'hls';
 
   const syncCW = useCallback((t: number, d: number) => {
     if (!contentId || d < 5) return;
@@ -114,7 +148,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
     return () => clearInterval(cwTimer.current);
   }, [syncCW]);
 
-  // MPV
+  // MPV - SOLO per magnet link
   useEffect(() => {
     if (!usesMpv) return;
     setBuffering(false);
@@ -123,63 +157,80 @@ export default function VideoPlayer(props: VideoPlayerProps) {
     return () => { invoke('mpv_stop').catch(() => {}); };
   }, [url, usesMpv, referer]);
 
-  // HTML5 player con supporto HLS.js, CORS e referer
+  // HTML5 player con supporto HLS.js
   useEffect(() => {
     if (usesMpv) return;
     const v = vidRef.current;
     if (!v) return;
-    if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
-    v.src = '';
-    setReady(false); setBuffering(true); setError(null);
-    setPlaying(false); setHasPlayedOnce(false); setCurrentTime(0); setDuration(0);
-    setShowNextCard(false); setNextTriggered(false); setShowCastPanel(false);
-    setAudioTracks([]);
     
-    // Configura CORS e referrer policy
-    v.crossOrigin = "anonymous";
-    v.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
+    const initPlayer = async () => {
+      if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
+      v.src = '';
+      setReady(false); setBuffering(true); setError(null);
+      setPlaying(false); setHasPlayedOnce(false); setCurrentTime(0); setDuration(0);
+      setShowNextCard(false); setNextTriggered(false); setShowCastPanel(false);
+      setAudioTracks([]);
+      
+      // Configura CORS e referrer policy
+      v.crossOrigin = "anonymous";
+      v.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
+      
+      // Aggiungi meta referrer se presente
+      let metaReferrer: HTMLMetaElement | null = null;
+      if (referer) {
+        metaReferrer = document.createElement('meta');
+        metaReferrer.name = 'referrer';
+        metaReferrer.content = referer;
+        document.head.appendChild(metaReferrer);
+      }
+      
+      if (isHls) {
+        // Per flussi HLS usa HLS.js
+        try {
+          const HlsModule = await loadHls();
+          if (HlsModule.isSupported()) {
+            const hls = new HlsModule({
+              enableWorker: true,
+              lowLatencyMode: true,
+              maxBufferLength: 30,
+            });
+            hls.loadSource(activeQuality);
+            hls.attachMedia(v);
+            hlsRef.current = hls;
+          } else {
+            v.src = activeQuality;
+          }
+        } catch (err) {
+          console.error('HLS.js error:', err);
+          v.src = activeQuality;
+        }
+      } else {
+        v.src = activeQuality;
+      }
+      
+      v.playbackRate = playbackSpeed;
+      v.load();
+      
+      // Tentativo di riproduzione automatica
+      const playPromise = v.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(e => {
+          console.warn('Autoplay prevented:', e);
+          setPlaying(false);
+        });
+      }
+      
+      if (metaReferrer) {
+        setTimeout(() => metaReferrer?.remove(), 100);
+      }
+    };
     
-    // Aggiungi meta referrer se presente
-    let metaReferrer: HTMLMetaElement | null = null;
-    if (referer) {
-      metaReferrer = document.createElement('meta');
-      metaReferrer.name = 'referrer';
-      metaReferrer.content = referer;
-      document.head.appendChild(metaReferrer);
-    }
-    
-    // Gestione flussi HLS (.m3u8)
-    const isHls = activeQuality.endsWith('.m3u8') || activeQuality.includes('.m3u8');
-    if (isHls && Hls.isSupported()) {
-      const hls = new Hls({
-        enableWorker: true,
-        lowLatencyMode: true,
-        maxBufferLength: 30,
-      });
-      hls.loadSource(activeQuality);
-      hls.attachMedia(v);
-      hlsRef.current = hls;
-    } else {
-      v.src = activeQuality;
-    }
-    
-    v.playbackRate = playbackSpeed;
-    v.load();
-    
-    // Tentativo di riproduzione automatica
-    const playPromise = v.play();
-    if (playPromise !== undefined) {
-      playPromise.catch(e => {
-        console.warn('Autoplay prevented:', e);
-        setPlaying(false);
-      });
-    }
+    initPlayer();
     
     return () => { 
       if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
-      if (metaReferrer) metaReferrer.remove();
     };
-  }, [activeQuality, usesMpv, referer]);
+  }, [activeQuality, usesMpv, referer, isHls]);
 
   // HTML5 event listeners
   useEffect(() => {
@@ -187,7 +238,6 @@ export default function VideoPlayer(props: VideoPlayerProps) {
     if (!v || usesMpv) return;
     const canPlay   = () => {
       setBuffering(false); setReady(true); v.play().catch(() => {});
-      // Rileva tracce audio
       const tracks: {id: number; label: string}[] = [];
       if ((v as any).audioTracks) {
         for (let i = 0; i < (v as any).audioTracks.length; i++) {
@@ -423,9 +473,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
       )}
       {settingsPanel === 'quality' && (
         <div className="py-1">
-          <button onClick={() => setSettingsPanel('main')} className="w-full flex items-center gap-2 px-4 py-3 hover:bg-white/5 text-white/60 text-sm border-b border-white/5">
-            <ChevronLeft size={14} />Qualità
-          </button>
+          <button onClick={() => setSettingsPanel('main')} className="w-full flex items-center gap-2 px-4 py-3 hover:bg-white/5 text-white/60 text-sm border-b border-white/5"><ChevronLeft size={14} />Qualità</button>
           {availableQualities.map(q => (
             <button key={q.url} onClick={() => { setActiveQuality(q.url); onQualitySelect?.(q.url); setSettingsPanel(null); }}
               className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 text-white text-sm">
@@ -436,14 +484,11 @@ export default function VideoPlayer(props: VideoPlayerProps) {
       )}
       {settingsPanel === 'subtitles' && (
         <div className="py-1">
-          <button onClick={() => setSettingsPanel('main')} className="w-full flex items-center gap-2 px-4 py-3 hover:bg-white/5 text-white/60 text-sm border-b border-white/5">
-            <ChevronLeft size={14} />Sottotitoli
-          </button>
+          <button onClick={() => setSettingsPanel('main')} className="w-full flex items-center gap-2 px-4 py-3 hover:bg-white/5 text-white/60 text-sm border-b border-white/5"><ChevronLeft size={14} />Sottotitoli</button>
           <button onClick={() => { setActiveSub(null); setSettingsPanel(null); }}
             className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 text-white text-sm">
             Disattivati {!activeSub && <Check size={14} className="text-[color:var(--accent)]" />}
           </button>
-          {subtitleTracks.length === 0 && <div className="px-4 py-3 text-white/30 text-xs">Nessun sottotitolo per questo stream.</div>}
           {subtitleTracks.map(s => (
             <button key={s.lang} onClick={() => { setActiveSub(s.lang); setSettingsPanel(null); }}
               className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 text-white text-sm">
@@ -454,9 +499,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
       )}
       {settingsPanel === 'audio' && (
         <div className="py-1">
-          <button onClick={() => setSettingsPanel('main')} className="w-full flex items-center gap-2 px-4 py-3 hover:bg-white/5 text-white/60 text-sm border-b border-white/5">
-            <ChevronLeft size={14} />Traccia audio
-          </button>
+          <button onClick={() => setSettingsPanel('main')} className="w-full flex items-center gap-2 px-4 py-3 hover:bg-white/5 text-white/60 text-sm border-b border-white/5"><ChevronLeft size={14} />Traccia audio</button>
           {audioTracks.map(t => (
             <button key={t.id} onClick={() => { setActiveAudio(t.id); setSettingsPanel(null); }}
               className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 text-white text-sm">
@@ -467,9 +510,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
       )}
       {settingsPanel === 'speed' && (
         <div className="py-1">
-          <button onClick={() => setSettingsPanel('main')} className="w-full flex items-center gap-2 px-4 py-3 hover:bg-white/5 text-white/60 text-sm border-b border-white/5">
-            <ChevronLeft size={14} />Velocità
-          </button>
+          <button onClick={() => setSettingsPanel('main')} className="w-full flex items-center gap-2 px-4 py-3 hover:bg-white/5 text-white/60 text-sm border-b border-white/5"><ChevronLeft size={14} />Velocità</button>
           {SPEEDS.map(s => (
             <button key={s} onClick={() => { setPlaybackSpeed(s); setSettingsPanel(null); }}
               className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 text-white text-sm">
@@ -480,9 +521,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
       )}
       {settingsPanel === 'display' && (
         <div className="py-1">
-          <button onClick={() => setSettingsPanel('main')} className="w-full flex items-center gap-2 px-4 py-3 hover:bg-white/5 text-white/60 text-sm border-b border-white/5">
-            <ChevronLeft size={14} />Formato video
-          </button>
+          <button onClick={() => setSettingsPanel('main')} className="w-full flex items-center gap-2 px-4 py-3 hover:bg-white/5 text-white/60 text-sm border-b border-white/5"><ChevronLeft size={14} />Formato video</button>
           {ASPECTS.map(a => (
             <button key={a} onClick={() => { setAspectRatio(a); setSettingsPanel(null); }}
               className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 text-white text-sm">
@@ -502,9 +541,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
       )}
       {settingsPanel === 'next_ep' && (
         <div className="py-1">
-          <button onClick={() => setSettingsPanel('main')} className="w-full flex items-center gap-2 px-4 py-3 hover:bg-white/5 text-white/60 text-sm border-b border-white/5">
-            <ChevronLeft size={14} />Popup prossimo episodio
-          </button>
+          <button onClick={() => setSettingsPanel('main')} className="w-full flex items-center gap-2 px-4 py-3 hover:bg-white/5 text-white/60 text-sm border-b border-white/5"><ChevronLeft size={14} />Popup prossimo episodio</button>
           <div className="px-4 py-2 text-xs text-white/40">Mostra il popup X secondi prima della fine</div>
           {NEXT_EP_THRESHOLDS.map(t => (
             <button key={t} onClick={() => { setNextEpThreshold(t); setSettingsPanel(null); }}
@@ -530,9 +567,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
         onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 flex-shrink-0">
           <p className="text-sm font-bold text-white">Episodi</p>
-          <button onClick={() => setShowEpisodeList(false)} className="p-1.5 text-white/40 hover:text-white">
-            <X size={16} />
-          </button>
+          <button onClick={() => setShowEpisodeList(false)} className="p-1.5 text-white/40 hover:text-white"><X size={16} /></button>
         </div>
         {episodeSeasons.length > 1 && (
           <div className="px-3 py-2 border-b border-white/10 flex-shrink-0">
@@ -553,9 +588,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
             return (
               <button key={ep.id} onClick={() => { onEpisodeSelect?.(ep.id); setShowEpisodeList(false); }}
                 className={`w-full flex items-center gap-3 px-3 py-2.5 border-b border-white/5 text-left transition-colors ${isCurrent ? 'bg-white/10' : 'hover:bg-white/5'}`}>
-                {ep.thumbnail
-                  ? <img src={ep.thumbnail} alt="" className="w-20 h-[45px] rounded object-cover flex-shrink-0" />
-                  : <div className="w-20 h-[45px] rounded bg-white/10 flex-shrink-0 flex items-center justify-center text-white/30 text-xs font-bold">{ep.episode}</div>}
+                {ep.thumbnail ? <img src={ep.thumbnail} alt="" className="w-20 h-[45px] rounded object-cover flex-shrink-0" /> : <div className="w-20 h-[45px] rounded bg-white/10 flex-shrink-0 flex items-center justify-center text-white/30 text-xs font-bold">{ep.episode}</div>}
                 <div className="flex-1 min-w-0">
                   <p className={`text-xs font-medium truncate ${isCurrent ? 'text-white' : 'text-white/70'}`}>
                     {ep.season && ep.episode ? `${ep.season}×${String(ep.episode).padStart(2,'0')} ` : ''}{ep.title}
@@ -574,10 +607,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
   if (usesMpv) return (
     <div className="fixed inset-0 bg-black z-[100] flex items-center justify-center"
       onMouseMove={resetHide} onClick={() => setSettingsPanel(null)}>
-      {bgImg && <>
-        <img src={bgImg} alt="" className="absolute inset-0 w-full h-full object-cover opacity-10 blur-2xl scale-110" />
-        <div className="absolute inset-0 bg-black/80" />
-      </>}
+      {bgImg && <><img src={bgImg} alt="" className="absolute inset-0 w-full h-full object-cover opacity-10 blur-2xl scale-110" /><div className="absolute inset-0 bg-black/80" /></>}
       <div className="relative z-10 flex flex-col items-center gap-5 text-center max-w-sm px-6">
         {poster && <img src={poster} alt={title} className="h-28 rounded-xl shadow-2xl" />}
         {title && <p className="text-white font-bold text-lg">{title}</p>}
@@ -594,9 +624,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
             <p className="text-white/70 text-sm">Riproduzione in corso...</p>
           </div>
         )}
-        <button onClick={handleClose} className="text-white/40 hover:text-white text-sm flex items-center gap-1.5">
-          <ArrowLeft size={14} />Indietro
-        </button>
+        <button onClick={handleClose} className="text-white/40 hover:text-white text-sm flex items-center gap-1.5"><ArrowLeft size={14} />Indietro</button>
       </div>
     </div>
   );
@@ -604,10 +632,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
   // Error screen
   if (error) return (
     <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black">
-      {bgImg && <>
-        <img src={bgImg} alt="" className="absolute inset-0 w-full h-full object-cover opacity-15 blur-2xl scale-110" />
-        <div className="absolute inset-0 bg-black/80" />
-      </>}
+      {bgImg && <><img src={bgImg} alt="" className="absolute inset-0 w-full h-full object-cover opacity-15 blur-2xl scale-110" /><div className="absolute inset-0 bg-black/80" /></>}
       <div className="relative z-10 flex flex-col items-center gap-5 text-center max-w-sm px-6">
         {poster && <img src={poster} alt={title} className="h-32 rounded-2xl shadow-2xl border border-white/10" />}
         {title && <p className="text-white font-bold text-lg">{title}</p>}
@@ -616,11 +641,8 @@ export default function VideoPlayer(props: VideoPlayerProps) {
           <p className="text-white/50 text-xs">{error}</p>
         </div>
         <div className="flex gap-2">
-          <button onClick={() => { setError(null); setBuffering(true); const v = vidRef.current; if (v) { v.load(); v.play().catch(() => {}); } }}
-            className="flex items-center gap-2 py-2.5 px-5 text-sm text-white bg-white/10 hover:bg-white/20 rounded-xl">Riprova</button>
-          <button onClick={handleClose} className="flex items-center gap-2 py-2.5 px-5 text-sm text-white bg-white/10 hover:bg-white/20 rounded-xl">
-            <ArrowLeft size={14} />Cambia stream
-          </button>
+          <button onClick={() => { setError(null); setBuffering(true); const v = vidRef.current; if (v) { v.load(); v.play().catch(() => {}); } }} className="flex items-center gap-2 py-2.5 px-5 text-sm text-white bg-white/10 hover:bg-white/20 rounded-xl">Riprova</button>
+          <button onClick={handleClose} className="flex items-center gap-2 py-2.5 px-5 text-sm text-white bg-white/10 hover:bg-white/20 rounded-xl"><ArrowLeft size={14} />Cambia stream</button>
         </div>
       </div>
     </div>
@@ -665,10 +687,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
               {cast.slice(0, 12).map((p, i) => (
                 <div key={i} className="flex-shrink-0 flex flex-col items-center gap-1.5 w-16">
                   <div className="w-14 h-14 rounded-full overflow-hidden border-2 border-white/20 bg-white/10">
-                    {p.photo
-                      ? <img src={p.photo} alt={p.name} className="w-full h-full object-cover object-top"
-                          onError={e => { (e.target as HTMLImageElement).src = `https://api.dicebear.com/9.x/personas/svg?seed=${encodeURIComponent(p.name)}`; }} />
-                      : <img src={`https://api.dicebear.com/9.x/personas/svg?seed=${encodeURIComponent(p.name)}`} alt={p.name} className="w-full h-full object-cover" />}
+                    {p.photo ? <img src={p.photo} alt={p.name} className="w-full h-full object-cover object-top" onError={e => { (e.target as HTMLImageElement).src = `https://api.dicebear.com/9.x/personas/svg?seed=${encodeURIComponent(p.name)}`; }} /> : <img src={`https://api.dicebear.com/9.x/personas/svg?seed=${encodeURIComponent(p.name)}`} alt={p.name} className="w-full h-full object-cover" />}
                   </div>
                   <p className="text-white/80 text-[10px] font-semibold text-center leading-tight line-clamp-2">{p.name}</p>
                   {p.character && <p className="text-white/40 text-[9px] text-center leading-tight line-clamp-1">{p.character}</p>}
@@ -683,10 +702,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
       <div className={`absolute top-0 left-0 right-0 z-20 flex items-center gap-3 px-5 py-4
         bg-gradient-to-b from-black/80 to-transparent transition-opacity duration-300
         ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
-        <button onClick={e => { e.stopPropagation(); handleClose(); }}
-          className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white">
-          <ArrowLeft size={18} />
-        </button>
+        <button onClick={e => { e.stopPropagation(); handleClose(); }} className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white"><ArrowLeft size={18} /></button>
         <div className="flex-1 min-w-0">
           {title && <p className="text-white font-semibold text-base truncate">{title}</p>}
           {subtitle && <p className="text-white/50 text-xs truncate">{subtitle}</p>}
@@ -694,9 +710,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
         {allEpisodes.length > 0 && onEpisodeSelect && (
           <button onClick={e => { e.stopPropagation(); setShowEpisodeList(v => !v); setSettingsPanel(null); }}
             className={`p-2 rounded-full transition-colors ${showEpisodeList ? 'bg-white/20 text-white' : 'bg-white/10 hover:bg-white/20 text-white/70'}`}
-            title="Lista episodi">
-            <List size={18} />
-          </button>
+            title="Lista episodi"><List size={18} /></button>
         )}
       </div>
 
@@ -708,34 +722,19 @@ export default function VideoPlayer(props: VideoPlayerProps) {
               <div className="relative w-full h-36">
                 <img src={nextEpisode.thumbnail} alt={nextEpisode.title} className="w-full h-full object-cover" />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
-                <div className="absolute top-2 left-3">
-                  <span className="text-[10px] text-white/60 uppercase tracking-widest font-bold bg-black/40 px-2 py-0.5 rounded">Prossimo episodio</span>
-                </div>
+                <div className="absolute top-2 left-3"><span className="text-[10px] text-white/60 uppercase tracking-widest font-bold bg-black/40 px-2 py-0.5 rounded">Prossimo episodio</span></div>
               </div>
             ) : (
-              <div className="w-full h-12 bg-white/5 flex items-center px-4">
-                <p className="text-[10px] text-white/40 uppercase tracking-widest">Prossimo episodio</p>
-              </div>
+              <div className="w-full h-12 bg-white/5 flex items-center px-4"><p className="text-[10px] text-white/40 uppercase tracking-widest">Prossimo episodio</p></div>
             )}
             <div className="p-3 flex items-center gap-3">
               <div className="flex-1 min-w-0">
                 <p className="text-white text-sm font-semibold truncate">{nextEpisode.title}</p>
-                <p className="text-white/40 text-xs mt-0.5">
-                  {secsLeft > 0 ? `Avvio automatico tra ${secsLeft}s` : 'Caricamento...'}
-                </p>
+                <p className="text-white/40 text-xs mt-0.5">{secsLeft > 0 ? `Avvio automatico tra ${secsLeft}s` : 'Caricamento...'}</p>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
-                {onPlayNextEpisode && (
-                  <button onClick={handlePlayNextEpisode}
-                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm text-white font-semibold"
-                    style={{ backgroundColor: 'var(--accent,#7c3aed)' }}>
-                    <Play size={12} className="fill-white" />Guarda
-                  </button>
-                )}
-                <button onClick={e => { e.stopPropagation(); setShowNextCard(false); }}
-                  className="p-1.5 text-white/40 hover:text-white rounded-lg hover:bg-white/10">
-                  <X size={14} />
-                </button>
+                {onPlayNextEpisode && (<button onClick={handlePlayNextEpisode} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm text-white font-semibold" style={{ backgroundColor: 'var(--accent,#7c3aed)' }}><Play size={12} className="fill-white" />Guarda</button>)}
+                <button onClick={e => { e.stopPropagation(); setShowNextCard(false); }} className="p-1.5 text-white/40 hover:text-white rounded-lg hover:bg-white/10"><X size={14} /></button>
               </div>
             </div>
           </div>
@@ -752,63 +751,25 @@ export default function VideoPlayer(props: VideoPlayerProps) {
       <div className={`absolute bottom-0 left-0 right-0 z-20 transition-opacity duration-300
         ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
         <div className="bg-gradient-to-t from-black/95 via-black/70 to-transparent px-5 pt-10 pb-5">
-          <div className="mb-3 group cursor-pointer"
-            onClick={e => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); seek((e.clientX - r.left) / r.width); }}>
+          <div className="mb-3 group cursor-pointer" onClick={e => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); seek((e.clientX - r.left) / r.width); }}>
             <div className="h-1 group-hover:h-2 transition-all rounded-full bg-white/20 relative">
               <div className="h-full rounded-full bg-white transition-all" style={{ width: `${progress * 100}%` }} />
-              <div className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-white shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"
-                style={{ left: `calc(${progress * 100}% - 6px)` }} />
+              <div className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-white shadow-lg opacity-0 group-hover:opacity-100 transition-opacity" style={{ left: `calc(${progress * 100}% - 6px)` }} />
             </div>
           </div>
           <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
-            {prevEpisode && onPrev && (
-              <button onClick={onPrev} className="p-2 text-white/60 hover:text-white" title={prevEpisode.title}>
-                <SkipBack size={18} />
-              </button>
-            )}
-            <button onClick={() => seekRelative(-10)} className="p-2 text-white/60 hover:text-white" title="-10s">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M12.5 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zm0 16a7 7 0 1 1 0-14 7 7 0 0 1 0 14z" opacity=".3"/>
-                <path d="M12.5 3a9 9 0 0 0-9 9h2a7 7 0 0 1 7-7V3z"/>
-                <path d="M6.5 5.5 5.09 4.09A9 9 0 0 0 3.5 12h2a7 7 0 0 1 1.2-3.95L5.5 6.8 6.5 5.5z"/>
-                <text x="8.5" y="15" fontSize="6" fontWeight="bold" fill="currentColor">10</text>
-              </svg>
-            </button>
-            <button onClick={togglePlay} className="p-2.5 rounded-full bg-white text-black hover:bg-white/90">
-              {playing ? <Pause size={18} /> : <Play size={18} className="fill-black ml-0.5" />}
-            </button>
-            <button onClick={() => seekRelative(10)} className="p-2 text-white/60 hover:text-white" title="+10s">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M11.5 3a9 9 0 1 1 0 18 9 9 0 0 1 0-18zm0 16a7 7 0 1 0 0-14 7 7 0 0 0 0 14z" opacity=".3"/>
-                <path d="M11.5 3a9 9 0 0 1 9 9h-2a7 7 0 0 0-7-7V3z"/>
-                <path d="M17.5 5.5 18.91 4.09A9 9 0 0 1 20.5 12h-2a7 7 0 0 0-1.2-3.95l1.2-1.25L17.5 5.5z"/>
-                <text x="8" y="15" fontSize="6" fontWeight="bold" fill="currentColor">10</text>
-              </svg>
-            </button>
-            {nextEpisode && onPlayNextEpisode && (
-              <button onClick={handlePlayNextEpisode} className="p-2 text-white/60 hover:text-white" title={nextEpisode.title}>
-                <SkipForward size={18} />
-              </button>
-            )}
-            <span className="text-white/70 text-sm font-mono tabular-nums ml-1">
-              {fmtTime(currentTime)} / {fmtTime(duration)}
-            </span>
+            {prevEpisode && onPrev && (<button onClick={onPrev} className="p-2 text-white/60 hover:text-white" title={prevEpisode.title}><SkipBack size={18} /></button>)}
+            <button onClick={() => seekRelative(-10)} className="p-2 text-white/60 hover:text-white" title="-10s"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12.5 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zm0 16a7 7 0 1 1 0-14 7 7 0 0 1 0 14z" opacity=".3"/><path d="M12.5 3a9 9 0 0 0-9 9h2a7 7 0 0 1 7-7V3z"/><path d="M6.5 5.5 5.09 4.09A9 9 0 0 0 3.5 12h2a7 7 0 0 1 1.2-3.95L5.5 6.8 6.5 5.5z"/><text x="8.5" y="15" fontSize="6" fontWeight="bold" fill="currentColor">10</text></svg></button>
+            <button onClick={togglePlay} className="p-2.5 rounded-full bg-white text-black hover:bg-white/90">{playing ? <Pause size={18} /> : <Play size={18} className="fill-black ml-0.5" />}</button>
+            <button onClick={() => seekRelative(10)} className="p-2 text-white/60 hover:text-white" title="+10s"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M11.5 3a9 9 0 1 1 0 18 9 9 0 0 1 0-18zm0 16a7 7 0 1 0 0-14 7 7 0 0 0 0 14z" opacity=".3"/><path d="M11.5 3a9 9 0 0 1 9 9h-2a7 7 0 0 0-7-7V3z"/><path d="M17.5 5.5 18.91 4.09A9 9 0 0 1 20.5 12h-2a7 7 0 0 0-1.2-3.95l1.2-1.25L17.5 5.5z"/><text x="8" y="15" fontSize="6" fontWeight="bold" fill="currentColor">10</text></svg></button>
+            {nextEpisode && onPlayNextEpisode && (<button onClick={handlePlayNextEpisode} className="p-2 text-white/60 hover:text-white" title={nextEpisode.title}><SkipForward size={18} /></button>)}
+            <span className="text-white/70 text-sm font-mono tabular-nums ml-1">{fmtTime(currentTime)} / {fmtTime(duration)}</span>
             <div className="flex-1" />
-            <button onClick={toggleMute} className="p-2 text-white/60 hover:text-white">
-              {muted || volume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
-            </button>
-            <input type="range" min={0} max={1} step={0.05} value={muted ? 0 : volume}
-              onChange={e => setVol(Number(e.target.value))} className="w-20 accent-white" />
-            <button onClick={e => { e.stopPropagation(); setSettingsPanel(p => p ? null : 'main'); setShowEpisodeList(false); }}
-              className={`p-2 transition-colors ${settingsPanel ? 'text-white' : 'text-white/60 hover:text-white'}`}>
-              <Settings size={16} />
-            </button>
-            <button onClick={() => vidRef.current?.requestFullscreen?.()} className="p-2 text-white/60 hover:text-white">
-              <Maximize size={16} />
-            </button>
-            <button onClick={handleClose} className="p-2 text-white/60 hover:text-white">
-              <X size={18} />
-            </button>
+            <button onClick={toggleMute} className="p-2 text-white/60 hover:text-white">{muted || volume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}</button>
+            <input type="range" min={0} max={1} step={0.05} value={muted ? 0 : volume} onChange={e => setVol(Number(e.target.value))} className="w-20 accent-white" />
+            <button onClick={e => { e.stopPropagation(); setSettingsPanel(p => p ? null : 'main'); setShowEpisodeList(false); }} className={`p-2 transition-colors ${settingsPanel ? 'text-white' : 'text-white/60 hover:text-white'}`}><Settings size={16} /></button>
+            <button onClick={() => vidRef.current?.requestFullscreen?.()} className="p-2 text-white/60 hover:text-white"><Maximize size={16} /></button>
+            <button onClick={handleClose} className="p-2 text-white/60 hover:text-white"><X size={18} /></button>
           </div>
         </div>
       </div>

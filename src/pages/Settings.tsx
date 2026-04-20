@@ -216,21 +216,34 @@ function AccountPage() {
     finally { setLoading(false); }
   }
 
-  async function syncAll() {
+  // Sostituisci la funzione syncAll in Settings.tsx con questa versione:
+
+async function syncAll() {
     if (!nuvioUser) return;
     setSyncing(true); setSyncMsg(null);
     try {
       const cloudAddons = await getNuvioAddons(nuvioUser.id, nuvioUser.token);
       if (cloudAddons.length > 0) {
-        const cloudUrls = new Set(cloudAddons.map((a: any) =>
-          (a.url ?? '').replace(/\/+$/, '').replace(/\/manifest\.json$/, '')
-        ));
-        const cloudIds = new Set(cloudAddons.map((a: any) => a.id));
-        const localOnly = addons.filter((a: any) => {
-          const normalUrl = (a.url ?? '').replace(/\/+$/, '').replace(/\/manifest\.json$/, '');
-          return !cloudUrls.has(normalUrl) && !cloudIds.has(a.id);
+        // 1. Deduplica cloudAddons (Supabase può avere lo stesso addon più volte)
+        const seenIds = new Set<string>();
+        const seenUrls = new Set<string>();
+        const uniqueCloud = cloudAddons.filter((a: any) => {
+          const normUrl = (a.url ?? '').replace(/\/+$/, '').replace(/\/manifest\.json$/, '').toLowerCase();
+          const id = (a.id ?? '').toLowerCase();
+          if ((id && seenIds.has(id)) || (normUrl && seenUrls.has(normUrl))) return false;
+          if (id) seenIds.add(id);
+          if (normUrl) seenUrls.add(normUrl);
+          return true;
         });
-        setAddons([...localOnly, ...cloudAddons]);
+
+        // 2. Filtra i locali che non sono già nel cloud
+        const localOnly = addons.filter((a: any) => {
+          const normUrl = (a.url ?? '').replace(/\/+$/, '').replace(/\/manifest\.json$/, '').toLowerCase();
+          const id = (a.id ?? '').toLowerCase();
+          return !seenIds.has(id) && !seenUrls.has(normUrl);
+        });
+
+        setAddons([...localOnly, ...uniqueCloud]);
       }
       const s = await getAccountStats(nuvioUser.id, nuvioUser.token);
       setStats(s);

@@ -31,6 +31,13 @@ impl MpvManager {
                     return Ok(candidate);
                 }
             }
+            
+            // Cerca nella cartella resources (importante per Tauri bundle)
+            let candidate_res = dir.join("resources").join("mpv.exe");
+            if candidate_res.exists() {
+                eprintln!("[mpv] Trovato in resources dir: {}", candidate_res.display());
+                return Ok(candidate_res);
+            }
         }
 
         // 2. Cerca nella cartella di lavoro corrente e percorsi relativi comuni
@@ -41,6 +48,9 @@ impl MpvManager {
             PathBuf::from("../mpv.exe"),
             PathBuf::from("../../mpv.exe"),
             PathBuf::from("resources/mpv.exe"),
+            PathBuf::from("../resources/mpv.exe"),
+            PathBuf::from("public/tools/mpv.exe"),
+            PathBuf::from("../public/tools/mpv.exe"),
             PathBuf::from("resources/mpv/mpv.exe"),
         ];
         for p in &extra_paths {
@@ -100,6 +110,33 @@ impl MpvManager {
                     return Ok(candidate);
                 }
             }
+            
+            // Cerca nella cartella LOCALAPPDATA (dove Tauri installa l'app)
+            if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
+                let user_paths = [
+                    PathBuf::from(&local_app_data).join("nuvio-desktop\\mpv.exe"),
+                    PathBuf::from(&local_app_data).join("nuvio-desktop\\resources\\mpv.exe"),
+                ];
+                for candidate in &user_paths {
+                    if candidate.exists() {
+                        eprintln!("[mpv] Trovato in LOCALAPPDATA: {}", candidate.display());
+                        return Ok(candidate.clone());
+                    }
+                }
+            }
+            
+            // Hardcoded fallback (senza nome utente specifico)
+            let hardcoded_paths = [
+                "C:\\Program Files\\Nuvio Desktop\\mpv.exe",
+                "C:\\Program Files\\Nuvio Desktop\\resources\\mpv.exe",
+            ];
+            for path_str in &hardcoded_paths {
+                let candidate = PathBuf::from(path_str);
+                if candidate.exists() {
+                    eprintln!("[mpv] Trovato in hardcoded path: {}", candidate.display());
+                    return Ok(candidate);
+                }
+            }
         }
 
         // 5. Cerca nella variabile d'ambiente MPV_HOME
@@ -109,6 +146,14 @@ impl MpvManager {
                 eprintln!("[mpv] Trovato in MPV_HOME: {}", candidate.display());
                 return Ok(candidate);
             }
+        }
+
+        // 6. LOG DI DEBUG - stampa il percorso corrente
+        if let Ok(cwd) = std::env::current_dir() {
+            eprintln!("[mpv] Current working directory: {}", cwd.display());
+        }
+        if let Ok(exe) = std::env::current_exe() {
+            eprintln!("[mpv] Executable path: {}", exe.display());
         }
 
         Err("mpv non trovato. Scarica mpv da https://mpv.io e mettilo nella cartella dell'app.".into())
@@ -215,7 +260,6 @@ impl MpvManager {
         #[cfg(target_os = "windows")]
         {
             use std::fs::OpenOptions;
-            use std::io::Read;
             
             let mut f = OpenOptions::new().read(true).write(true).open(&ipc)?;
             f.write_all(msg.as_bytes())?;

@@ -1,17 +1,18 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "nuvio-desktop",
-  "version": "2.1.1",
+  "version": "2.1.6",
   "identifier": "com.nuvio.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "npm run build",
-    "frontendDist": "../dist"
+    "frontendDist": "./dist"
   },
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "Nuvio Desktop",
         "width": 1280,
         "height": 720,
@@ -22,11 +23,19 @@
         "fullscreen": false,
         "decorations": true,
         "transparent": false,
-        "additionalBrowserArgs": "--autoplay-policy=no-user-gesture-required"
+        "visible": true,
+        "focus": true,
+        "devtools": true,
+        "additionalBrowserArgs": "--autoplay-policy=no-user-gesture-required --allow-running-insecure-content"
       }
     ],
     "security": {
-      "csp": null
+      "csp": null,
+      "dangerousDisableAssetCspModification": true,
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["**"]
+      }
     }
   },
   "bundle": {

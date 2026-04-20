@@ -3,13 +3,18 @@
 mod addon;
 mod mpv;
 mod proxy;
+mod plugin;
 
-use std::sync::Mutex;
-use tauri::{State, Emitter, Manager};
+use std::sync::{Arc, Mutex};
+use tauri::{State, Manager};
+use plugin::PluginRuntime;
 
 pub struct AppState {
     pub mpv: Mutex<mpv::MpvManager>,
+    pub plugin_runtime: Arc<PluginRuntime>,
 }
+
+// ─── Addon / meta commands ────────────────────────────────────────────────────
 
 #[tauri::command]
 async fn fetch_manifest(url: String) -> Result<serde_json::Value, String> {
@@ -30,6 +35,8 @@ async fn fetch_meta(base_url: String, type_: String, id: String) -> Result<serde
 async fn fetch_streams(base_url: String, type_: String, id: String) -> Result<serde_json::Value, String> {
     addon::fetch_streams(&base_url, &type_, &id).await.map_err(|e| e.to_string())
 }
+
+// ─── MPV commands ─────────────────────────────────────────────────────────────
 
 #[tauri::command]
 async fn launch_mpv(state: State<'_, AppState>, url: String, title: Option<String>, referrer: Option<String>) -> Result<(), String> {
@@ -85,9 +92,14 @@ async fn mpv_get_duration(state: State<'_, AppState>) -> Result<f64, String> {
     Ok(mpv.get_duration())
 }
 
+// ─── Utility commands ─────────────────────────────────────────────────────────
+
 #[tauri::command]
 async fn open_url(url: String) -> Result<(), String> {
-    std::process::Command::new("cmd").args(["/C", "start", "", &url]).spawn().map_err(|e| e.to_string())?;
+    std::process::Command::new("cmd")
+        .args(["/C", "start", "", &url])
+        .spawn()
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -115,54 +127,202 @@ async fn resolve_stream_url(url: String) -> Result<String, String> {
     }
 }
 
-// Nuova funzione proxy per stream HTTP
 #[tauri::command]
-async fn proxy_stream(url: String, referer: Option<String>) -> Result<Vec<u8>, String> {
+async fn proxy_stream_url(url: String, referer: Option<String>) -> Result<String, String> {
     use reqwest::header::{HeaderMap, HeaderValue, REFERER, USER_AGENT};
-    
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .map_err(|e| e.to_string())?;
-    
+    let client = reqwest::Client::builder().timeout(std::time::Duration::from_secs(30)).build().map_err(|e| e.to_string())?;
     let mut headers = HeaderMap::new();
     headers.insert(USER_AGENT, HeaderValue::from_static("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"));
-    
     if let Some(r) = referer {
         headers.insert(REFERER, HeaderValue::from_str(&r).map_err(|e| e.to_string())?);
     }
-    
-    let response = client
-        .get(&url)
-        .headers(headers)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-    
+    let response = client.get(&url).headers(headers).send().await.map_err(|e| e.to_string())?;
+    let bytes = response.bytes().await.map_err(|e| e.to_string())?;
+    let temp_path = std::env::temp_dir().join(format!("nuvio_stream_{}.mp4", std::process::id()));
+    std::fs::write(&temp_path, bytes).map_err(|e| e.to_string())?;
+    Ok(temp_path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+async fn proxy_stream(url: String, referer: Option<String>) -> Result<Vec<u8>, String> {
+    use reqwest::header::{HeaderMap, HeaderValue, REFERER, USER_AGENT};
+    let client = reqwest::Client::builder().timeout(std::time::Duration::from_secs(30)).build().map_err(|e| e.to_string())?;
+    let mut headers = HeaderMap::new();
+    headers.insert(USER_AGENT, HeaderValue::from_static("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"));
+    if let Some(r) = referer {
+        headers.insert(REFERER, HeaderValue::from_str(&r).map_err(|e| e.to_string())?);
+    }
+    let response = client.get(&url).headers(headers).send().await.map_err(|e| e.to_string())?;
     let bytes = response.bytes().await.map_err(|e| e.to_string())?;
     Ok(bytes.to_vec())
 }
 
+// ─── Test IPC ────────────────────────────────────────────────────────────────
+
+#[tauri::command]
+fn test_ipc() -> Result<String, String> {
+    eprintln!("[IPC] test_ipc called");
+    Ok("IPC working!".to_string())
+}
+
+// ─── Plugin commands ─────────────────────────────────────────────────────────
+
+// ─── Plugin commands ─────────────────────────────────────────────────────────
+
+#[tauri::command]
+async fn plugin_get_repositories(
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::plugin::RepositoryInfo>, String> {
+    // repository_manager è tokio::sync::Mutex → .lock().await
+    Ok(state.plugin_runtime.repository_manager.lock().await.get_repositories())
+}
+
+#[tauri::command]
+async fn plugin_add_repository(
+    state: State<'_, AppState>,
+    url: String,
+) -> Result<crate::plugin::RepositoryInfo, String> {
+    let repo = state.plugin_runtime
+        .repository_manager
+        .lock()
+        .await
+        .add_repository(url)
+        .await?;
+
+    state.plugin_runtime.reload_scrapers();
+    Ok(repo)
+}
+
+#[tauri::command]
+async fn plugin_remove_repository(
+    state: State<'_, AppState>,
+    repo_id: String,
+) -> Result<(), String> {
+    state.plugin_runtime.repository_manager.lock().await.remove_repository(&repo_id)
+}
+
+#[tauri::command]
+async fn plugin_refresh_repository(
+    state: State<'_, AppState>,
+    repo_id: String,
+) -> Result<(), String> {
+    state.plugin_runtime
+        .repository_manager
+        .lock()
+        .await
+        .refresh_repository(&repo_id)
+        .await?;
+
+    state.plugin_runtime.reload_scrapers();
+    Ok(())
+}
+
+#[tauri::command]
+async fn plugin_get_scrapers(
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::plugin::ScraperInfo>, String> {
+    // scraper_manager è tokio::sync::Mutex → .lock().await
+    Ok(state.plugin_runtime.scraper_manager.lock().await.get_scrapers())
+}
+
+#[tauri::command]
+async fn plugin_set_scraper_enabled(
+    state: State<'_, AppState>,
+    scraper_id: String,
+    enabled: bool,
+) -> Result<(), String> {
+    state.plugin_runtime.scraper_manager.lock().await.set_scraper_enabled(&scraper_id, enabled)
+}
+
+#[tauri::command]
+async fn plugin_get_streams(
+    state: State<'_, AppState>,
+    media_type: String,
+    tmdb_id: String,
+    season: Option<u32>,
+    episode: Option<u32>,
+) -> Result<Vec<crate::plugin::StreamResult>, String> {
+    let streams = state.plugin_runtime
+        .get_streams(&media_type, &tmdb_id, season, episode)
+        .await;
+    Ok(streams)
+}
+
+#[tauri::command]
+async fn plugin_is_enabled(state: State<'_, AppState>) -> Result<bool, String> {
+    // is_enabled() è async ora
+    Ok(state.plugin_runtime.is_enabled().await)
+}
+
+#[tauri::command]
+async fn plugin_set_enabled(state: State<'_, AppState>, enabled: bool) -> Result<(), String> {
+    // set_enabled() è async ora
+    state.plugin_runtime.set_enabled(enabled).await;
+    Ok(())
+}
+
+#[tauri::command]
+async fn plugin_test_scraper(
+    state: State<'_, AppState>,
+    scraper_id: String,
+) -> Result<serde_json::Value, String> {
+    let (streams, logs) = state.plugin_runtime.test_scraper(&scraper_id).await?;
+    Ok(serde_json::json!({ "streams": streams, "logs": logs }))
+}
+// ─── Entry point ──────────────────────────────────────────────────────────────
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let proxy = proxy::StreamProxy::new();
     tauri::Builder::default()
         .plugin(tauri_plugin_store::Builder::new().build())
-        .manage(AppState { mpv: Mutex::new(mpv::MpvManager::new()) })
-        .setup(|_app| {
+        .setup(|app| {
+            let plugin_runtime = Arc::new(PluginRuntime::new(&app.handle()));
+
+            app.manage(AppState {
+                mpv: Mutex::new(mpv::MpvManager::new()),
+                plugin_runtime,
+            });
+
+            let proxy = proxy::StreamProxy::new();
             tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
                 if let Err(e) = proxy.start().await {
                     eprintln!("[proxy] Errore avvio: {}", e);
+                } else {
+                    eprintln!("[proxy] Server avviato su http://127.0.0.1:11473/proxy");
                 }
             });
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            fetch_manifest, fetch_catalog, fetch_meta, fetch_streams,
-            launch_mpv, launch_custom_player, launch_mpv_stream,
-            mpv_command, mpv_stop, mpv_get_position, mpv_get_duration,
-            open_url, stream_magnet, resolve_stream_url,
-            proxy_stream,  // <-- AGGIUNTA
+            fetch_manifest,
+            fetch_catalog,
+            fetch_meta,
+            fetch_streams,
+            launch_mpv,
+            launch_custom_player,
+            launch_mpv_stream,
+            mpv_command,
+            mpv_stop,
+            mpv_get_position,
+            mpv_get_duration,
+            open_url,
+            stream_magnet,
+            resolve_stream_url,
+            proxy_stream,
+            proxy_stream_url,
+            test_ipc,
+            plugin_get_repositories,
+            plugin_add_repository,
+            plugin_remove_repository,
+            plugin_refresh_repository,
+            plugin_get_scrapers,
+            plugin_set_scraper_enabled,
+            plugin_get_streams,
+            plugin_is_enabled,
+            plugin_set_enabled,
+            plugin_test_scraper,
         ])
         .run(tauri::generate_context!())
         .expect("error while running nuvio-desktop");

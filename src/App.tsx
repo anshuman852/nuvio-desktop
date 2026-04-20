@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 import { BrowserRouter, Routes, Route, NavLink, useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
-import { Home, Search as SearchIcon, Library, Package, Settings, X, Tv, Compass } from 'lucide-react';
+import { Home, Search as SearchIcon, Library, Package, Settings, X, Tv, Compass, Plug } from 'lucide-react';
 import clsx from 'clsx';
 import { useStore } from './lib/store';
 import { setAuthToken, getProfilesFromCloud } from './api/nuvio';
@@ -19,6 +19,7 @@ import ProfileSelectPage from './pages/ProfileSelect';
 import DiscoverPage from './pages/Discover';
 import LanguageSetup from './pages/LanguageSetup';
 import CatalogPage from './pages/CatalogPage';
+import PluginsPage from './pages/PluginsPage';
 
 function TokenRestorer() {
   const { nuvioUser, profiles, activeProfileId, updateProfile } = useStore();
@@ -134,6 +135,7 @@ function Sidebar({ collapsed }: { collapsed: boolean }) {
     { to: '/discover',  icon: Compass, label: t('discover'),     end: false },
     { to: '/library',   icon: Library, label: t('library'),      end: false },
     { to: '/addons',    icon: Package, label: t('addons'),       end: false },
+    { to: '/plugins',   icon: Plug,    label: 'Plugins',         end: false },
     { to: '/settings',  icon: Settings, label: t('settings'),    end: false },
   ];
 
@@ -265,6 +267,7 @@ function Layout() {
             <Route path="/person/:personId"     element={<PersonDetailPage />} />
             <Route path="/discover"             element={<DiscoverPage />} />
             <Route path="/catalog/:addonId/:catalogType/:catalogId" element={<CatalogPage />} />
+            <Route path="/plugins"              element={<PluginsPage />} />
           </Routes>
         </main>
       </div>

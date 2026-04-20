@@ -11,7 +11,7 @@ import VideoPlayer from '../components/VideoPlayer';
 import { invoke } from '@tauri-apps/api/core';
 import {
   Play, ArrowLeft, Star, ChevronLeft, ChevronRight,
-  Loader2, AlertCircle, Bookmark, Users,
+  Loader2, AlertCircle, Bookmark, Users, RefreshCw,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -96,6 +96,14 @@ export default function Detail() {
   const [watchedEpIds, setWatchedEpIds] = useState<Set<string>>(new Set());
   const isTmdbId = decodedId.startsWith('tmdb:');
 
+  const streamGroupsRef = useRef<StreamGroup[]>([]);
+  const hasStreamsLoadedRef = useRef(false);
+  const tmdbRef = useRef<any>(null);
+
+  useEffect(() => {
+    tmdbRef.current = tmdb;
+  }, [tmdb]);
+
   useEffect(() => {
     if (!epCtxMenu) return;
     const close = () => setEpCtxMenu(null);
@@ -119,13 +127,15 @@ export default function Detail() {
     setMeta(null); setTmdb(null); setCast([]); setCrew([]);
     setPlayerStream(null); setStreamGroups([]);
     setSelectedVideo(null);
-    
+    streamGroupsRef.current = [];
+    hasStreamsLoadedRef.current = false;
+    tmdbRef.current = null;
+
     (async () => {
       let found: MetaItem | null = null;
       const tmdbNumId = isTmdbId ? parseInt(decodedId.replace('tmdb:', '')) : null;
       const imdbId = decodedId.startsWith('tt') ? decodedId : null;
-      
-      // Carica meta dagli addon (Cinemeta, AIOMetadata, ecc.)
+
       const addonResult = isTmdbId ? Promise.resolve(null) : Promise.race([
         Promise.any(
           addons.slice(0, 8).map(addon =>
@@ -137,8 +147,7 @@ export default function Detail() {
         ).catch(() => null),
         new Promise<null>(res => setTimeout(() => res(null), 5000)),
       ]);
-      
-      // Carica TMDB in parallelo (PER IL CAST)
+
       let tmdbData = null;
       let localCast: any[] = [];
       if (hasTMDBKey() && settings.tmdbApiKey) {
@@ -151,44 +160,37 @@ export default function Detail() {
             const arr = type === 'series' ? (fr?.tv_results ?? []) : (fr?.movie_results ?? []);
             tmdbId = arr[0]?.id ?? null;
           }
-          
+
           if (tmdbId) {
             const tmdbType = type === 'series' ? 'tv' : 'movie';
             const details = await getDetails(tmdbType, tmdbId);
-            
-            // Carica credits in italiano e inglese per avere più cast
+
             const [creditsIT, creditsEN] = await Promise.all([
               fetch(`https://api.themoviedb.org/3/${tmdbType}/${tmdbId}/credits?api_key=${settings.tmdbApiKey}&language=it-IT`).then(r => r.json()).catch(() => null),
               fetch(`https://api.themoviedb.org/3/${tmdbType}/${tmdbId}/credits?api_key=${settings.tmdbApiKey}&language=en-US`).then(r => r.json()).catch(() => null),
             ]);
-            
+
             let bestCredits = details.credits;
-            if (creditsEN?.cast && creditsEN.cast.length > (bestCredits?.cast?.length ?? 0)) {
-              bestCredits = creditsEN;
-            }
-            if (creditsIT?.cast && creditsIT.cast.length > (bestCredits?.cast?.length ?? 0)) {
-              bestCredits = creditsIT;
-            }
-            if (bestCredits) {
-              details.credits = bestCredits;
-            }
+            if (creditsEN?.cast && creditsEN.cast.length > (bestCredits?.cast?.length ?? 0)) bestCredits = creditsEN;
+            if (creditsIT?.cast && creditsIT.cast.length > (bestCredits?.cast?.length ?? 0)) bestCredits = creditsIT;
+            if (bestCredits) details.credits = bestCredits;
+
             tmdbData = details;
           }
         } catch (e) {
           console.error('TMDB error:', e);
         }
       }
-      
+
       const addonResultData = await addonResult;
       found = addonResultData as MetaItem | null;
-      
-      // IMPORANTE: Estrai cast da TMDB (priorità assoluta)
+
       if (tmdbData) {
         setTmdb(tmdbData);
-        
-        // Prendi TUTTO il cast (non limitato) con foto
+        tmdbRef.current = tmdbData;
+
         const fullCast = (tmdbData.credits?.cast ?? [])
-          .filter((c: any) => c.name) // Solo quelli con nome
+          .filter((c: any) => c.name)
           .map((c: any) => ({
             id: c.id,
             name: c.name,
@@ -196,16 +198,14 @@ export default function Detail() {
             photo: c.profile_path ? `https://image.tmdb.org/t/p/w185${c.profile_path}` : undefined,
           }));
         setCast(fullCast); localCast = fullCast;
-        
-        // Crew importante
+
         setCrew((tmdbData.credits?.crew ?? []).filter((c: any) =>
           ['Director', 'Screenplay', 'Writer', 'Creator', 'Producer'].includes(c.job)
         ).slice(0, 8).map((c: any) => ({
           id: c.id, name: c.name, role: c.job,
           photo: c.profile_path ? `https://image.tmdb.org/t/p/w185${c.profile_path}` : undefined,
         })));
-        
-        // Se non abbiamo meta da addon, crealo da TMDB
+
         if (!found || isTmdbId) {
           const imdbFromTmdb = tmdbData.external_ids?.imdb_id;
           const episodes: Video[] = [];
@@ -242,43 +242,127 @@ export default function Detail() {
           if (eps.length > 0) found = { ...found, videos: eps };
         }
       }
-      
-      // Se ancora non abbiamo cast, prova a prendere dal meta (fallback)
+
       if (localCast.length === 0 && found && (found as any).cast && (found as any).cast.length > 0) {
-  const fallbackCast = ((found as any).cast as string[]).map((name: string, i: number) => ({
-    id: `fallback_${i}_${name}`,  // ← non numerico, evita Mark Hamill (id=2)
-    name,
-    role: '',
-    photo: undefined
-  }));
-  setCast(fallbackCast);
-}
-      
+        const fallbackCast = ((found as any).cast as string[]).map((name: string, i: number) => ({
+          id: `fallback_${i}_${name}`, name, role: '', photo: undefined
+        }));
+        setCast(fallbackCast);
+      }
+
       if (found) {
         const seasons = [...new Set((found.videos ?? []).map(v => v.season ?? 0))].filter(Boolean).sort((a, b) => a - b);
         if (seasons.length > 0) setActiveSeason(seasons[0]);
         setMeta(found);
       }
-      
+
       setMetaLoading(false);
-      if ((found?.type === 'movie' || type === 'movie') && found) loadStreams(found.id);
+      if ((found?.type === 'movie' || type === 'movie') && found) loadStreams(found.id, true);
     })();
   }, [type, decodedId]);
 
-  const loadStreams = useCallback(async (videoId: string) => {
+  // ── loadStreams con cache + integrazione plugin ────────────────────────────
+  const loadStreams = useCallback(async (videoId: string, force = false) => {
+    if (!force && hasStreamsLoadedRef.current && streamGroupsRef.current.length > 0) {
+      console.log('[Detail] Ripristino stream dalla cache:', streamGroupsRef.current.length);
+      setStreamGroups(streamGroupsRef.current);
+      return;
+    }
+
+    console.log('[Detail] loadStreams chiamato per:', videoId, force ? '(forzato)' : '');
     setStreamsLoading(true);
     setStreamGroups([]);
     setStreamError(null);
     setPlayError(null);
     setActiveStreamKey(null);
+
     try {
+      const allGroups: StreamGroup[] = [];
+
+      // 1. Stream dagli addon Stremio
       await fetchAllStreams(addons, type!, videoId, (group) => {
-        setStreamGroups(prev => {
-          const exists = prev.find(g => g.addonUrl === group.addonUrl);
-          return exists ? prev : [...prev, group];
-        });
+        const exists = allGroups.find(g => g.addonUrl === group.addonUrl);
+        if (!exists) allGroups.push(group);
+        setStreamGroups([...allGroups]);
+        streamGroupsRef.current = [...allGroups];
       });
+
+      // 2. Stream dal plugin system (scrapers JavaScript)
+      const parts = videoId.split(':');
+      const hasEpisode = parts.length >= 3
+        && !isNaN(Number(parts[parts.length - 1]))
+        && !isNaN(Number(parts[parts.length - 2]));
+      const epSeason  = hasEpisode ? Number(parts[parts.length - 2]) : undefined;
+      const epEpisode = hasEpisode ? Number(parts[parts.length - 1]) : undefined;
+
+      // FIX: gli scraper si aspettano l'IMDB ID (tt...), non il TMDB numerico
+      const imdbIdForPlugin = videoId.startsWith('tt')
+        ? videoId.split(':')[0]                                          // "tt1234:1:2" → "tt1234"
+        : (tmdbRef.current?.external_ids?.imdb_id ?? videoId.replace(/:\d+:\d+$/, ''));
+
+      console.log('[Detail] plugin_get_streams →', {
+        mediaType: type === 'series' ? 'tv' : 'movie',
+        tmdbId: imdbIdForPlugin,
+        season: epSeason,
+        episode: epEpisode,
+      });
+
+      try {
+        const pluginsEnabled = await invoke<boolean>('plugin_is_enabled');
+
+        if (pluginsEnabled) {
+          const pluginStreams = await invoke<Array<{
+            name?: string;
+            title?: string;
+            url: string;
+            quality?: string;
+            size?: string;
+            info_hash?: string;
+            file_idx?: number;
+            headers?: Record<string, string>;
+          }>>('plugin_get_streams', {
+            mediaType: type === 'series' ? 'tv' : 'movie',
+            tmdbId: imdbIdForPlugin,
+            season: epSeason,
+            episode: epEpisode,
+          });
+
+          if (pluginStreams && pluginStreams.length > 0) {
+            const converted: Stream[] = pluginStreams.map(s => ({
+              name: s.name ?? '🔌 Plugin',
+              title: s.title ?? s.quality ?? s.name,
+              url: s.url,
+              infoHash: s.info_hash,
+              fileIdx: s.file_idx,
+              description: s.quality ?? s.size ?? undefined,
+              behaviorHints: s.headers && Object.keys(s.headers).length > 0
+                ? { proxyHeaders: { request: s.headers } }
+                : undefined,
+            }));
+
+            const pluginGroup: StreamGroup = {
+              addonUrl: 'plugin://scrapers',
+              addonName: '🧩 Plugin Scrapers',
+              streams: converted,
+            };
+
+            const pluginIdx = allGroups.findIndex(g => g.addonUrl === 'plugin://scrapers');
+            if (pluginIdx === -1) allGroups.push(pluginGroup);
+            else allGroups[pluginIdx] = pluginGroup;
+
+            setStreamGroups([...allGroups]);
+            streamGroupsRef.current = [...allGroups];
+            console.log(`[Detail] Plugin streams aggiunti: ${converted.length}`);
+          }
+        }
+      } catch (pluginErr) {
+        console.warn('[Detail] Plugin streams non disponibili:', pluginErr);
+      }
+
+      console.log('[Detail] streamGroups dopo fetch:', streamGroupsRef.current.length);
+      hasStreamsLoadedRef.current = true;
     } catch (e: any) {
+      console.error('[Detail] loadStreams error:', e);
       setStreamError(e.message ?? 'Errore');
     } finally {
       setStreamsLoading(false);
@@ -286,15 +370,10 @@ export default function Detail() {
   }, [addons, type]);
 
   function getCastFromMeta() {
-    // Priorità assoluta: cast da TMDB
     if (cast.length > 0) return cast;
-    // Fallback: cast dal meta degli addon
     if (meta && (meta as any).cast && (meta as any).cast.length > 0) {
-      return (meta as any).cast.map((name: string, i: number) => ({ 
-        id: i, 
-        name: name, 
-        role: '',
-        photo: undefined 
+      return ((meta as any).cast as string[]).map((name: string, i: number) => ({
+        id: `fallback_${i}_${name}`, name, role: '', photo: undefined
       }));
     }
     return [];
@@ -312,7 +391,9 @@ export default function Detail() {
     const streamId = imdbBase && video.season && video.episode
       ? `${imdbBase}:${video.season}:${video.episode}`
       : video.id;
-    loadStreams(streamId);
+    streamGroupsRef.current = [];
+    hasStreamsLoadedRef.current = false;
+    loadStreams(streamId, true);
   }
 
   function buildProxyUrl(streamUrl: string, requestHeaders: Record<string, string>): string {
@@ -338,9 +419,19 @@ export default function Detail() {
     const playUrl = stream.url ?? (stream.infoHash
       ? `magnet:?xt=urn:btih:${stream.infoHash}${stream.fileIdx !== undefined ? `&so=${stream.fileIdx}` : ''}`
       : null);
-    if (!playUrl) { setPlayError('Stream senza URL valido.'); return; }
+    if (!playUrl) {
+      setPlayError('Stream senza URL valido.');
+      setActiveStreamKey(null);
+      return;
+    }
     const custom = settings.customPlayerPath?.trim();
-    if (custom) { launchPlayer(playUrl, meta?.name, custom).catch(e => setPlayError(e.message)); return; }
+    if (custom) {
+      launchPlayer(playUrl, meta?.name, custom).catch(e => {
+        setPlayError(e.message);
+        setActiveStreamKey(null);
+      });
+      return;
+    }
     const finalUrl = applyProxyIfNeeded(stream, playUrl);
     setStreamReferer(undefined);
     setPlayerStream({ ...stream, url: finalUrl });
@@ -408,6 +499,18 @@ export default function Detail() {
     }
   }
 
+  const resetAndReloadStreams = useCallback(() => {
+    setPlayerStream(null);
+    setStreamGroups([]);
+    setActiveStreamKey(null);
+    setPlayError(null);
+    setStreamError(null);
+    streamGroupsRef.current = [];
+    hasStreamsLoadedRef.current = false;
+    const idToLoad = meta?.id || decodedId;
+    if (idToLoad) setTimeout(() => loadStreams(idToLoad, true), 300);
+  }, [meta?.id, decodedId, loadStreams]);
+
   const bg = meta?.background ?? (tmdb?.backdrop_path ? tmdbImg(tmdb.backdrop_path, 'w1280') : null);
   const poster = meta?.poster ?? (tmdb?.poster_path ? tmdbImg(tmdb.poster_path, 'w342') : null);
   const allVideos = meta?.videos ?? [];
@@ -456,11 +559,13 @@ export default function Detail() {
         prevEpisode={prevEpData ? { id: prevEpData.id, title: prevEpData.title ?? '' } : null}
         onClose={() => {
           setPlayerStream(null);
-          setStreamGroups([]);
           setActiveStreamKey(null);
           window.dispatchEvent(new CustomEvent('nuvio:cw-updated'));
-          if (type === 'movie' && meta?.id) {
-            setTimeout(() => loadStreams(meta.id), 100);
+          setPlayError(null);
+          if (streamGroupsRef.current.length > 0) {
+            setStreamGroups(streamGroupsRef.current);
+          } else {
+            loadStreams(meta?.id || decodedId, true);
           }
         }}
         availableQualities={availableQualities}
@@ -529,7 +634,6 @@ export default function Detail() {
               <p className="text-sm text-white/75 leading-relaxed line-clamp-4">{overview}</p>
             </div>
           )}
-          {/* CAST SECTION - Now visible for all content! */}
           {displayCast.length > 0 && (
             <div className="mb-4">
               <p className="text-xs text-white/40 uppercase tracking-wider mb-2 flex items-center gap-1">
@@ -540,10 +644,7 @@ export default function Detail() {
                   <Link key={p.id} to={`/person/${p.id}`} className="flex-shrink-0 w-16 text-center group">
                     <div className="w-16 h-16 rounded-full overflow-hidden bg-white/10 border border-white/10 mx-auto group-hover:border-[color:var(--accent)] transition-colors">
                       {p.photo ? (
-                        <img 
-                          src={p.photo} 
-                          alt={p.name} 
-                          className="w-full h-full object-cover object-top" 
+                        <img src={p.photo} alt={p.name} className="w-full h-full object-cover object-top"
                           onError={(e) => {
                             (e.target as HTMLImageElement).style.display = 'none';
                             const parent = (e.target as HTMLImageElement).parentElement;
@@ -580,6 +681,18 @@ export default function Detail() {
             <button className="flex items-center gap-2 px-4 py-2.5 text-white/80 hover:text-white bg-white/10 hover:bg-white/20 rounded-full text-sm transition-all">
               <Bookmark size={14} />Library
             </button>
+            <button
+              onClick={() => {
+                streamGroupsRef.current = [];
+                hasStreamsLoadedRef.current = false;
+                setStreamGroups([]);
+                const idToLoad = meta?.id || decodedId;
+                if (idToLoad) loadStreams(idToLoad, true);
+              }}
+              className="flex items-center gap-2 px-4 py-2.5 text-white/80 hover:text-white bg-white/10 hover:bg-white/20 rounded-full text-sm transition-all"
+            >
+              <RefreshCw size={14} /> Reload streams
+            </button>
             {tmdb?.['watch/providers']?.results && (() => {
               const regions = ['IT', 'US'];
               const providers: any[] = [];
@@ -607,6 +720,7 @@ export default function Detail() {
           {playError && (
             <div className="flex items-center gap-2 text-amber-400 text-xs bg-amber-500/10 rounded-xl px-3 py-2 mt-3 max-w-md">
               <AlertCircle size={13} />{playError}
+              <button onClick={resetAndReloadStreams} className="ml-auto text-white/60 hover:text-white text-xs underline">Retry</button>
             </div>
           )}
         </div>
@@ -624,7 +738,7 @@ export default function Detail() {
               <div className="flex items-center gap-2 px-4 py-2.5 border-b border-white/[0.08] flex-shrink-0">
                 <button onClick={() => { const idx = seasons.indexOf(activeSeason); if (idx > 0) setActiveSeason(seasons[idx - 1]); }} disabled={seasons.indexOf(activeSeason) === 0} className="p-1.5 rounded-lg hover:bg-white/10 text-white/50 disabled:opacity-25 flex-shrink-0"><ChevronLeft size={16} /></button>
                 <select value={activeSeason} onChange={e => setActiveSeason(Number(e.target.value))} className="flex-1 bg-white/10 border border-white/10 rounded-lg px-2 py-1 text-sm text-white focus:outline-none focus:border-[color:var(--accent)] cursor-pointer" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}>
-                  {seasons.map(s => <option key={s} value={s} style={{ backgroundColor: '#1a1a22', color: 'white' }}>{s === 0 ? 'Specials' : `Season ${s}`}</option>)}
+                  {seasons.map(s => <option key={s} value={s} style={{ backgroundColor: '#1a1a22' }}>{s === 0 ? 'Specials' : `Season ${s}`}</option>)}
                 </select>
                 <button onClick={() => { const idx = seasons.indexOf(activeSeason); if (idx < seasons.length - 1) setActiveSeason(seasons[idx + 1]); }} disabled={seasons.indexOf(activeSeason) === seasons.length - 1} className="p-1.5 rounded-lg hover:bg-white/10 text-white/50 disabled:opacity-25 flex-shrink-0"><ChevronRight size={16} /></button>
                 <span className="text-xs text-white/30 flex-shrink-0">{episodesForSeason.length} ep</span>
@@ -680,6 +794,19 @@ export default function Detail() {
                   {streamGroups.map(g => <option key={g.addonUrl} value={g.addonUrl} style={{ backgroundColor: '#1a1a22' }}>{g.addonName} ({g.streams.length})</option>)}
                 </select>
               ) : <p className="text-xs font-bold text-white/50 uppercase tracking-wider flex-1">Available streams</p>}
+              <button
+                onClick={() => {
+                  streamGroupsRef.current = [];
+                  hasStreamsLoadedRef.current = false;
+                  setStreamGroups([]);
+                  const idToLoad = meta?.id || decodedId;
+                  if (idToLoad) loadStreams(idToLoad, true);
+                }}
+                className="p-1.5 rounded-lg hover:bg-white/10 text-white/40 hover:text-white transition-colors"
+                title="Reload streams"
+              >
+                <RefreshCw size={14} />
+              </button>
               {streamsLoading && <div className="flex items-center gap-1 flex-shrink-0"><Loader2 size={11} className="animate-spin text-white/40" /><span className="text-[10px] text-white/30">{streamGroups.length}</span></div>}
             </div>
             {streamsLoading && <div className="h-0.5 bg-white/5 flex-shrink-0"><div className="h-full animate-pulse" style={{ backgroundColor: 'var(--accent)', width: '60%' }} /></div>}
