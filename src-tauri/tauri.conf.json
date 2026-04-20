@@ -1,13 +1,13 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "nuvio-desktop",
-  "version": "2.1.6",
+  "version": "2.1.7",
   "identifier": "com.nuvio.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "npm run build",
-    "frontendDist": "./dist"
+    "frontendDist": "../dist"
   },
   "app": {
     "windows": [
