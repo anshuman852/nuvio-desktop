@@ -27,3 +27,5 @@ src-tauri/binaries/*.exe
 # Env files con chiavi API
 .env.local
 .env.*.local
+*.dll
+src-tauri/resources/*.dll
