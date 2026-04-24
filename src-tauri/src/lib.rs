@@ -6,6 +6,7 @@ mod proxy;
 mod plugin;
 
 use std::sync::{Arc, Mutex};
+use std::path::PathBuf;
 use tauri::{State, Manager};
 use plugin::PluginRuntime;
 
@@ -36,11 +37,55 @@ async fn fetch_streams(base_url: String, type_: String, id: String) -> Result<se
     addon::fetch_streams(&base_url, &type_, &id).await.map_err(|e| e.to_string())
 }
 
-// ─── MPV commands ─────────────────────────────────────────────────────────────
+// ─── Proxy helper ─────────────────────────────────────────────────────────────
+
+#[tauri::command]
+async fn get_proxy_url(url: String, referer: Option<String>, origin: Option<String>) -> Result<String, String> {
+    let encoded = urlencoding::encode(&url);
+    let mut proxy = format!("{}/proxy?url={}", proxy::PROXY_BASE, encoded);
+    if let Some(r) = referer.filter(|r| !r.is_empty()) {
+        proxy.push_str(&format!("&referer={}", urlencoding::encode(&r)));
+    }
+    if let Some(o) = origin.filter(|o| !o.is_empty()) {
+        proxy.push_str(&format!("&origin={}", urlencoding::encode(&o)));
+    }
+    Ok(proxy)
+}
+
+// ─── MPV EMBEDDED commands (Windows) ─────────────────────────────────────────
+
+#[tauri::command]
+async fn launch_mpv_embedded(
+    window: tauri::Window,
+    state: State<'_, AppState>,
+    url: String,
+    title: String,
+    referrer: Option<String>,
+) -> Result<(), String> {
+    let mut mpv = state.mpv.lock().map_err(|e| e.to_string())?;
+    
+    // Su Tauri v2, dobbiamo ottenere l'HWND e passarlo come isize
+    #[cfg(target_os = "windows")]
+    let hwnd = {
+        let hwnd_raw = window.hwnd().map_err(|e| format!("Errore HWND: {}", e))?;
+        // Converte HWND a isize
+        hwnd_raw.0 as isize
+    };
+    
+    #[cfg(not(target_os = "windows"))]
+    let hwnd = 0;
+    
+    eprintln!("[mpv] HWND per embedding: {}", hwnd);
+    
+    // Passa il wid per embedding
+    mpv.launch_embedded(&url, &title, referrer.as_deref(), hwnd)
+        .map_err(|e| e.to_string())
+}
 
 #[tauri::command]
 async fn launch_mpv(state: State<'_, AppState>, url: String, title: Option<String>, referrer: Option<String>) -> Result<(), String> {
     let mut mpv = state.mpv.lock().map_err(|e| e.to_string())?;
+    // Senza wid, apre finestra separata (fallback)
     mpv.launch_with_referrer(&url, title.as_deref(), referrer.as_deref()).map_err(|e| e.to_string())
 }
 
@@ -92,14 +137,71 @@ async fn mpv_get_duration(state: State<'_, AppState>) -> Result<f64, String> {
     Ok(mpv.get_duration())
 }
 
+#[tauri::command]
+async fn mpv_pause(state: State<'_, AppState>) -> Result<(), String> {
+    let mpv = state.mpv.lock().map_err(|e| e.to_string())?;
+    mpv.send_command("set", &[serde_json::json!("pause"), serde_json::json!("yes")])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+async fn mpv_resume(state: State<'_, AppState>) -> Result<(), String> {
+    let mpv = state.mpv.lock().map_err(|e| e.to_string())?;
+    mpv.send_command("set", &[serde_json::json!("pause"), serde_json::json!("no")])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+async fn mpv_seek(state: State<'_, AppState>, seconds: f64) -> Result<(), String> {
+    let mpv = state.mpv.lock().map_err(|e| e.to_string())?;
+    mpv.send_command("seek", &[serde_json::json!(seconds), serde_json::json!("absolute")])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+async fn mpv_set_volume(state: State<'_, AppState>, volume: i64) -> Result<(), String> {
+    let mpv = state.mpv.lock().map_err(|e| e.to_string())?;
+    mpv.send_command("set", &[serde_json::json!("volume"), serde_json::json!(volume)])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+async fn mpv_set_speed(state: State<'_, AppState>, speed: f64) -> Result<(), String> {
+    let mpv = state.mpv.lock().map_err(|e| e.to_string())?;
+    mpv.send_command("set", &[serde_json::json!("speed"), serde_json::json!(speed)])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 // ─── Utility commands ─────────────────────────────────────────────────────────
 
 #[tauri::command]
 async fn open_url(url: String) -> Result<(), String> {
-    std::process::Command::new("cmd")
-        .args(["/C", "start", "", &url])
-        .spawn()
-        .map_err(|e| e.to_string())?;
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "", &url])
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(&url)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(&url)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
     Ok(())
 }
 
@@ -167,13 +269,10 @@ fn test_ipc() -> Result<String, String> {
 
 // ─── Plugin commands ─────────────────────────────────────────────────────────
 
-// ─── Plugin commands ─────────────────────────────────────────────────────────
-
 #[tauri::command]
 async fn plugin_get_repositories(
     state: State<'_, AppState>,
 ) -> Result<Vec<crate::plugin::RepositoryInfo>, String> {
-    // repository_manager è tokio::sync::Mutex → .lock().await
     Ok(state.plugin_runtime.repository_manager.lock().await.get_repositories())
 }
 
@@ -221,8 +320,8 @@ async fn plugin_refresh_repository(
 async fn plugin_get_scrapers(
     state: State<'_, AppState>,
 ) -> Result<Vec<crate::plugin::ScraperInfo>, String> {
-    // scraper_manager è tokio::sync::Mutex → .lock().await
-    Ok(state.plugin_runtime.scraper_manager.lock().await.get_scrapers())
+    let manager = state.plugin_runtime.scraper_manager.lock().map_err(|e| e.to_string())?;
+    Ok(manager.get_scrapers())
 }
 
 #[tauri::command]
@@ -231,7 +330,8 @@ async fn plugin_set_scraper_enabled(
     scraper_id: String,
     enabled: bool,
 ) -> Result<(), String> {
-    state.plugin_runtime.scraper_manager.lock().await.set_scraper_enabled(&scraper_id, enabled)
+    let mut manager = state.plugin_runtime.scraper_manager.lock().map_err(|e| e.to_string())?;
+    manager.set_scraper_enabled(&scraper_id, enabled)
 }
 
 #[tauri::command]
@@ -250,14 +350,12 @@ async fn plugin_get_streams(
 
 #[tauri::command]
 async fn plugin_is_enabled(state: State<'_, AppState>) -> Result<bool, String> {
-    // is_enabled() è async ora
-    Ok(state.plugin_runtime.is_enabled().await)
+    Ok(state.plugin_runtime.is_enabled())
 }
 
 #[tauri::command]
 async fn plugin_set_enabled(state: State<'_, AppState>, enabled: bool) -> Result<(), String> {
-    // set_enabled() è async ora
-    state.plugin_runtime.set_enabled(enabled).await;
+    state.plugin_runtime.set_enabled(enabled);
     Ok(())
 }
 
@@ -269,6 +367,55 @@ async fn plugin_test_scraper(
     let (streams, logs) = state.plugin_runtime.test_scraper(&scraper_id).await?;
     Ok(serde_json::json!({ "streams": streams, "logs": logs }))
 }
+
+// ─── MPV helper commands ─────────────────────────────────────────────────────
+
+#[tauri::command]
+async fn check_mpv_available() -> Result<bool, String> {
+    let result = std::process::Command::new("mpv")
+        .arg("--version")
+        .output();
+    
+    match result {
+        Ok(output) => Ok(output.status.success()),
+        Err(_) => Ok(false),
+    }
+}
+
+#[tauri::command]
+async fn get_mpv_path() -> Result<String, String> {
+    let exe_path = std::env::current_exe()
+        .map_err(|e| e.to_string())?;
+    let app_dir = exe_path.parent().ok_or("No parent dir")?;
+    
+    let possible_paths = vec![
+        app_dir.join("mpv.exe"),
+        app_dir.join("resources/mpv.exe"),
+        PathBuf::from("mpv.exe"),
+        PathBuf::from("resources/mpv.exe"),
+    ];
+    
+    for path in possible_paths {
+        if path.exists() {
+            return Ok(path.to_string_lossy().to_string());
+        }
+    }
+    
+    // Cerca nel PATH
+    if let Ok(output) = std::process::Command::new("where").arg("mpv").output() {
+        if output.status.success() {
+            if let Ok(path) = String::from_utf8(output.stdout) {
+                let first_line = path.lines().next().unwrap_or("").to_string();
+                if !first_line.is_empty() {
+                    return Ok(first_line);
+                }
+            }
+        }
+    }
+    
+    Err("mpv not found".to_string())
+}
+
 // ─── Entry point ──────────────────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -300,6 +447,8 @@ pub fn run() {
             fetch_catalog,
             fetch_meta,
             fetch_streams,
+            get_proxy_url,
+            launch_mpv_embedded,
             launch_mpv,
             launch_custom_player,
             launch_mpv_stream,
@@ -307,6 +456,11 @@ pub fn run() {
             mpv_stop,
             mpv_get_position,
             mpv_get_duration,
+            mpv_pause,
+            mpv_resume,
+            mpv_seek,
+            mpv_set_volume,
+            mpv_set_speed,
             open_url,
             stream_magnet,
             resolve_stream_url,
@@ -323,6 +477,8 @@ pub fn run() {
             plugin_is_enabled,
             plugin_set_enabled,
             plugin_test_scraper,
+            check_mpv_available,
+            get_mpv_path,
         ])
         .run(tauri::generate_context!())
         .expect("error while running nuvio-desktop");

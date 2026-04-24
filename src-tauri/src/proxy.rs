@@ -1,215 +1,295 @@
+use hyper::{Request, Response, StatusCode};
+use hyper::server::conn::http1;
+use hyper::service::service_fn;
+use hyper_util::rt::TokioIo;
+use http_body_util::{BodyExt, Full};
+use bytes::Bytes;
+use std::net::SocketAddr;
+use std::convert::Infallible;
 use tokio::net::TcpListener;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-pub struct StreamProxy {
-    port: u16,
-}
+pub const PROXY_PORT: u16 = 11473;
+pub const PROXY_BASE: &str = "http://127.0.0.1:11473";
+
+pub struct StreamProxy;
 
 impl StreamProxy {
-    pub fn new() -> Self {
-        Self { port: 11473 }
-    }
+    pub fn new() -> Self { StreamProxy }
 
-    pub fn port(&self) -> u16 {
-        self.port
-    }
+    pub async fn start(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let addr: SocketAddr = ([127, 0, 0, 1], PROXY_PORT).into();
+        let listener = TcpListener::bind(addr).await?;
+        eprintln!("[proxy] Listening on http://127.0.0.1:{}", PROXY_PORT);
 
-    pub async fn start(&self) -> Result<(), String> {
-        let listener = TcpListener::bind(format!("127.0.0.1:{}", self.port))
-            .await
-            .map_err(|e| format!("Proxy bind error: {}", e))?;
-
-        eprintln!("[proxy] Avviato su http://127.0.0.1:{}/proxy", self.port);
-
-        let port = self.port;
-        tokio::spawn(async move {
-            loop {
-                match listener.accept().await {
-                    Ok((stream, _)) => { tokio::spawn(handle_connection(stream, port)); }
-                    Err(e) => eprintln!("[proxy] Accept error: {}", e),
+        loop {
+            match listener.accept().await {
+                Ok((stream, _)) => {
+                    let io = TokioIo::new(stream);
+                    tokio::spawn(async move {
+                        let _ = http1::Builder::new()
+                            .serve_connection(io, service_fn(handle_proxy))
+                            .await;
+                    });
                 }
+                Err(e) => eprintln!("[proxy] accept error: {}", e),
             }
-        });
-
-        Ok(())
+        }
     }
 }
 
-async fn handle_connection(mut client: tokio::net::TcpStream, port: u16) {
-    let mut buf = vec![0u8; 65536];
-    let n = match client.read(&mut buf).await {
-        Ok(0) | Err(_) => return,
-        Ok(n) => n,
-    };
+async fn handle_proxy(req: Request<hyper::body::Incoming>) -> Result<Response<Full<Bytes>>, Infallible> {
+    let path = req.uri().path().to_string();
+    let query = req.uri().query().unwrap_or("").to_string();
 
-    let request = String::from_utf8_lossy(&buf[..n]);
-    let first_line = match request.lines().next() {
-        Some(l) => l,
-        None => return,
-    };
-
-    let parts: Vec<&str> = first_line.split_whitespace().collect();
-    if parts.len() < 2 { return; }
-
-    let method = parts[0];
-    let full_path = parts[1];
-
-    if method == "OPTIONS" {
-        let _ = client.write_all(
-            b"HTTP/1.1 204 No Content\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, HEAD\r\nAccess-Control-Allow-Headers: *\r\n\r\n"
-        ).await;
-        return;
+    // ── CORS preflight ────────────────────────────────────────────────────────
+    if req.method() == hyper::Method::OPTIONS {
+        let resp = Response::builder()
+            .status(StatusCode::NO_CONTENT)
+            .header("Access-Control-Allow-Origin", "*")
+            .header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
+            .header("Access-Control-Allow-Headers", "Range, Origin, X-Requested-With, Content-Type, Accept, Referer, User-Agent")
+            .header("Access-Control-Max-Age", "86400")
+            .body(Full::new(Bytes::new()))
+            .unwrap();
+        return Ok(resp);
     }
 
-    let query = match full_path.find('?') {
-        Some(i) => &full_path[i+1..],
-        None => {
-            let _ = client.write_all(b"HTTP/1.1 400 Bad Request\r\n\r\nMissing query").await;
-            return;
-        }
+    // ── /proxy?url=<encoded>&referer=<encoded>&origin=<encoded> ───────────────
+    if path == "/proxy" || path.starts_with("/proxy/") {
+        return Ok(handle_stream_proxy(req, &query).await);
+    }
+
+    // ── /health ───────────────────────────────────────────────────────────────
+    if path == "/health" {
+        return Ok(Response::builder()
+            .status(200)
+            .header("Access-Control-Allow-Origin", "*")
+            .header("Content-Type", "text/plain")
+            .body(Full::new(Bytes::from("ok")))
+            .unwrap());
+    }
+
+    Ok(Response::builder()
+        .status(StatusCode::NOT_FOUND)
+        .header("Access-Control-Allow-Origin", "*")
+        .body(Full::new(Bytes::from("Not found")))
+        .unwrap())
+}
+
+async fn handle_stream_proxy(req: Request<hyper::body::Incoming>, query: &str) -> Response<Full<Bytes>> {
+    // Parse query params
+    let params: std::collections::HashMap<String, String> = query.split('&')
+        .filter_map(|pair| {
+            let mut parts = pair.splitn(2, '=');
+            let k = parts.next()?;
+            let v = parts.next().unwrap_or("");
+            Some((
+                urlencoding::decode(k).unwrap_or_default().to_string(),
+                urlencoding::decode(v).unwrap_or_default().to_string(),
+            ))
+        })
+        .collect();
+
+    let target_url = match params.get("url").filter(|u| !u.is_empty()) {
+        Some(u) => u.clone(),
+        None => return error_response(400, "Missing url parameter"),
     };
 
-    let mut target_url = String::new();
-    let mut headers: Vec<(String, String)> = Vec::new();
+    let referer  = params.get("referer").cloned().unwrap_or_default();
+    let origin   = params.get("origin").cloned().unwrap_or_default();
+    let is_hls   = target_url.contains(".m3u8") || params.get("type").map(|t| t == "hls").unwrap_or(false);
 
-    for param in query.split('&') {
-        if let Some(v) = param.strip_prefix("url=") {
-            target_url = urlencoding::decode(v).unwrap_or_default().to_string();
-        } else if let Some(v) = param.strip_prefix("h=") {
-            let decoded = urlencoding::decode(v).unwrap_or_default().to_string();
-            if let Some(idx) = decoded.find(':') {
-                headers.push((
-                    decoded[..idx].trim().to_string(),
-                    decoded[idx+1..].trim().to_string(),
-                ));
-            }
-        }
-    }
+    eprintln!("[proxy] → {} (hls={})", &target_url[..target_url.len().min(80)], is_hls);
 
-    if target_url.is_empty() {
-        let _ = client.write_all(b"HTTP/1.1 400 Bad Request\r\n\r\nMissing url").await;
-        return;
-    }
-
-    eprintln!("[proxy] {} {}", method, target_url);
-
-    let http_client = reqwest::Client::builder()
-        .redirect(reqwest::redirect::Policy::limited(10))
+    // Build upstream request
+    let client = match reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        .danger_accept_invalid_certs(true)
+        .redirect(reqwest::redirect::Policy::limited(10))
         .build()
-        .unwrap();
-
-    let mut req = http_client
-        .get(&target_url)
-        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36")
-        .header("Accept", "*/*");
-
-    for (k, v) in &headers {
-        eprintln!("[proxy]   {}={}", k, v);
-        req = req.header(k.as_str(), v.as_str());
-    }
-
-    let resp = match req.send().await {
-        Ok(r) => r,
-        Err(e) => {
-            eprintln!("[proxy] Error: {}", e);
-            let msg = format!(
-                "HTTP/1.1 502 Bad Gateway\r\nContent-Type: text/plain\r\nAccess-Control-Allow-Origin: *\r\n\r\nProxy error: {}",
-                e
-            );
-            let _ = client.write_all(msg.as_bytes()).await;
-            return;
-        }
+    {
+        Ok(c) => c,
+        Err(e) => return error_response(500, &format!("Client build error: {}", e)),
     };
 
-    let status = resp.status().as_u16();
-    let content_type = resp.headers()
-        .get("content-type")
+    let mut upstream_req = client.request(
+        reqwest::Method::from_bytes(req.method().as_str().as_bytes()).unwrap_or(reqwest::Method::GET),
+        &target_url,
+    );
+
+    // Forward important headers
+    if !referer.is_empty() {
+        upstream_req = upstream_req.header("Referer", &referer);
+    }
+    if !origin.is_empty() {
+        upstream_req = upstream_req.header("Origin", &origin);
+    }
+
+    // Forward Range header for seeking support
+    if let Some(range) = req.headers().get("range") {
+        if let Ok(range_str) = range.to_str() {
+            upstream_req = upstream_req.header("Range", range_str);
+        }
+    }
+
+    let response = match upstream_req.send().await {
+        Ok(r) => r,
+        Err(e) => return error_response(502, &format!("Upstream error: {}", e)),
+    };
+
+    let status    = response.status().as_u16();
+    let ct        = response.headers().get("content-type")
         .and_then(|v| v.to_str().ok())
         .unwrap_or("application/octet-stream")
         .to_string();
+    let cl        = response.headers().get("content-length")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+    let cr        = response.headers().get("content-range")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+    let is_hls_ct = ct.contains("mpegurl") || ct.contains("x-mpegurl");
 
-    let body_bytes = match resp.bytes().await {
+    let body_bytes = match response.bytes().await {
         Ok(b) => b,
-        Err(e) => { eprintln!("[proxy] Body error: {}", e); return; }
+        Err(e) => return error_response(502, &format!("Body read error: {}", e)),
     };
 
-    eprintln!("[proxy] status={} bytes={}", status, body_bytes.len());
-
-    let is_m3u8 = content_type.contains("mpegurl")
-        || target_url.contains(".m3u8")
-        || (body_bytes.starts_with(b"#EXTM3U"));
-
-    let final_body: Vec<u8> = if is_m3u8 {
-        let text = String::from_utf8_lossy(&body_bytes).to_string();
-        rewrite_m3u8(&text, &target_url, &headers, port).into_bytes()
+    // ── Rewrite HLS manifests so segment URLs go through our proxy ────────────
+    let final_body = if is_hls || is_hls_ct {
+        rewrite_hls_manifest(&body_bytes, &target_url, &referer, &origin)
     } else {
-        body_bytes.to_vec()
+        body_bytes
     };
 
-    let ct = if is_m3u8 { "application/vnd.apple.mpegurl" } else { content_type.as_str() };
+    let mut builder = Response::builder()
+        .status(status)
+        .header("Access-Control-Allow-Origin", "*")
+        .header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
+        .header("Access-Control-Allow-Headers", "*")
+        .header("Access-Control-Expose-Headers", "Content-Length, Content-Range, Content-Type")
+        .header("Content-Type", if is_hls || is_hls_ct { "application/vnd.apple.mpegurl" } else { &ct });
 
-    let header = format!(
-        "HTTP/1.1 {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nCache-Control: no-cache\r\n\r\n",
-        status, ct, final_body.len()
-    );
+    if let Some(cl) = cl {
+        builder = builder.header("Content-Length", cl);
+    }
+    if let Some(cr) = cr {
+        builder = builder.header("Content-Range", cr);
+    }
 
-    let _ = client.write_all(header.as_bytes()).await;
-    let _ = client.write_all(&final_body).await;
-    let _ = client.flush().await;
+    builder.body(Full::new(final_body)).unwrap_or_else(|_| error_response(500, "Response build error"))
 }
 
-fn rewrite_m3u8(content: &str, base_url: &str, headers: &[(String, String)], port: u16) -> String {
-    // Base per URL relative: tutto fino all'ultimo /
+/// Rewrites an HLS manifest so all relative and absolute URLs are
+/// routed through the local proxy (preserves the original Referer/Origin).
+fn rewrite_hls_manifest(body: &Bytes, base_url: &str, referer: &str, origin: &str) -> Bytes {
+    let text = match std::str::from_utf8(body) {
+        Ok(s) => s,
+        Err(_) => return body.clone(),
+    };
+
+    // Base URL for resolving relative paths
     let base = base_url.rfind('/').map(|i| &base_url[..=i]).unwrap_or(base_url);
 
-    // Dominio per URL assolute che iniziano con /
-    let domain = {
-        let after_scheme = base_url.find("://").map(|i| i + 3).unwrap_or(0);
-        let slash = base_url[after_scheme..].find('/').map(|i| after_scheme + i).unwrap_or(base_url.len());
-        &base_url[..slash]
-    };
+    let mut out = String::with_capacity(text.len() + 512);
 
-    // Costruisci header params
-    let header_params: String = headers.iter()
-        .map(|(k, v)| format!("&h={}", urlencoding::encode(&format!("{}:{}", k, v))))
-        .collect();
-
-    content.lines().map(|line| {
+    for line in text.lines() {
         let trimmed = line.trim();
 
-        if trimmed.is_empty() || trimmed.starts_with('#') {
-            // Gestisci #EXT-X-MAP:URI="..."
-            if trimmed.starts_with("#EXT-X-MAP:URI=\"") {
-                let uri_start = trimmed.find('"').unwrap_or(0) + 1;
-                let uri_end = trimmed[uri_start..].find('"')
-                    .map(|i| uri_start + i)
-                    .unwrap_or(trimmed.len());
-                let uri = &trimmed[uri_start..uri_end];
-                let abs = resolve_url(uri, base, domain);
-                return format!(
-                    "#EXT-X-MAP:URI=\"http://127.0.0.1:{}/proxy?url={}{}\"",
-                    port, urlencoding::encode(&abs), header_params
-                );
-            }
-            return line.to_string();
+        // Skip comment lines (except EXT tags) and empty lines as-is
+        if trimmed.is_empty() || (trimmed.starts_with('#') && !trimmed.starts_with("#EXT-X-KEY") && !trimmed.starts_with("#EXT-X-MAP")) {
+            out.push_str(line);
+            out.push('\n');
+            continue;
         }
 
-        // Segmento o playlist variante
-        let abs = resolve_url(trimmed, base, domain);
-        format!(
-            "http://127.0.0.1:{}/proxy?url={}{}",
-            port, urlencoding::encode(&abs), header_params
-        )
-    }).collect::<Vec<_>>().join("\n")
+        // EXT-X-KEY URI= attribute
+        if trimmed.starts_with("#EXT-X-KEY") {
+            let rewritten = rewrite_attr_uri(line, base, referer, origin, "URI=");
+            out.push_str(&rewritten);
+            out.push('\n');
+            continue;
+        }
+
+        // EXT-X-MAP URI= attribute
+        if trimmed.starts_with("#EXT-X-MAP") {
+            let rewritten = rewrite_attr_uri(line, base, referer, origin, "URI=");
+            out.push_str(&rewritten);
+            out.push('\n');
+            continue;
+        }
+
+        // Regular tag line — leave as-is
+        if trimmed.starts_with('#') {
+            out.push_str(line);
+            out.push('\n');
+            continue;
+        }
+
+        // Segment / sub-manifest URL
+        let absolute = to_absolute(trimmed, base);
+        let proxied  = build_proxy_url(&absolute, referer, origin);
+        out.push_str(&proxied);
+        out.push('\n');
+    }
+
+    Bytes::from(out)
 }
 
-fn resolve_url(uri: &str, base: &str, domain: &str) -> String {
-    if uri.starts_with("http://") || uri.starts_with("https://") {
-        uri.to_string()
-    } else if uri.starts_with('/') {
-        format!("{}{}", domain, uri)
+fn rewrite_attr_uri(line: &str, base: &str, referer: &str, origin: &str, attr: &str) -> String {
+    if let Some(start) = line.find(attr) {
+        let after = &line[start + attr.len()..];
+        let (quote, inner) = if after.starts_with('"') {
+            let end = after[1..].find('"').unwrap_or(after.len() - 1);
+            ('"', &after[1..end + 1])
+        } else {
+            (' ', after.split(',').next().unwrap_or(after))
+        };
+        let absolute = to_absolute(inner.trim_matches(quote), base);
+        let proxied  = build_proxy_url(&absolute, referer, origin);
+        if quote == '"' {
+            line.replacen(&format!("{}\"{}\"", attr, inner), &format!("{}\"{}\"", attr, proxied), 1)
+        } else {
+            line.replacen(&format!("{}{}", attr, inner), &format!("{}{}", attr, proxied), 1)
+        }
     } else {
-        format!("{}{}", base, uri)
+        line.to_string()
     }
+}
+
+fn to_absolute(url: &str, base: &str) -> String {
+    if url.starts_with("http://") || url.starts_with("https://") {
+        url.to_string()
+    } else if url.starts_with('/') {
+        // Absolute path — extract scheme+host from base
+        if let Some(host_end) = base[8..].find('/') {
+            format!("{}{}", &base[..8 + host_end], url)
+        } else {
+            format!("{}{}", base.trim_end_matches('/'), url)
+        }
+    } else {
+        format!("{}{}", base, url)
+    }
+}
+
+fn build_proxy_url(url: &str, referer: &str, origin: &str) -> String {
+    let encoded_url = urlencoding::encode(url);
+    let mut proxy = format!("{}/proxy?url={}", PROXY_BASE, encoded_url);
+    if !referer.is_empty() {
+        proxy.push_str(&format!("&referer={}", urlencoding::encode(referer)));
+    }
+    if !origin.is_empty() {
+        proxy.push_str(&format!("&origin={}", urlencoding::encode(origin)));
+    }
+    proxy
+}
+
+fn error_response(code: u16, msg: &str) -> Response<Full<Bytes>> {
+    Response::builder()
+        .status(code)
+        .header("Access-Control-Allow-Origin", "*")
+        .header("Content-Type", "text/plain")
+        .body(Full::new(Bytes::from(msg.to_string())))
+        .unwrap()
 }

@@ -1,9 +1,15 @@
 // storage.ts - Funziona sia in Tauri che in browser
 const isTauri = () => {
-  return !!(window as any).__TAURI__ || 
-         !!(window as any).__TAURI_IPC__ ||
-         window.location.protocol === 'tauri:';
+    return !!(
+    (window as any).__TAURI__ ||
+    (window as any).__TAURI_IPC__ ||
+    (window as any).__TAURI_INTERNALS__ ||
+    window.location.protocol === 'tauri:' ||
+    window.location.hostname === 'tauri.localhost'
+  );
 };
+
+export const checkIsTauri = isTauri;
 
 export const storage = {
   async getItem(key: string): Promise<string | null> {

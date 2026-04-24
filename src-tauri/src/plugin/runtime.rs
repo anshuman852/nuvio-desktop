@@ -1,11 +1,11 @@
-use std::sync::Arc;
-use tokio::sync::Mutex;
+use std::sync::{Arc, Mutex};
+use tokio::sync::Mutex as TokioMutex;
 use crate::plugin::scraper::{ScraperManager, StreamResult};
 use crate::plugin::repository::RepositoryManager;
 
 pub struct PluginRuntime {
     pub scraper_manager: Arc<Mutex<ScraperManager>>,
-    pub repository_manager: Arc<Mutex<RepositoryManager>>,
+    pub repository_manager: Arc<TokioMutex<RepositoryManager>>,
     enabled: Mutex<bool>,
 }
 
@@ -14,27 +14,25 @@ impl PluginRuntime {
         eprintln!("[PluginRuntime] Initializing...");
         let instance = Self {
             scraper_manager: Arc::new(Mutex::new(ScraperManager::new(app_handle))),
-            repository_manager: Arc::new(Mutex::new(RepositoryManager::new(app_handle))),
+            repository_manager: Arc::new(TokioMutex::new(RepositoryManager::new(app_handle))),
             enabled: Mutex::new(true),
         };
-        
-        // blocking_lock() per contesti non async
-        let count = instance.scraper_manager.blocking_lock().get_scrapers().len();
+        let count = instance.scraper_manager.lock().unwrap().get_scrapers().len();
         eprintln!("[PluginRuntime] Initialized with {} scrapers", count);
         instance
     }
 
-    pub async fn is_enabled(&self) -> bool {
-        *self.enabled.lock().await
+    pub fn is_enabled(&self) -> bool {
+        *self.enabled.lock().unwrap()
     }
 
-    pub async fn set_enabled(&self, enabled: bool) {
-        *self.enabled.lock().await = enabled;
+    pub fn set_enabled(&self, enabled: bool) {
+        *self.enabled.lock().unwrap() = enabled;
     }
 
-    pub async fn reload_scrapers(&self) {
+    pub fn reload_scrapers(&self) {
         eprintln!("[PluginRuntime] reload_scrapers called");
-        let mut manager = self.scraper_manager.lock().await;
+        let mut manager = self.scraper_manager.lock().unwrap();
         manager.reload();
         eprintln!("[PluginRuntime] Scrapers reloaded: {} found", manager.get_scrapers().len());
     }
@@ -46,58 +44,65 @@ impl PluginRuntime {
         season: Option<u32>,
         episode: Option<u32>,
     ) -> Vec<StreamResult> {
-        eprintln!("[PluginRuntime] get_streams: media_type={}, tmdb_id={}", media_type, tmdb_id);
+        eprintln!(
+            "[PluginRuntime] get_streams: media_type={}, tmdb_id={}, season={:?}, episode={:?}",
+            media_type, tmdb_id, season, episode
+        );
 
-        if !self.is_enabled().await {
+        if !self.is_enabled() {
             eprintln!("[PluginRuntime] Plugins disabled");
             return vec![];
         }
 
-        let normalized_type = match media_type {
-            "series" | "other" => "tv",
-            other => other,
-        }.to_string();
-
-        let scrapers: Vec<_> = {
-            let manager = self.scraper_manager.lock().await;
-            manager.get_scrapers().into_iter().filter(|s| s.enabled).collect()
-        };
-
-        eprintln!("[PluginRuntime] Running {} enabled scrapers", scrapers.len());
-
-        let mut tasks = vec![];
-
-        for scraper in scrapers {
-            let scraper_id = scraper.id.clone();
-            let scraper_name = scraper.name.clone();
-            let tmdb_clone = tmdb_id.to_string();
-            let mtype_clone = normalized_type.clone();
-            let manager_arc = self.scraper_manager.clone();
-            let season_clone = season;
-            let episode_clone = episode;
-
-            let task = tokio::task::spawn_blocking(move || {
-                let manager = manager_arc.blocking_lock();
-                manager.execute_scraper_sync(
-                    &scraper_id,
-                    &mtype_clone,
-                    &tmdb_clone,
-                    season_clone,
-                    episode_clone,
-                )
-            });
-            tasks.push((scraper_name, task));
-        }
+        // Snapshot scrapers (brief lock, then released)
+        let scrapers = self.scraper_manager.lock().unwrap().get_scrapers();
 
         let mut all_streams = vec![];
-        for (name, task) in tasks {
-            match task.await {
+
+        for scraper in scrapers {
+            if !scraper.enabled {
+                continue;
+            }
+
+            let normalized_type = match media_type {
+                "series" | "other" => "tv",
+                other => other,
+            }
+            .to_string();
+
+            let scraper_id    = scraper.id.clone();
+            let scraper_name  = scraper.name.clone();
+            let tmdb_clone    = tmdb_id.to_string();
+            let manager_arc   = self.scraper_manager.clone();
+
+            // ONE spawn_blocking per scraper — calls execute_scraper_sync (pure sync, no tokio inside)
+            let result = tokio::task::spawn_blocking(move || {
+                let manager = manager_arc.lock().unwrap();
+                manager.execute_scraper_sync(
+                    &scraper_id,
+                    &normalized_type,
+                    &tmdb_clone,
+                    season,
+                    episode,
+                )
+            })
+            .await;
+
+            match result {
                 Ok(Ok(streams)) => {
-                    eprintln!("[PluginRuntime] Scraper {} → {} streams", name, streams.len());
+                    eprintln!(
+                        "[PluginRuntime] Scraper {} → {} streams",
+                        scraper_name,
+                        streams.len()
+                    );
                     all_streams.extend(streams);
                 }
-                Ok(Err(e)) => eprintln!("[PluginRuntime] Scraper {} failed: {}", name, e),
-                Err(e) => eprintln!("[PluginRuntime] Scraper {} panicked: {}", name, e),
+                Ok(Err(e)) => {
+                    eprintln!("[PluginRuntime] Scraper {} failed: {}", scraper_name, e);
+                }
+                Err(e) => {
+                    eprintln!("[PluginRuntime] Scraper {} panicked: {}", scraper_name, e);
+                }
             }
         }
 
@@ -111,13 +116,14 @@ impl PluginRuntime {
     ) -> Result<(Vec<StreamResult>, Vec<String>), String> {
         eprintln!("[PluginRuntime] test_scraper: {}", scraper_id);
 
-        let scraper_id_clone = scraper_id.to_string();
-        let manager_arc = self.scraper_manager.clone();
+        let id  = scraper_id.to_string();
+        let arc = self.scraper_manager.clone();
 
         let result = tokio::task::spawn_blocking(move || {
-            let manager = manager_arc.blocking_lock();
-            manager.execute_scraper_sync(&scraper_id_clone, "movie", "tt1375666", None, None)
-        }).await;
+            let manager = arc.lock().unwrap();
+            manager.execute_scraper_sync(&id, "movie", "tt1375666", None, None)
+        })
+        .await;
 
         match result {
             Ok(Ok(streams)) => {
@@ -125,7 +131,7 @@ impl PluginRuntime {
                 Ok((streams, vec![]))
             }
             Ok(Err(e)) => Err(e),
-            Err(e) => Err(format!("Task panicked: {}", e)),
+            Err(e)     => Err(format!("Task panicked: {}", e)),
         }
     }
 }

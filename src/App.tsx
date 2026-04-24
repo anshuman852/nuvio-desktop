@@ -5,7 +5,7 @@ import { Home, Search as SearchIcon, Library, Package, Settings, X, Tv, Compass,
 import clsx from 'clsx';
 import { useStore } from './lib/store';
 import { setAuthToken, getProfilesFromCloud } from './api/nuvio';
-import { useT } from './lib/i18n';
+import { startAutoTranslate, stopAutoTranslate } from './lib/googleTranslate';
 
 import HomePage from './pages/Home';
 import DetailPage from './pages/Detail';
@@ -27,7 +27,6 @@ function TokenRestorer() {
   useEffect(() => {
     if (nuvioUser?.token) {
       setAuthToken(nuvioUser.token);
-      console.log('[Nuvio] Token ripristinato da Zustand:', nuvioUser.id);
     }
   }, [nuvioUser?.token]);
   
@@ -58,85 +57,23 @@ function AccentApplier() {
     document.documentElement.style.setProperty('--accent', c);
     document.documentElement.style.setProperty('--accent-bg', c + '26');
     document.documentElement.style.setProperty('--accent-border', c + '55');
-    const s = settings as any;
-    if (s.fontScale) document.documentElement.style.fontSize = `${s.fontScale * 16}px`;
   }, [settings]);
   return null;
 }
 
-function LanguageApplier() {
-  const { settings } = useStore();
-  useEffect(() => {
-    const langCode = settings.appLanguage || 'en';
-    document.documentElement.lang = langCode;
-  }, [settings.appLanguage]);
-  return null;
-}
-
-// Inizializzatore lingua - legge da localStorage o usa inglese di default
-function LanguageInitializer() {
-  const { settings, updateSettings } = useStore();
-  const [initialized, setInitialized] = useState(false);
-
-  // Tutte le lingue supportate
-  const supportedLanguages = ['en', 'it', 'es', 'fr', 'de', 'pt', 'ja', 'ko', 'zh', 'ru'];
-
-  useEffect(() => {
-    // Legge la lingua salvata in localStorage (gestito da persist di Zustand)
-    const saved = localStorage.getItem('nuvio-v1');
-    let savedLang: string | null = null;
-    
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        savedLang = parsed.state?.settings?.appLanguage;
-      } catch (e) {}
-    }
-
-    if (savedLang && supportedLanguages.includes(savedLang)) {
-      // Usa la lingua salvata se valida
-      if (settings.appLanguage !== savedLang) {
-        updateSettings({ 
-          appLanguage: savedLang,
-          tmdbLanguage: savedLang === 'en' ? 'en-US' : 
-                        savedLang === 'pt' ? 'pt-BR' :
-                        savedLang === 'zh' ? 'zh-CN' :
-                        savedLang === 'ko' ? 'ko-KR' :
-                        savedLang === 'ja' ? 'ja-JP' :
-                        `${savedLang}-${savedLang.toUpperCase()}`
-        });
-      }
-    } else {
-      // Prima installazione o lingua non valida: usa inglese
-      if (settings.appLanguage !== 'en') {
-        updateSettings({ 
-          appLanguage: 'en',
-          tmdbLanguage: 'en-US'
-        });
-      }
-    }
-    
-    setInitialized(true);
-  }, []);
-
-  if (!initialized) return null;
-  return null;
-}
-
 function Sidebar({ collapsed }: { collapsed: boolean }) {
-  const { t } = useT();
   const { profiles, activeProfileId, setProfileSelected, settings } = useStore();
   const activeProfile = profiles.find(p => p.id === activeProfileId) ?? profiles[0];
   const reduceSidebar = !!(settings as any).reduceSidebar;
   const isCollapsed = collapsed || reduceSidebar;
 
   const NAV = [
-    { to: '/',          icon: Home,    label: t('home'),         end: true },
-    { to: '/discover',  icon: Compass, label: t('discover'),     end: false },
-    { to: '/library',   icon: Library, label: t('library'),      end: false },
-    { to: '/addons',    icon: Package, label: t('addons'),       end: false },
-    { to: '/plugins',   icon: Plug,    label: 'Plugins',         end: false },
-    { to: '/settings',  icon: Settings, label: t('settings'),    end: false },
+    { to: '/', icon: Home, label: 'Home', end: true },
+    { to: '/discover', icon: Compass, label: 'Discover', end: false },
+    { to: '/library', icon: Library, label: 'Library', end: false },
+    { to: '/addons', icon: Package, label: 'Addons', end: false },
+    { to: '/plugins', icon: Plug, label: 'Plugins', end: false },
+    { to: '/settings', icon: Settings, label: 'Settings', end: false },
   ];
 
   return (
@@ -177,7 +114,7 @@ function Sidebar({ collapsed }: { collapsed: boolean }) {
           </div>
           <div className="flex-1 min-w-0 text-left">
             <p className="text-xs font-medium text-white/60 truncate">{activeProfile?.name}</p>
-            <p className="text-xs text-white/25">{t('switch_profile')}</p>
+            <p className="text-xs text-white/25">Switch profile</p>
           </div>
         </button>
       )}
@@ -197,7 +134,6 @@ function Sidebar({ collapsed }: { collapsed: boolean }) {
 }
 
 function SearchBar() {
-  const { t } = useT();
   const [query, setQuery] = useState('');
   const [focused, setFocused] = useState(false);
   const navigate = useNavigate();
@@ -212,7 +148,7 @@ function SearchBar() {
           onChange={e => setQuery(e.target.value)}
           onFocus={() => setFocused(true)} 
           onBlur={() => setFocused(false)}
-          placeholder={t('search_placeholder')}
+          placeholder="Search movies, series, anime..."
           className={clsx(
             'w-full pl-9 pr-8 py-2 rounded-full text-sm text-white placeholder:text-white/40 focus:outline-none transition-all',
             focused 
@@ -256,18 +192,18 @@ function Layout() {
         </header>
         <main className="flex-1 overflow-hidden">
           <Routes>
-            <Route path="/"                     element={<HomePage />} />
-            <Route path="/detail/:type/:id"     element={<DetailPage />} />
-            <Route path="/addons"               element={<AddonsPage />} />
-            <Route path="/settings"             element={<SettingsPage />} />
-            <Route path="/search"               element={<SearchPage />} />
-            <Route path="/streaming"            element={<StreamingPage />} />
+            <Route path="/" element={<HomePage />} />
+            <Route path="/detail/:type/:id" element={<DetailPage />} />
+            <Route path="/addons" element={<AddonsPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/search" element={<SearchPage />} />
+            <Route path="/streaming" element={<StreamingPage />} />
             <Route path="/streaming/:serviceId" element={<StreamingPage />} />
-            <Route path="/library"              element={<LibraryPage />} />
-            <Route path="/person/:personId"     element={<PersonDetailPage />} />
-            <Route path="/discover"             element={<DiscoverPage />} />
+            <Route path="/library" element={<LibraryPage />} />
+            <Route path="/person/:personId" element={<PersonDetailPage />} />
+            <Route path="/discover" element={<DiscoverPage />} />
             <Route path="/catalog/:addonId/:catalogType/:catalogId" element={<CatalogPage />} />
-            <Route path="/plugins"              element={<PluginsPage />} />
+            <Route path="/plugins" element={<PluginsPage />} />
           </Routes>
         </main>
       </div>
@@ -276,18 +212,25 @@ function Layout() {
 }
 
 export default function App() {
-  const { profileSelected } = useStore();
+  const { profileSelected, settings } = useStore();
   const [showLanguageSetup, setShowLanguageSetup] = useState(() => {
-    // Mostra LanguageSetup solo se l'utente non ha ancora selezionato una lingua
     return !localStorage.getItem('language_selected');
   });
 
-  // Se deve mostrare la schermata di selezione lingua iniziale
+  // Attiva traduzione automatica quando cambia lingua
+  useEffect(() => {
+    const lang = settings.appLanguage || 'en';
+    if (!showLanguageSetup && lang !== 'it') {
+      startAutoTranslate(lang);
+    }
+    return () => stopAutoTranslate();
+  }, [settings.appLanguage, showLanguageSetup]);
+
   if (showLanguageSetup) {
     return (
       <BrowserRouter>
         <AccentApplier />
-        <LanguageSetup />
+        <LanguageSetup onComplete={() => setShowLanguageSetup(false)} />
       </BrowserRouter>
     );
   }
@@ -295,8 +238,6 @@ export default function App() {
   return (
     <BrowserRouter>
       <AccentApplier />
-      <LanguageInitializer />
-      <LanguageApplier />
       <TokenRestorer />
       {profileSelected ? <Layout /> : <ProfileSelectPage />}
     </BrowserRouter>

@@ -32,6 +32,14 @@ sha2 = "0.10"
 md5 = "0.7"
 hmac  = "0.12"
 hex   = "0.4"
+hyper = { version = "1", features = ["server", "http1", "client"] }
+hyper-util = { version = "0.1", features = ["server", "tokio"] }
+http-body-util = "0.1"
+http = "1"
+bytes = "1"
+windows = "0.52"
+windows-sys = "0.48"
+libmpv = { git = "https://github.com/paradoxspiral/libmpv-rs", features = ["render"] }
 
 
 [profile.release]

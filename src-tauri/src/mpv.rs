@@ -6,8 +6,6 @@ use serde_json::Value;
 pub struct MpvManager {
     pub process: Option<Child>,
     pub ipc_path: Option<String>,
-    #[cfg(target_os = "windows")]
-    pub ipc_writer: Option<std::fs::File>,
 }
 
 impl MpvManager {
@@ -15,24 +13,26 @@ impl MpvManager {
         MpvManager {
             process: None,
             ipc_path: None,
-            #[cfg(target_os = "windows")]
-            ipc_writer: None,
         }
     }
 
-    fn find_mpv() -> Result<PathBuf, Box<dyn std::error::Error>> {
+    fn find_mpv_path(&self) -> Result<PathBuf, String> {
+        Self::find_mpv()
+    }
+
+    fn find_mpv() -> Result<PathBuf, String> {
+        eprintln!("[mpv] Cerca mpv.exe...");
+        
         // 1. Cerca nella stessa cartella dell'eseguibile
         if let Ok(exe) = std::env::current_exe() {
             let dir = exe.parent().unwrap_or(Path::new("."));
-            for name in &["mpv.exe", "mpv"] {
-                let candidate = dir.join(name);
-                if candidate.exists() {
-                    eprintln!("[mpv] Trovato in current_exe dir: {}", candidate.display());
-                    return Ok(candidate);
-                }
+            
+            let candidate = dir.join("mpv.exe");
+            if candidate.exists() {
+                eprintln!("[mpv] Trovato in exe dir: {}", candidate.display());
+                return Ok(candidate);
             }
             
-            // Cerca nella cartella resources (importante per Tauri bundle)
             let candidate_res = dir.join("resources").join("mpv.exe");
             if candidate_res.exists() {
                 eprintln!("[mpv] Trovato in resources dir: {}", candidate_res.display());
@@ -40,18 +40,12 @@ impl MpvManager {
             }
         }
 
-        // 2. Cerca nella cartella di lavoro corrente e percorsi relativi comuni
+        // 2. Cerca nella cartella di lavoro corrente
         let extra_paths = [
             PathBuf::from("mpv.exe"),
-            PathBuf::from("mpv"),
-            PathBuf::from("./mpv.exe"),
-            PathBuf::from("../mpv.exe"),
-            PathBuf::from("../../mpv.exe"),
             PathBuf::from("resources/mpv.exe"),
             PathBuf::from("../resources/mpv.exe"),
-            PathBuf::from("public/tools/mpv.exe"),
-            PathBuf::from("../public/tools/mpv.exe"),
-            PathBuf::from("resources/mpv/mpv.exe"),
+            PathBuf::from("../../resources/mpv.exe"),
         ];
         for p in &extra_paths {
             if p.exists() {
@@ -60,110 +54,67 @@ impl MpvManager {
             }
         }
 
-        // 3. Cerca nel PATH di sistema (Windows: where, Unix: which)
-        #[cfg(target_os = "windows")]
-        {
-            if let Ok(out) = Command::new("where").arg("mpv.exe").output() {
-                if out.status.success() {
-                    let s = String::from_utf8_lossy(&out.stdout);
-                    if let Some(line) = s.lines().next() {
-                        let path = PathBuf::from(line.trim());
-                        if path.exists() {
-                            eprintln!("[mpv] Trovato in PATH (where): {}", path.display());
-                            return Ok(path);
-                        }
-                    }
-                }
-            }
-        }
-        #[cfg(not(target_os = "windows"))]
-        {
-            if let Ok(out) = Command::new("which").arg("mpv").output() {
-                if out.status.success() {
-                    let s = String::from_utf8_lossy(&out.stdout);
-                    if let Some(line) = s.lines().next() {
-                        let path = PathBuf::from(line.trim());
-                        if path.exists() {
-                            eprintln!("[mpv] Trovato in PATH (which): {}", path.display());
-                            return Ok(path);
-                        }
+        // 3. Cerca nel PATH di sistema
+        if let Ok(out) = Command::new("where").arg("mpv.exe").output() {
+            if out.status.success() {
+                let s = String::from_utf8_lossy(&out.stdout);
+                if let Some(line) = s.lines().next() {
+                    let path = PathBuf::from(line.trim());
+                    if path.exists() {
+                        eprintln!("[mpv] Trovato in PATH: {}", path.display());
+                        return Ok(path);
                     }
                 }
             }
         }
 
-        // 4. Cerca in percorsi comuni di installazione (Windows)
-        #[cfg(target_os = "windows")]
-        {
-            let common_paths = [
-                "C:\\Program Files\\mpv\\mpv.exe",
-                "C:\\Program Files (x86)\\mpv\\mpv.exe",
-                "C:\\mpv\\mpv.exe",
-                "C:\\tools\\mpv\\mpv.exe",
-                "C:\\Program Files\\mpv.net\\mpv.com",
-                "C:\\Program Files\\mpv.net\\mpv.exe",
-            ];
-            for path_str in &common_paths {
-                let candidate = PathBuf::from(path_str);
-                if candidate.exists() {
-                    eprintln!("[mpv] Trovato in percorso comune: {}", candidate.display());
-                    return Ok(candidate);
-                }
-            }
-            
-            // Cerca nella cartella LOCALAPPDATA (dove Tauri installa l'app)
-            if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
-                let user_paths = [
-                    PathBuf::from(&local_app_data).join("nuvio-desktop\\mpv.exe"),
-                    PathBuf::from(&local_app_data).join("nuvio-desktop\\resources\\mpv.exe"),
-                ];
-                for candidate in &user_paths {
-                    if candidate.exists() {
-                        eprintln!("[mpv] Trovato in LOCALAPPDATA: {}", candidate.display());
-                        return Ok(candidate.clone());
-                    }
-                }
-            }
-            
-            // Hardcoded fallback (senza nome utente specifico)
-            let hardcoded_paths = [
-                "C:\\Program Files\\Nuvio Desktop\\mpv.exe",
-                "C:\\Program Files\\Nuvio Desktop\\resources\\mpv.exe",
-            ];
-            for path_str in &hardcoded_paths {
-                let candidate = PathBuf::from(path_str);
-                if candidate.exists() {
-                    eprintln!("[mpv] Trovato in hardcoded path: {}", candidate.display());
-                    return Ok(candidate);
-                }
-            }
-        }
-
-        // 5. Cerca nella variabile d'ambiente MPV_HOME
-        if let Ok(mpv_home) = std::env::var("MPV_HOME") {
-            let candidate = PathBuf::from(&mpv_home).join(if cfg!(target_os = "windows") { "mpv.exe" } else { "mpv" });
+        // 4. Cerca in percorsi comuni di installazione
+        let common_paths = [
+            "C:\\Program Files\\mpv\\mpv.exe",
+            "C:\\Program Files (x86)\\mpv\\mpv.exe",
+            "C:\\mpv\\mpv.exe",
+            "C:\\tools\\mpv\\mpv.exe",
+            "C:\\Program Files\\mpv.net\\mpv.com",
+            "C:\\Program Files\\mpv.net\\mpv.exe",
+        ];
+        for path_str in &common_paths {
+            let candidate = PathBuf::from(path_str);
             if candidate.exists() {
-                eprintln!("[mpv] Trovato in MPV_HOME: {}", candidate.display());
+                eprintln!("[mpv] Trovato in percorso comune: {}", candidate.display());
                 return Ok(candidate);
             }
         }
+        
+        // 5. Cerca nella cartella LOCALAPPDATA
+        if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
+            let user_paths = [
+                PathBuf::from(&local_app_data).join("nuvio-desktop").join("mpv.exe"),
+                PathBuf::from(&local_app_data).join("nuvio-desktop").join("resources").join("mpv.exe"),
+            ];
+            for candidate in &user_paths {
+                if candidate.exists() {
+                    eprintln!("[mpv] Trovato in LOCALAPPDATA: {}", candidate.display());
+                    return Ok(candidate.clone());
+                }
+            }
+        }
 
-        // 6. LOG DI DEBUG - stampa il percorso corrente
+        eprintln!("[mpv] mpv.exe NON TROVATO!");
         if let Ok(cwd) = std::env::current_dir() {
             eprintln!("[mpv] Current working directory: {}", cwd.display());
         }
         if let Ok(exe) = std::env::current_exe() {
             eprintln!("[mpv] Executable path: {}", exe.display());
         }
-
-        Err("mpv non trovato. Scarica mpv da https://mpv.io e mettilo nella cartella dell'app.".into())
+        
+        Err("mpv.exe non trovato. Scarica mpv da https://mpv.io e mettilo nella cartella dell'app.".to_string())
     }
 
     fn ipc_name() -> String {
-        #[cfg(target_os = "windows")]
-        return format!("\\\\.\\pipe\\nuvio-mpv-{}", std::process::id());
-        #[cfg(not(target_os = "windows"))]
-        return format!("/tmp/nuvio-mpv-{}.sock", std::process::id());
+        format!(
+            "\\\\.\\pipe\\nuvio-mpv-{}",
+            std::process::id()
+        )
     }
 
     fn base_args(url: &str, title: Option<&str>, ipc: &str) -> Vec<String> {
@@ -180,11 +131,14 @@ impl MpvManager {
         args
     }
 
-    /// Lancia mpv con referrer opzionale — usato per tutti i tipi di stream
-    pub fn launch_with_referrer(&mut self, url: &str, title: Option<&str>, referrer: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn launch_with_referrer(&mut self, url: &str, title: Option<&str>, referrer: Option<&str>) -> Result<(), String> {
+        eprintln!("[mpv] launch_with_referrer: {}", url);
+        
         self.stop();
+        
         let mpv = Self::find_mpv()?;
         let ipc = Self::ipc_name();
+        
         let mut args = Self::base_args(url, title, &ipc);
         args.push("--ontop=yes".to_string());
         args.push("--geometry=900x506+100+100".to_string());
@@ -203,53 +157,89 @@ impl MpvManager {
             eprintln!("[mpv] referrer={}", r);
         }
         
-        eprintln!("[mpv] launch_with_referrer url={}", url);
         eprintln!("[mpv] path={}", mpv.display());
+        eprintln!("[mpv] args={:?}", args);
         
         let child = Command::new(&mpv)
             .args(&args)
-            .spawn()?;
+            .spawn()
+            .map_err(|e| format!("Impossibile avviare mpv: {}", e))?;
         
         self.process = Some(child);
         self.ipc_path = Some(ipc);
         
-        // Attendi che mpv sia pronto
         std::thread::sleep(std::time::Duration::from_millis(500));
+        
+        eprintln!("[mpv] Avviato con successo");
         Ok(())
     }
 
-    /// Lancia mpv in finestra separata (legacy, senza referrer)
-    pub fn launch(&mut self, url: &str, title: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn launch(&mut self, url: &str, title: Option<&str>) -> Result<(), String> {
         self.launch_with_referrer(url, title, None)
     }
 
-    #[cfg(target_os = "windows")]
-    pub fn launch_embedded(&mut self, url: &str, title: Option<&str>, hwnd: isize) -> Result<(), Box<dyn std::error::Error>> {
+    // NUOVO METODO: launch_embedded per integrare mpv dentro la finestra Tauri
+    pub fn launch_embedded(&mut self, url: &str, title: &str, referrer: Option<&str>, hwnd: isize) -> Result<(), String> {
+        eprintln!("[mpv] launch_embedded: {} with hwnd={}", url, hwnd);
+        
         self.stop();
+        
         let mpv = Self::find_mpv()?;
         let ipc = Self::ipc_name();
-        let mut args = Self::base_args(url, title, &ipc);
-        args.push(format!("--wid={}", hwnd));
-        args.push("--no-border".to_string());
-        args.push("--no-osc".to_string());
-        args.push("--no-input-default-bindings".to_string());
-        args.push("--keepaspect=yes".to_string());
-        args.push("--video-unscaled=downscale-big".to_string());
+        
+        let mut args = vec![
+            format!("--wid={}", hwnd),
+            url.to_string(),
+            format!("--title={}", title),
+            format!("--input-ipc-server={}", ipc),
+            "--no-terminal".to_string(),
+            "--keep-open=yes".to_string(),
+            "--no-border".to_string(),
+            "--no-window-dragging".to_string(),
+            "--geometry=100%x100%".to_string(),
+            "--autofit=100%x100%".to_string(),
+            "--cache=yes".to_string(),
+            "--cache-secs=120".to_string(),
+            "--demuxer-max-bytes=150M".to_string(),
+            "--demuxer-readahead-secs=10".to_string(),
+            "--network-timeout=30".to_string(),
+            "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36".to_string(),
+            "--hwdec=auto".to_string(),
+            "--no-osc".to_string(),              // Nasconde l'OSC di mpv
+            "--no-input-default-bindings".to_string(), // Disabilita shortcut di default
+            "--no-osd-bar".to_string(),          // Nasconde la barra OSD
+        ];
+        
+        if !url.starts_with("magnet:") && !url.starts_with("http") {
+            args.push("--ytdl=no".to_string());
+        }
+        
+        if let Some(r) = referrer {
+            args.push(format!("--referrer={}", r));
+            eprintln!("[mpv] referrer={}", r);
+        }
+        
+        eprintln!("[mpv] Embedded path={}", mpv.display());
+        eprintln!("[mpv] Embedded args={:?}", args);
         
         let child = Command::new(&mpv)
             .args(&args)
-            .spawn()?;
+            .spawn()
+            .map_err(|e| format!("Impossibile avviare mpv embedded: {}", e))?;
         
         self.process = Some(child);
         self.ipc_path = Some(ipc);
+        
         std::thread::sleep(std::time::Duration::from_millis(500));
+        
+        eprintln!("[mpv] Embedded avviato con successo");
         Ok(())
     }
 
-    pub fn send_command(&self, cmd: &str, args: &[Value]) -> Result<Value, Box<dyn std::error::Error>> {
+    pub fn send_command(&self, cmd: &str, args: &[Value]) -> Result<Value, String> {
         let ipc = match &self.ipc_path {
             Some(p) => p.clone(),
-            None => return Err("mpv non in esecuzione".into()),
+            None => return Err("mpv non in esecuzione".to_string()),
         };
         
         let mut command_args = vec![Value::String(cmd.to_string())];
@@ -257,36 +247,37 @@ impl MpvManager {
         let payload = serde_json::json!({ "command": command_args });
         let msg = format!("{}\n", payload.to_string());
         
-        #[cfg(target_os = "windows")]
-        {
-            use std::fs::OpenOptions;
-            
-            let mut f = OpenOptions::new().read(true).write(true).open(&ipc)?;
-            f.write_all(msg.as_bytes())?;
-            f.flush()?;
-            
-            let mut response = String::new();
-            let mut reader = BufReader::new(&mut f);
-            reader.read_line(&mut response)?;
-            
-            let v: Value = serde_json::from_str(&response).unwrap_or(Value::Null);
-            return Ok(v.get("data").cloned().unwrap_or(Value::Null));
+        use std::fs::OpenOptions;
+        
+        // Apri la pipe con timeout
+        let mut f = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&ipc)
+            .map_err(|e| format!("Impossibile aprire pipe: {}", e))?;
+        
+        f.write_all(msg.as_bytes())
+            .map_err(|e| format!("Errore scrittura pipe: {}", e))?;
+        f.flush()
+            .map_err(|e| format!("Errore flush pipe: {}", e))?;
+        
+        let mut response = String::new();
+        let mut reader = BufReader::new(&mut f);
+        
+        // Leggi con timeout implicito
+        reader.read_line(&mut response)
+            .map_err(|e| format!("Errore lettura pipe: {}", e))?;
+        
+        let v: Value = serde_json::from_str(&response).unwrap_or(Value::Null);
+        
+        // Controlla errori nella risposta
+        if let Some(error) = v.get("error") {
+            if error.as_str() != Some("success") {
+                eprintln!("[mpv] Command error: {:?}", error);
+            }
         }
         
-        #[cfg(not(target_os = "windows"))]
-        {
-            use std::os::unix::net::UnixStream;
-            
-            let stream = UnixStream::connect(&ipc)?;
-            let mut writer = stream.try_clone()?;
-            writer.write_all(msg.as_bytes())?;
-            
-            let mut response = String::new();
-            BufReader::new(stream).read_line(&mut response)?;
-            
-            let v: Value = serde_json::from_str(&response).unwrap_or(Value::Null);
-            return Ok(v.get("data").cloned().unwrap_or(Value::Null));
-        }
+        Ok(v.get("data").cloned().unwrap_or(Value::Null))
     }
 
     pub fn get_position(&self) -> f64 {
@@ -302,10 +293,14 @@ impl MpvManager {
     }
 
     pub fn stop(&mut self) {
+        eprintln!("[mpv] Stopping mpv...");
+        
+        // Prova a mandare il comando quit via IPC
         if let Some(ref _ipc) = self.ipc_path {
             let _ = self.send_command("quit", &[]);
         }
         
+        // Uccidi il processo se ancora vivo
         if let Some(mut child) = self.process.take() {
             std::thread::sleep(std::time::Duration::from_millis(200));
             let _ = child.kill();
@@ -313,10 +308,7 @@ impl MpvManager {
         }
         
         self.ipc_path = None;
-        #[cfg(target_os = "windows")]
-        {
-            self.ipc_writer = None;
-        }
+        eprintln!("[mpv] Stopped");
     }
 }
 

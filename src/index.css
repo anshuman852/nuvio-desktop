@@ -64,3 +64,44 @@ html { scroll-behavior: smooth; }
 input, textarea, [contenteditable] { -webkit-user-select: text; user-select: text; }
 
 .content-card { cursor: pointer; }
+
+/* ============================================
+   MPV EMBEDDED STYLES
+   Nasconde bordi e controlli di mpv
+   ============================================ */
+#mpv-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow: hidden;
+  background: #000;
+}
+
+/* Nasconde qualsiasi bordo, titlebar o controllo di mpv */
+#mpv-container > *,
+#mpv-container video,
+#mpv-container div[class*="window"],
+#mpv-container div[class*="border"],
+#mpv-container div[class*="titlebar"] {
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* Assicura che mpv occupi tutto lo spazio */
+#mpv-container video,
+#mpv-container .mpv-video {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: contain !important;
+}
+
+/* Per qualsiasi overlay che mpv potrebbe creare */
+#mpv-container > :first-child {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+}

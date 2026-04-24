@@ -27,11 +27,12 @@ function useServiceBackdrops(service: StreamingService, skip = false) {
   return backdrops;
 }
 
-// ─── Service card — logo riempie tutta la card ───────────────────────────────
+// ─── Service card — supporta lightLogo per Apple TV+ ───────────────────────────
 function ServiceCard({ s }: { s: StreamingService }) {
   const [logoErr, setLogoErr] = useState(false);
   const backdrops = useServiceBackdrops(s);
   const bg = (s as any).logoBg ?? s.color;
+  const isLightLogo = (s as any).lightLogo === true;
 
   return (
     <Link to={`/streaming/${s.id}`}
@@ -57,17 +58,29 @@ function ServiceCard({ s }: { s: StreamingService }) {
       {/* Layer 3: overlay semitrasparente su tutto */}
       <div className="absolute inset-0 bg-black/40 group-hover:bg-black/25 transition-colors" />
 
-      {/* Logo al centro — object-cover per riempire TUTTO (come vuole l'utente) */}
+      {/* Logo al centro - supporto per lightLogo (Apple TV+) */}
       <div className="absolute inset-0 flex items-center justify-center p-5">
-        {!logoErr && s.logo ? (
-          <img
-            src={s.logo}
-            alt={s.name}
-            className="w-full h-full object-contain drop-shadow-2xl group-hover:scale-105 transition-transform duration-300 filter brightness-110"
-            onError={() => setLogoErr(true)}
-          />
+        {isLightLogo ? (
+          // Pillola bianca per loghi scuri (Apple TV+)
+          <div className="bg-white rounded-xl px-4 py-2 flex items-center justify-center max-w-[80%] max-h-[60%]">
+            {!logoErr && s.logo ? (
+              <img src={s.logo} alt={s.name} className="max-h-10 w-auto object-contain" onError={() => setLogoErr(true)} />
+            ) : (
+              <span className="text-black font-bold text-sm">{s.name}</span>
+            )}
+          </div>
         ) : (
-          <span className="text-6xl drop-shadow-2xl group-hover:scale-105 transition-transform">{s.logoFallback}</span>
+          // Logo normale
+          !logoErr && s.logo ? (
+            <img
+              src={s.logo}
+              alt={s.name}
+              className="w-full h-full object-contain drop-shadow-2xl group-hover:scale-105 transition-transform duration-300 filter brightness-110"
+              onError={() => setLogoErr(true)}
+            />
+          ) : (
+            <span className="text-6xl drop-shadow-2xl group-hover:scale-105 transition-transform">{s.logoFallback}</span>
+          )
         )}
       </div>
 
@@ -112,6 +125,7 @@ function ServiceDetail({ service }: { service: StreamingService }) {
   const [search, setSearch] = useState('');
   const [logoErr, setLogoErr] = useState(false);
   const backdrops = useServiceBackdrops(service);
+  const isLightLogo = (service as any).lightLogo === true;
 
   useEffect(() => { setItems([]); setPage(1); load(1); }, [tab, service.id]);
 
@@ -122,7 +136,6 @@ function ServiceDetail({ service }: { service: StreamingService }) {
       const data = await discoverByProvider(service.tmdbId, tab, p);
       const mapped = (data.results ?? []).map(item => {
         const meta = tmdbToMeta(item);
-        // Per le serie, il tipo deve essere 'series' per navigare correttamente
         if (tab === 'tv') meta.type = 'series';
         return meta;
       });
@@ -136,7 +149,6 @@ function ServiceDetail({ service }: { service: StreamingService }) {
   return (
     <div className="flex flex-col h-full overflow-hidden">
       <div className="relative flex-shrink-0 flex flex-col justify-end px-6 pb-5" style={{ minHeight: 200 }}>
-        {/* Backdrop */}
         {backdrops[0] && <img src={backdrops[0]} alt="" className="absolute inset-0 w-full h-full object-cover opacity-30" />}
         <div className="absolute inset-0" style={{ background: 'linear-gradient(to bottom, rgba(15,15,19,0.3) 0%, rgba(15,15,19,0.95) 100%)' }} />
 
@@ -147,9 +159,17 @@ function ServiceDetail({ service }: { service: StreamingService }) {
 
         <div className="relative z-10 flex items-end gap-5 mt-14">
           <div className="w-20 h-20 rounded-2xl overflow-hidden flex items-center justify-center bg-black/60 border border-white/10 shadow-2xl flex-shrink-0">
-            {!logoErr && service.logo
-              ? <img src={service.logo} alt={service.name} className="w-14 h-14 object-contain" onError={() => setLogoErr(true)} />
-              : <span className="text-4xl">{service.logoFallback}</span>}
+            {!logoErr && service.logo ? (
+              isLightLogo ? (
+                <div className="w-full h-full flex items-center justify-center bg-white">
+                  <img src={service.logo} alt={service.name} className="w-14 h-14 object-contain" onError={() => setLogoErr(true)} />
+                </div>
+              ) : (
+                <img src={service.logo} alt={service.name} className="w-14 h-14 object-contain" onError={() => setLogoErr(true)} />
+              )
+            ) : (
+              <span className="text-4xl">{service.logoFallback}</span>
+            )}
           </div>
           <div><h1 className="text-2xl font-bold text-white">{service.name}</h1><p className="text-sm text-white/50 mt-0.5">{items.length > 0 ? `${items.length}+ contenuti` : 'Catalogo'}</p></div>
         </div>
@@ -220,7 +240,6 @@ export default function Streaming() {
           Aggiungi TMDB in <Link to="/settings" className="underline ml-1 hover:text-yellow-300">Impostazioni → Integrazioni</Link> per vedere i cataloghi con immagini.
         </div>
       )}
-      {/* Griglia uniforme 4 colonne — tutte identiche */}
       <div className="grid grid-cols-4 gap-3">
         {visible.map(s => <ServiceCard key={s.id} s={s} />)}
       </div>
