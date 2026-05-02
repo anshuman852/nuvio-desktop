@@ -5,7 +5,7 @@ import { Home, Search as SearchIcon, Library, Package, Settings, X, Tv, Compass,
 import clsx from 'clsx';
 import { useStore } from './lib/store';
 import { setAuthToken, getProfilesFromCloud } from './api/nuvio';
-import { startAutoTranslate, stopAutoTranslate } from './lib/googleTranslate';
+import { useT } from './lib/i18n';
 
 import HomePage from './pages/Home';
 import DetailPage from './pages/Detail';
@@ -62,18 +62,19 @@ function AccentApplier() {
 }
 
 function Sidebar({ collapsed }: { collapsed: boolean }) {
+  const { t } = useT();
   const { profiles, activeProfileId, setProfileSelected, settings } = useStore();
   const activeProfile = profiles.find(p => p.id === activeProfileId) ?? profiles[0];
   const reduceSidebar = !!(settings as any).reduceSidebar;
   const isCollapsed = collapsed || reduceSidebar;
 
   const NAV = [
-    { to: '/', icon: Home, label: 'Home', end: true },
-    { to: '/discover', icon: Compass, label: 'Discover', end: false },
-    { to: '/library', icon: Library, label: 'Library', end: false },
-    { to: '/addons', icon: Package, label: 'Addons', end: false },
-    { to: '/plugins', icon: Plug, label: 'Plugins', end: false },
-    { to: '/settings', icon: Settings, label: 'Settings', end: false },
+    { to: '/', icon: Home, label: t('home'), end: true },
+    { to: '/discover', icon: Compass, label: t('discover'), end: false },
+    { to: '/library', icon: Library, label: t('library'), end: false },
+    { to: '/addons', icon: Package, label: t('addons'), end: false },
+    { to: '/plugins', icon: Plug, label: t('plugins'), end: false },
+    { to: '/settings', icon: Settings, label: t('settings'), end: false },
   ];
 
   return (
@@ -114,7 +115,7 @@ function Sidebar({ collapsed }: { collapsed: boolean }) {
           </div>
           <div className="flex-1 min-w-0 text-left">
             <p className="text-xs font-medium text-white/60 truncate">{activeProfile?.name}</p>
-            <p className="text-xs text-white/25">Switch profile</p>
+            <p className="text-xs text-white/25">{t('switch_profile')}</p>
           </div>
         </button>
       )}
@@ -134,6 +135,7 @@ function Sidebar({ collapsed }: { collapsed: boolean }) {
 }
 
 function SearchBar() {
+  const { t } = useT();
   const [query, setQuery] = useState('');
   const [focused, setFocused] = useState(false);
   const navigate = useNavigate();
@@ -148,7 +150,7 @@ function SearchBar() {
           onChange={e => setQuery(e.target.value)}
           onFocus={() => setFocused(true)} 
           onBlur={() => setFocused(false)}
-          placeholder="Search movies, series, anime..."
+          placeholder={t('search_placeholder')}
           className={clsx(
             'w-full pl-9 pr-8 py-2 rounded-full text-sm text-white placeholder:text-white/40 focus:outline-none transition-all',
             focused 
@@ -212,19 +214,10 @@ function Layout() {
 }
 
 export default function App() {
-  const { profileSelected, settings } = useStore();
+  const { profileSelected } = useStore();
   const [showLanguageSetup, setShowLanguageSetup] = useState(() => {
     return !localStorage.getItem('language_selected');
   });
-
-  // Attiva traduzione automatica quando cambia lingua
-  useEffect(() => {
-    const lang = settings.appLanguage || 'en';
-    if (!showLanguageSetup && lang !== 'it') {
-      startAutoTranslate(lang);
-    }
-    return () => stopAutoTranslate();
-  }, [settings.appLanguage, showLanguageSetup]);
 
   if (showLanguageSetup) {
     return (

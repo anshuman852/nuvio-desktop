@@ -5,6 +5,7 @@ import { useStore } from '../lib/store';
 import { STREAMING_SERVICES, StreamingService, discoverByProvider, tmdbToMeta, hasTMDBKey, tmdbImg } from '../api/tmdb';
 import { ArrowLeft, Film, Tv, Search, Loader2, AlertCircle, X, Star } from 'lucide-react';
 import clsx from 'clsx';
+import { useT } from '../lib/i18n';
 
 // ─── Hook: carica backdrop immagini per il servizio ───────────────────────────
 function useServiceBackdrops(service: StreamingService, skip = false) {
@@ -116,6 +117,7 @@ function ContentCard({ item }: { item: ReturnType<typeof tmdbToMeta> }) {
 
 // ─── Service detail ───────────────────────────────────────────────────────────
 function ServiceDetail({ service }: { service: StreamingService }) {
+  const { t } = useT();
   const navigate = useNavigate();
   const [tab, setTab] = useState<'movie' | 'tv'>('movie');
   const [page, setPage] = useState(1);
@@ -154,7 +156,7 @@ function ServiceDetail({ service }: { service: StreamingService }) {
 
         <button onClick={() => navigate('/streaming')}
           className="absolute top-5 left-5 flex items-center gap-1.5 text-white/60 hover:text-white text-sm bg-black/40 px-3 py-1.5 rounded-full backdrop-blur-sm z-10">
-          <ArrowLeft size={15} />Streaming
+          <ArrowLeft size={15} />{t('streaming')}
         </button>
 
         <div className="relative z-10 flex items-end gap-5 mt-14">
@@ -171,21 +173,21 @@ function ServiceDetail({ service }: { service: StreamingService }) {
               <span className="text-4xl">{service.logoFallback}</span>
             )}
           </div>
-          <div><h1 className="text-2xl font-bold text-white">{service.name}</h1><p className="text-sm text-white/50 mt-0.5">{items.length > 0 ? `${items.length}+ contenuti` : 'Catalogo'}</p></div>
+          <div><h1 className="text-2xl font-bold text-white">{service.name}</h1><p className="text-sm text-white/50 mt-0.5">{items.length > 0 ? `${items.length}+` : ''} {t('catalog')}</p></div>
         </div>
 
         <div className="relative z-10 flex items-center gap-3 mt-4">
           <div className="flex gap-1 bg-white/10 rounded-full p-1">
-            {(['movie', 'tv'] as const).map(t => (
-              <button key={t} onClick={() => { setTab(t); setPage(1); setItems([]); }}
-                className={clsx('flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-medium transition-all', tab === t ? 'bg-white text-black shadow' : 'text-white/70 hover:text-white')}>
-                {t === 'movie' ? <><Film size={13} />Film</> : <><Tv size={13} />Serie</>}
+            {(['movie', 'tv'] as const).map(tabType => (
+              <button key={tabType} onClick={() => { setTab(tabType); setPage(1); setItems([]); }}
+                className={clsx('flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-medium transition-all', tab === tabType ? 'bg-white text-black shadow' : 'text-white/70 hover:text-white')}>
+                {tabType === 'movie' ? <><Film size={13} />{t('movies')}</> : <><Tv size={13} />{t('series_tv')}</>}
               </button>
             ))}
           </div>
           <div className="relative flex-1 max-w-xs">
             <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder={`Cerca in ${service.name}...`}
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder={`${t('search')} ${service.name}...`}
               className="w-full pl-8 pr-8 py-2 bg-white/10 border border-white/10 focus:border-white/30 rounded-full text-sm text-white placeholder:text-white/40 focus:outline-none" />
             {search && <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30 hover:text-white"><X size={13} /></button>}
           </div>
@@ -195,10 +197,10 @@ function ServiceDetail({ service }: { service: StreamingService }) {
       <div className="flex-1 overflow-y-auto px-6 py-5">
         {!hasTMDBKey() ? (
           <div className="flex items-center gap-2 text-yellow-400/80 text-sm bg-yellow-500/10 border border-yellow-500/20 rounded-xl px-4 py-3">
-            <AlertCircle size={15} />Configura TMDB in <Link to="/settings" className="underline ml-1">Impostazioni</Link>.
+            <AlertCircle size={15} />{t('configure_tmdb_key')} <Link to="/settings" className="underline ml-1">{t('settings')}</Link>.
           </div>
         ) : loading && filtered.length === 0 ? (
-          <div className="flex items-center justify-center h-40 gap-2 text-white/40"><Loader2 size={20} className="animate-spin" />Caricamento...</div>
+          <div className="flex items-center justify-center h-40 gap-2 text-white/40"><Loader2 size={20} className="animate-spin" />{t('loading')}</div>
         ) : (
           <>
             <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-7 gap-3">
@@ -208,7 +210,7 @@ function ServiceDetail({ service }: { service: StreamingService }) {
               <div className="flex justify-center mt-6">
                 <button onClick={() => { const n = page + 1; setPage(n); load(n); }} disabled={loading}
                   className="px-6 py-2.5 bg-white/10 hover:bg-white/15 text-white rounded-full text-sm font-medium flex items-center gap-2">
-                  {loading && <Loader2 size={14} className="animate-spin" />}Carica altri
+                  {loading && <Loader2 size={14} className="animate-spin" />}{t('load_more')}
                 </button>
               </div>
             )}
@@ -221,6 +223,7 @@ function ServiceDetail({ service }: { service: StreamingService }) {
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export default function Streaming() {
+  const { t } = useT();
   const { serviceId } = useParams<{ serviceId?: string }>();
   const { settings } = useStore();
 
@@ -233,11 +236,11 @@ export default function Streaming() {
 
   return (
     <div className="px-6 py-6 overflow-y-auto h-full">
-      <h1 className="text-xl font-bold text-white mb-5">Streaming</h1>
+      <h1 className="text-xl font-bold text-white mb-5">{t('streaming')}</h1>
       {!hasTMDBKey() && (
         <div className="flex items-center gap-2 text-yellow-400/80 text-sm bg-yellow-500/10 border border-yellow-500/20 rounded-xl px-4 py-3 mb-5">
           <AlertCircle size={15} />
-          Aggiungi TMDB in <Link to="/settings" className="underline ml-1 hover:text-yellow-300">Impostazioni → Integrazioni</Link> per vedere i cataloghi con immagini.
+          {t('configure_tmdb_key')} <Link to="/settings" className="underline ml-1 hover:text-yellow-300">{t('settings')}</Link>.
         </div>
       )}
       <div className="grid grid-cols-4 gap-3">

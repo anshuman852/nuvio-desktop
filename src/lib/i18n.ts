@@ -2,7 +2,7 @@ import { useStore } from './store';
 
 export type TranslationKey = 
   | 'home' | 'discover' | 'library' | 'addons' | 'settings' | 'plugins'
-  | 'search' | 'film' | 'series_tv' | 'all_genres' | 'all_years'
+  | 'search' | 'film' | 'series_tv' | 'all' | 'all_genres' | 'all_years'
   | 'all_platforms' | 'most_popular' | 'top_rated' | 'most_recent'
   | 'continue_watching' | 'in_progress' | 'no_addons' | 'manage_addons'
   | 'configure_tmdb_key' | 'go_to_settings' | 'load_more'
@@ -48,7 +48,7 @@ export type TranslationKey =
 const translations: Record<string, Record<TranslationKey, string>> = {
   en: {
     home: 'Home', discover: 'Discover', library: 'Library', addons: 'Addons', settings: 'Settings', plugins: 'Plugins',
-    search: 'Search', film: 'Movies', series_tv: 'TV Series', all_genres: 'All genres', all_years: 'All years',
+    search: 'Search', film: 'Movies', series_tv: 'TV Series', all: 'All', all_genres: 'All genres', all_years: 'All years',
     all_platforms: 'All platforms', most_popular: 'Most popular', top_rated: 'Top rated', most_recent: 'Most recent',
     continue_watching: 'Continue Watching', in_progress: 'In progress', no_addons: 'No addons installed', manage_addons: 'Manage Addons',
     configure_tmdb_key: 'Configure TMDB API key in Settings', go_to_settings: 'Settings', load_more: 'Load more',
@@ -74,7 +74,7 @@ const translations: Record<string, Record<TranslationKey, string>> = {
     manage_profiles: 'Manage profiles', done: 'Done', add: 'Add',
     edit_profile: 'Edit profile', choose_avatar: 'Choose Avatar', new_profile: 'New profile',
     profile_name: 'Profile name', create: 'Create', qr_login: 'Sign in with QR',
-    qr_login_title: 'Sign in with QR', qr_scan_hint: 'Scan with Nuvio mobile or go to',
+    qr_login_title: 'Sign in with QR',     qr_scan_hint: 'Scan with the Nuvio mobile app or go to nuvioapp.space',
     qr_enter_code: 'Or enter this code at nuvioapp.space:', qr_waiting: 'Waiting for authorisation...',
     qr_error: 'Code expired or error.', retry: 'Retry', enter_pin: 'Enter PIN',
     pin_incorrect: 'Incorrect PIN', filters_adult_content: 'Filters adult content',
@@ -92,7 +92,7 @@ const translations: Record<string, Record<TranslationKey, string>> = {
     stremio_web: 'Stremio Web', install_via_url: 'Install via URL',
     enter_addon_url: 'Enter addon URL (https://... or stremio://...)',
     no_addons_installed: 'No addons installed', go_to_catalog: 'Go to Stremio Catalog tab to add addons',
-    version: 'version', catalogs: 'catalogs', types: 'types', configure_addon: 'Configure addon',
+    version: 'Version', catalogs: 'Catalogs', types: 'Types', configure_addon: 'Configure addon',
     addon_options: 'Addon options', remove_addon: 'Remove addon', up: 'Up', down: 'Down',
     search_addons_placeholder: 'Search addons (Torrentio, OpenSubtitles, Jackett...)',
     local_list: 'Local list', no_addons_found: 'No addons found', load_more_addons: 'Load more',
@@ -121,7 +121,7 @@ const translations: Record<string, Record<TranslationKey, string>> = {
   },
   it: {
     home: 'Home', discover: 'Scopri', library: 'Libreria', addons: 'Addon', settings: 'Impostazioni', plugins: 'Plugin',
-    search: 'Cerca', film: 'Film', series_tv: 'Serie TV', all_genres: 'Tutti i generi', all_years: 'Tutti gli anni',
+    search: 'Cerca', film: 'Film', series_tv: 'Serie TV', all: 'Tutti', all_genres: 'Tutti i generi', all_years: 'Tutti gli anni',
     all_platforms: 'Tutte le piattaforme', most_popular: 'Più popolari', top_rated: 'Più votati', most_recent: 'Più recenti',
     continue_watching: 'Continua a guardare', in_progress: 'In corso', no_addons: 'Nessun addon installato', manage_addons: 'Gestisci Addon',
     configure_tmdb_key: 'Configura la chiave API TMDB nelle Impostazioni', go_to_settings: 'Impostazioni', load_more: 'Carica altro',
@@ -165,7 +165,7 @@ const translations: Record<string, Record<TranslationKey, string>> = {
     stremio_web: 'Stremio Web', install_via_url: 'Installa tramite URL',
     enter_addon_url: 'Inserisci URL addon (https://... o stremio://...)',
     no_addons_installed: 'Nessun addon installato', go_to_catalog: 'Vai al tab Catalogo Stremio per aggiungere addon',
-    version: 'versione', catalogs: 'cataloghi', types: 'tipi', configure_addon: 'Configura addon',
+    version: 'Versione', catalogs: 'Cataloghi', types: 'Tipi', configure_addon: 'Configura addon',
     addon_options: 'Opzioni addon', remove_addon: 'Rimuovi addon', up: 'Su', down: 'Giù',
     search_addons_placeholder: 'Cerca addon (Torrentio, OpenSubtitles, Jackett...)',
     local_list: 'Lista locale', no_addons_found: 'Nessun addon trovato', load_more_addons: 'Carica altri',

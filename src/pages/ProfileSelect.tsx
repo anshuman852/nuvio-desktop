@@ -5,6 +5,7 @@ import { Profile } from '../lib/types';
 import { Plus, Lock, Pencil, X, QrCode, RefreshCw, Check, Shield, Loader2 } from 'lucide-react';
 import { getAvatarCatalog, type SupabaseAvatar, nuvioLogin, setAuthToken } from '../api/nuvio';
 import clsx from 'clsx';
+import { useT } from '../lib/i18n';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL ?? '';
 const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY ?? '';
@@ -52,6 +53,7 @@ function AvatarImg({ url, label, size = 64 }: { url: string; label: string; size
 
 // ─── QR Login ─────────────────────────────────────────────────────────────────
 function QRLoginModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (user: any) => void }) {
+  const { t } = useT();
   const [step, setStep] = useState<'loading' | 'show' | 'error'>('loading');
   const [code, setCode] = useState('');
   const [webUrl, setWebUrl] = useState('');
@@ -185,31 +187,31 @@ function QRLoginModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: 
     <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex items-center justify-center p-4">
       <div className="bg-[#141418] rounded-3xl p-8 w-full max-w-sm border border-white/[0.08] space-y-5 text-center">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-bold text-white">Accedi con QR</h2>
+          <h2 className="text-lg font-bold text-white">{t('qr_login_title')}</h2>
           <button onClick={onClose} className="p-2 rounded-full hover:bg-white/10 text-white/40"><X size={18} /></button>
         </div>
         {step === 'loading' && <div className="flex items-center justify-center h-40"><Loader2 size={28} className="animate-spin text-white/40" /></div>}
         {step === 'show' && (
           <>
-            <p className="text-sm text-white/60">Scansiona con il telefono su <span className="text-[color:var(--accent)]">web.nuvioapp.space</span></p>
+            <p className="text-sm text-white/60">{t('qr_scan_hint')}</p>
             <div className="flex justify-center">
               <div className="w-48 h-48 rounded-2xl overflow-hidden border border-white/10">
                 <img src={qrSvg} alt="QR Code" className="w-full h-full" />
               </div>
             </div>
             <div className="bg-white/5 rounded-2xl px-4 py-3">
-              <p className="text-xs text-white/40 mb-1">Oppure vai su nuvioapp.space e inserisci:</p>
+              <p className="text-xs text-white/40 mb-1">{t('qr_enter_code')}</p>
               <p className="text-3xl font-mono font-bold tracking-widest text-white">{code}</p>
             </div>
             <div className="flex items-center justify-center gap-2 text-xs text-white/30">
-              <RefreshCw size={11} className="animate-spin" />In attesa di autorizzazione...
+              <RefreshCw size={11} className="animate-spin" />{t('qr_waiting')}
             </div>
           </>
         )}
         {step === 'error' && (
           <>
-            <p className="text-sm text-red-400">Codice scaduto o errore.</p>
-            <button onClick={startTvLogin} className="px-4 py-2 text-sm text-white rounded-full" style={{ backgroundColor: 'var(--accent)' }}>Riprova</button>
+            <p className="text-sm text-red-400">{t('qr_error')}</p>
+            <button onClick={startTvLogin} className="px-4 py-2 text-sm text-white rounded-full" style={{ backgroundColor: 'var(--accent)' }}>{t('retry')}</button>
           </>
         )}
       </div>
@@ -219,6 +221,7 @@ function QRLoginModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: 
 
 // ─── PIN Dialog ───────────────────────────────────────────────────────────────
 function PinDialog({ profile, onSuccess, onCancel }: { profile: Profile; onSuccess: () => void; onCancel: () => void }) {
+  const { t } = useT();
   const [digits, setDigits] = useState(['', '', '', '']);
   const [error, setError] = useState(false);
   function handleDigit(i: number, val: string) {
@@ -237,7 +240,7 @@ function PinDialog({ profile, onSuccess, onCancel }: { profile: Profile; onSucce
       <div className="bg-[#141418] rounded-3xl p-8 w-full max-w-sm text-center space-y-6 border border-white/[0.08]">
         <div className="w-20 h-20 rounded-full overflow-hidden mx-auto"><AvatarImg url={profile.avatarUrl ?? ''} label={profile.name} size={80} /></div>
         <h2 className="text-xl font-bold text-white">{profile.name}</h2>
-        <p className="text-sm text-white/40 flex items-center gap-1.5 justify-center"><Lock size={13} />Inserisci PIN</p>
+        <p className="text-sm text-white/40 flex items-center gap-1.5 justify-center"><Lock size={13} />{t('enter_pin')}</p>
         <div className="flex justify-center gap-3">
           {[0,1,2,3].map(i => (
             <input key={i} id={`pin-${i}`} type="password" inputMode="numeric" maxLength={1}
@@ -248,8 +251,8 @@ function PinDialog({ profile, onSuccess, onCancel }: { profile: Profile; onSucce
                 error ? 'border-red-500' : digits[i] ? 'border-[color:var(--accent)]' : 'border-white/10 focus:border-white/30')} />
           ))}
         </div>
-        {error && <p className="text-red-400 text-sm">PIN non corretto</p>}
-        <button onClick={onCancel} className="text-xs text-white/30 hover:text-white">Annulla</button>
+        {error && <p className="text-red-400 text-sm">{t('pin_incorrect')}</p>}
+        <button onClick={onCancel} className="text-xs text-white/30 hover:text-white">{t('cancel')}</button>
       </div>
     </div>
   );
@@ -257,6 +260,7 @@ function PinDialog({ profile, onSuccess, onCancel }: { profile: Profile; onSucce
 
 // ─── Edit Modal ───────────────────────────────────────────────────────────────
 function EditModal({ profile, avatarCatalog, onClose }: { profile: Profile; avatarCatalog: AvatarItem[]; onClose: () => void }) {
+  const { t } = useT();
   const { updateProfile, removeProfile } = useStore();
   const [name, setName] = useState(profile.name);
   const [avatarId, setAvatarId] = useState(profile.avatar ?? '');
@@ -277,10 +281,10 @@ function EditModal({ profile, avatarCatalog, onClose }: { profile: Profile; avat
       <div className="bg-[#1a1a1f] rounded-2xl w-full max-w-2xl border border-white/[0.08] my-4 overflow-hidden">
         <div className="flex items-center justify-between px-6 py-5 border-b border-white/[0.06]">
           <div>
-            <p className="text-xs text-white/40 mb-0.5">Modifica profilo</p>
+            <p className="text-xs text-white/40 mb-0.5">{t('edit_profile')}</p>
             <h2 className="text-2xl font-bold text-white">{profile.name}</h2>
           </div>
-          <button onClick={save} className="px-6 py-2.5 bg-white text-black font-semibold rounded-full text-sm hover:bg-white/90">Salva</button>
+          <button onClick={save} className="px-6 py-2.5 bg-white text-black font-semibold rounded-full text-sm hover:bg-white/90">{t('save')}</button>
         </div>
         <div className="flex gap-6 p-6">
           <div className="flex flex-col items-center gap-3 w-40 flex-shrink-0">
@@ -289,14 +293,14 @@ function EditModal({ profile, avatarCatalog, onClose }: { profile: Profile; avat
             </div>
             <input value={name} onChange={e => setName(e.target.value)}
               className="w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 focus:border-[color:var(--accent)] focus:outline-none text-sm text-white text-center" />
-            <button onClick={onClose} className="w-full py-2 rounded-xl bg-white/5 hover:bg-white/10 text-white/50 text-sm">Annulla</button>
+            <button onClick={onClose} className="w-full py-2 rounded-xl bg-white/5 hover:bg-white/10 text-white/50 text-sm">{t('cancel')}</button>
             {profile.id !== 'default' && (
-              <button onClick={() => { if (confirm(`Eliminare "${profile.name}"?`)) { removeProfile(profile.id); onClose(); } }}
-                className="text-xs text-red-400 hover:text-red-300">🗑️ Elimina</button>
+              <button onClick={() => { if (confirm(t('confirm_delete'))) { removeProfile(profile.id); onClose(); } }}
+                className="text-xs text-red-400 hover:text-red-300">🗑️ {t('delete')}</button>
             )}
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-xs text-white/40 uppercase tracking-wider mb-2">Scegli Avatar</p>
+            <p className="text-xs text-white/40 uppercase tracking-wider mb-2">{t('choose_avatar')}</p>
             <div className="flex gap-1.5 flex-wrap mb-3">
               {categories.map(cat => (
                 <button key={cat} onClick={() => setCategory(cat)}
@@ -319,7 +323,7 @@ function EditModal({ profile, avatarCatalog, onClose }: { profile: Profile; avat
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Shield size={14} className="text-blue-400" />
-                  <div><p className="text-sm text-white">Profilo bambini</p><p className="text-xs text-white/30">Filtra contenuti adulti</p></div>
+                  <div><p className="text-sm text-white">{t('kids_profile')}</p><p className="text-xs text-white/30">{t('filters_adult_content')}</p></div>
                 </div>
                 <button onClick={() => setIsKids(v => !v)}
                   className={clsx('relative w-12 h-6 rounded-full transition-colors', isKids ? 'bg-blue-500' : 'bg-white/20')}>
@@ -336,6 +340,7 @@ function EditModal({ profile, avatarCatalog, onClose }: { profile: Profile; avat
 
 // ─── ProfileSelect ────────────────────────────────────────────────────────────
 export default function ProfileSelect() {
+  const { t } = useT();
   const { profiles, setActiveProfile, setProfileSelected, addProfile, setNuvioUser } = useStore();
   const [pinProfile, setPinProfile] = useState<Profile | null>(null);
   const [editProfile, setEditProfile] = useState<Profile | null>(null);
@@ -383,8 +388,8 @@ export default function ProfileSelect() {
         <img src="/nuvio-icon.svg" alt="Nuvio" className="w-12 h-12" />
         <span className="text-3xl font-bold text-white">nuvio</span>
       </div>
-      <h1 className="text-3xl font-bold text-white mb-2">{editMode ? 'Gestisci profili' : 'Chi guarda?'}</h1>
-      <p className="text-white/30 text-sm mb-12">{editMode ? 'Tocca un profilo per modificarlo' : 'Seleziona il tuo profilo'}</p>
+      <h1 className="text-3xl font-bold text-white mb-2">{editMode ? t('manage_profiles') : t('who_is_watching')}</h1>
+      <p className="text-white/30 text-sm mb-12">{editMode ? t('tap_to_edit') : t('select_profile')}</p>
 
       <div className="flex flex-wrap justify-center gap-10 max-w-3xl mb-10">
         {profiles.map(p => (
@@ -405,7 +410,7 @@ export default function ProfileSelect() {
             <div className="w-32 h-32 rounded-full border-2 border-dashed border-white/15 flex items-center justify-center group-hover:border-white/40 group-hover:scale-105 transition-all">
               <Plus size={36} className="text-white/20 group-hover:text-white/50" />
             </div>
-            <p className="text-base text-white/30 group-hover:text-white/60 font-medium">Aggiungi</p>
+            <p className="text-base text-white/30 group-hover:text-white/60 font-medium">{t('add')}</p>
           </button>
         )}
       </div>
@@ -413,11 +418,11 @@ export default function ProfileSelect() {
       <div className="flex items-center gap-3">
         <button onClick={() => setEditMode(v => !v)}
           className="px-6 py-2.5 rounded-full text-sm font-medium border border-white/10 text-white/40 hover:text-white/70 hover:border-white/25 transition-colors">
-          {editMode ? '✓ Fine' : 'Gestisci profili'}
+          {editMode ? `✓ ${t('done')}` : t('manage_profiles')}
         </button>
         <button onClick={() => setShowQR(true)}
           className="flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-medium border border-white/10 text-white/40 hover:text-white/70 hover:border-white/25 transition-colors">
-          <QrCode size={15} />Login QR
+          <QrCode size={15} />{t('qr_login')}
         </button>
       </div>
 
@@ -425,8 +430,8 @@ export default function ProfileSelect() {
       {showAdd && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex items-center justify-center p-4">
           <div className="bg-[#141418] rounded-3xl p-6 w-full max-w-sm border border-white/[0.08] space-y-4">
-            <h2 className="text-lg font-bold text-white">Nuovo profilo</h2>
-            <input value={newName} onChange={e => setNewName(e.target.value)} autoFocus placeholder="Nome profilo"
+            <h2 className="text-lg font-bold text-white">{t('new_profile')}</h2>
+            <input value={newName} onChange={e => setNewName(e.target.value)} autoFocus placeholder={t('profile_name')}
               className="w-full px-4 py-3 rounded-2xl bg-white/5 border border-white/[0.08] focus:border-[color:var(--accent)] focus:outline-none text-white text-sm" />
             <div className="grid grid-cols-6 gap-2 max-h-40 overflow-y-auto">
               {(catalogLoading ? DICEBEAR_FALLBACK : avatarCatalog).slice(0, 24).map(av => (
@@ -436,10 +441,10 @@ export default function ProfileSelect() {
               ))}
             </div>
             <div className="flex gap-3 justify-end">
-              <button onClick={() => { setShowAdd(false); setNewName(''); }} className="px-5 py-2.5 text-sm text-white/50 bg-white/5 rounded-2xl">Annulla</button>
+              <button onClick={() => { setShowAdd(false); setNewName(''); }} className="px-5 py-2.5 text-sm text-white/50 bg-white/5 rounded-2xl">{t('cancel')}</button>
               <button onClick={() => { if (!newName.trim()) return; addProfile({ name: newName.trim(), avatar: defaultAvatar?.id ?? 'f_goku', avatarUrl: defaultAvatar?.url, color: '#7c3aed', isKids: false }); setShowAdd(false); setNewName(''); }}
                 disabled={!newName.trim()} className="px-5 py-2.5 text-sm text-white rounded-2xl disabled:opacity-40" style={{ backgroundColor: 'var(--accent,#7c3aed)' }}>
-                Crea
+                {t('create')}
               </button>
             </div>
           </div>

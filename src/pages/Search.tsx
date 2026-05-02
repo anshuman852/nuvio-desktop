@@ -5,10 +5,12 @@ import { useStore } from '../lib/store';
 import { searchTMDB, tmdbImg, hasTMDBKey } from '../api/tmdb';
 import { Loader2, Search as SearchIcon, Film, Tv, Sparkles } from 'lucide-react';
 import clsx from 'clsx';
+import { useT } from '../lib/i18n';
 
 type Category = 'all' | 'movie' | 'tv';
 
 export default function SearchPage() {
+  const { t } = useT();
   const [searchParams] = useSearchParams();
   const query = searchParams.get('q') || '';
   const { settings } = useStore();
@@ -26,7 +28,7 @@ export default function SearchPage() {
     }
 
     if (!settings.tmdbApiKey || !hasTMDBKey()) {
-      setError('Configure TMDB API key in Settings');
+      setError(t('configure_tmdb_key'));
       return;
     }
 
@@ -75,7 +77,7 @@ export default function SearchPage() {
         setSeries(seriesList);
       } catch (err: any) {
         console.error('Search error:', err);
-        setError(err.message || 'Error during search');
+        setError(err.message || t('error_loading'));
       } finally {
         setLoading(false);
       }
@@ -86,9 +88,9 @@ export default function SearchPage() {
   }, [query, settings.tmdbApiKey]);
 
   const categories = [
-    { id: 'all', label: 'All', icon: SearchIcon, count: movies.length + series.length },
-    { id: 'movie', label: 'Movies', icon: Film, count: movies.length },
-    { id: 'tv', label: 'TV Series', icon: Tv, count: series.length },
+    { id: 'all', label: t('all'), icon: SearchIcon, count: movies.length + series.length },
+    { id: 'movie', label: t('movies'), icon: Film, count: movies.length },
+    { id: 'tv', label: t('series_tv'), icon: Tv, count: series.length },
   ];
 
   const getCurrentItems = () => {
@@ -104,9 +106,9 @@ export default function SearchPage() {
   if (!settings.tmdbApiKey) {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-4 text-center px-8">
-        <p className="text-white/50">Configure TMDB API key in Settings to search.</p>
+        <p className="text-white/50">{t('configure_tmdb_key')}</p>
         <Link to="/settings" className="px-5 py-2.5 rounded-xl text-white text-sm" style={{ backgroundColor: 'var(--accent)' }}>
-          Go to Settings
+          {t('go_to_settings')}
         </Link>
       </div>
     );
@@ -117,7 +119,7 @@ export default function SearchPage() {
       <div className="flex items-center gap-2 mb-4">
         <SearchIcon size={18} className="text-white/40" />
         <h1 className="text-lg font-bold text-white">
-          {query ? `Results for "${query}"` : 'Search'}
+          {query ? `${t('results_for')} "${query}"` : t('search')}
         </h1>
         {loading && <Loader2 size={16} className="animate-spin text-white/40" />}
       </div>
@@ -127,8 +129,7 @@ export default function SearchPage() {
           <div className="w-20 h-20 mx-auto mb-4 rounded-full bg-white/5 flex items-center justify-center">
             <SearchIcon size={32} className="text-white/20" />
           </div>
-          <p className="text-white/40 text-sm">Use the search bar above to find movies, TV series and anime.</p>
-          <p className="text-white/25 text-xs mt-2">Try searching "Bluey", "Stranger Things" or "Inception"</p>
+          <p className="text-white/40 text-sm">{t('search_hint')}</p>
         </div>
       )}
 
@@ -166,8 +167,7 @@ export default function SearchPage() {
 
           {currentItems.length === 0 ? (
             <div className="text-center py-12">
-              <p className="text-white/40 text-sm">No results found in this category.</p>
-              <p className="text-white/25 text-xs mt-1">Try a different term.</p>
+              <p className="text-white/40 text-sm">{t('no_results')}</p>
             </div>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">

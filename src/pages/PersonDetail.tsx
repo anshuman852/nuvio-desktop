@@ -5,8 +5,10 @@ import { useStore } from '../lib/store';
 import { getPerson, tmdbImg, hasTMDBKey } from '../api/tmdb';
 import { ArrowLeft, Loader2, AlertCircle, Film, Tv, Calendar } from 'lucide-react';
 import clsx from 'clsx';
+import { useT } from '../lib/i18n';
 
 export default function PersonDetail() {
+  const { t } = useT();
   const { personId } = useParams<{ personId: string }>();
   const navigate = useNavigate();
   const { settings } = useStore();
@@ -28,7 +30,7 @@ export default function PersonDetail() {
         setPerson(data);
       } catch (err) {
         console.error('Error loading person:', err);
-        setError('Failed to load person details');
+        setError(t('error_loading'));
       } finally {
         setLoading(false);
       }

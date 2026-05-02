@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useStore } from '../lib/store';
+import { useT } from '../lib/i18n';
 import { Globe, Check } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -21,6 +22,7 @@ interface LanguageSetupProps {
 }
 
 export default function LanguageSetup({ onComplete }: LanguageSetupProps = {}) {
+  const { t } = useT();
   const { settings, updateSettings } = useStore();
   const [selectedLang, setSelectedLang] = useState(settings.appLanguage || 'en');
 
@@ -46,8 +48,8 @@ export default function LanguageSetup({ onComplete }: LanguageSetupProps = {}) {
         <div className="w-20 h-20 mx-auto mb-6 rounded-2xl flex items-center justify-center" style={{ backgroundColor: 'var(--accent-bg)' }}>
           <Globe size={40} style={{ color: 'var(--accent)' }} />
         </div>
-        <h1 className="text-3xl font-bold text-white mb-2">Welcome to Nuvio</h1>
-        <p className="text-white/50 mb-8">Select your preferred language</p>
+        <h1 className="text-3xl font-bold text-white mb-2">{t('welcome')}</h1>
+        <p className="text-white/50 mb-8">{t('select_language')}</p>
         
         <div className="space-y-2 mb-8 max-h-[400px] overflow-y-auto px-2">
           {LANGUAGES.map(lang => (
@@ -78,11 +80,11 @@ export default function LanguageSetup({ onComplete }: LanguageSetupProps = {}) {
           className="w-full py-3 rounded-xl text-white font-medium transition-colors"
           style={{ backgroundColor: 'var(--accent)' }}
         >
-          Continue
+          {t('continue')}
         </button>
         
         <p className="text-xs text-white/30 mt-4">
-          You can change the language later in Settings
+          {t('you_can_change_later')}
         </p>
       </div>
     </div>
