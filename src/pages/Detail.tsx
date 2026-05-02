@@ -15,12 +15,19 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 
+const QUALITY_ORDER: Record<string, number> = { '4K': 0, '2160P': 1, '1080P': 2, '720P': 3, '480P': 4 };
+
+function getStreamQuality(stream: Stream): string {
+  const raw = `${stream.name ?? ''} ${stream.title ?? ''} ${stream.description ?? ''}`;
+  const qualMatch = raw.match(/\b(4K|2160p|1080p|720p|480p)\b/i);
+  return qualMatch?.[0]?.toUpperCase() ?? '';
+}
+
 function StreamRow({ stream, onPlay, active }: { stream: Stream; onPlay: () => void; active: boolean }) {
   const hasUrl = Boolean(stream.url);
   const hasMagnet = Boolean(stream.infoHash) && !hasUrl;
   const raw = `${stream.name ?? ''} ${stream.title ?? ''} ${stream.description ?? ''}`;
-  const qualMatch = raw.match(/\b(4K|2160p|1080p|720p|480p)\b/i);
-  const quality = qualMatch?.[0]?.toUpperCase() ?? '';
+  const quality = getStreamQuality(stream);
   const tags = Array.from(new Set(
     (raw.match(/\b(HDR10\+?|HDR|DV|Dolby Vision|HEVC|x265|x264|WEBDL|WEB-DL|BluRay|SDR|AVC)\b/gi) ?? [])
       .map((t: string) => t.toUpperCase().replace('DOLBY VISION','DV').replace('WEB-DL','WEBDL'))
@@ -89,6 +96,7 @@ export default function Detail() {
   const [playError, setPlayError] = useState<string | null>(null);
   const [activeStreamKey, setActiveStreamKey] = useState<string | null>(null);
   const [selectedAddon, setSelectedAddon] = useState<string | null>(null);
+  const [qualityFilter, setQualityFilter] = useState<string>('all');
   const [epCtxMenu, setEpCtxMenu] = useState<{ x: number; y: number; ep: Video } | null>(null);
   const [playerStream, setPlayerStream] = useState<Stream | null>(null);
   const [streamReferer, setStreamReferer] = useState<string | undefined>(undefined);
@@ -810,22 +818,61 @@ export default function Detail() {
               {streamsLoading && <div className="flex items-center gap-1 flex-shrink-0"><Loader2 size={11} className="animate-spin text-white/40" /><span className="text-[10px] text-white/30">{streamGroups.length}</span></div>}
             </div>
             {streamsLoading && <div className="h-0.5 bg-white/5 flex-shrink-0"><div className="h-full animate-pulse" style={{ backgroundColor: 'var(--accent)', width: '60%' }} /></div>}
-            <div className="flex-1 overflow-y-auto">
-              {streamGroups.length === 0 && !streamsLoading && streamError && <div className="px-4 py-6 text-center"><AlertCircle size={20} className="text-white/30 mx-auto mb-2" /><p className="text-xs text-white/40">{streamError}</p></div>}
-              {streamGroups.length === 0 && !streamsLoading && !streamError && isSeries && !selectedVideo && <div className="px-4 py-6 text-center text-xs text-white/30">Select an episode to load streams</div>}
-              {(selectedAddon ? streamGroups.filter(g => g.addonUrl === selectedAddon) : streamGroups).map((group) => (
-                <div key={group.addonUrl}>
-                  <div className="sticky top-0 bg-[#111115]/95 backdrop-blur-sm px-3 py-2 border-b border-white/[0.05] z-10">
-                    <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: 'var(--accent)' }}>{group.addonName}</span>
-                    <span className="text-[10px] text-white/25 ml-1.5">({group.streams.length})</span>
+            {(() => {
+              const allStreams = (selectedAddon ? streamGroups.filter(g => g.addonUrl === selectedAddon) : streamGroups).flatMap(g => g.streams.map(s => ({ stream: s, addonUrl: g.addonUrl, addonName: g.addonName })));
+              const qualityCounts = allStreams.reduce<Record<string, number>>((acc, { stream }) => {
+                const q = getStreamQuality(stream) || 'Unknown';
+                acc[q] = (acc[q] || 0) + 1;
+                return acc;
+              }, {});
+              const qualityTabs = ['all', ...Object.keys(qualityCounts).sort((a, b) => (QUALITY_ORDER[a] ?? 99) - (QUALITY_ORDER[b] ?? 99))];
+              const filteredStreams = qualityFilter === 'all' ? allStreams : allStreams.filter(({ stream }) => (getStreamQuality(stream) || 'Unknown') === qualityFilter);
+              const filteredGroups = filteredStreams.reduce<StreamGroup[]>((acc, { stream, addonUrl, addonName }) => {
+                let g = acc.find(x => x.addonUrl === addonUrl);
+                if (!g) { g = { addonName, addonUrl, streams: [] }; acc.push(g); }
+                g.streams.push(stream);
+                return acc;
+              }, []);
+              return (
+                <>
+                  {allStreams.length > 0 && (
+                    <div className="flex gap-1 px-2 py-1.5 border-b border-white/[0.06] overflow-x-auto flex-shrink-0 scrollbar-none">
+                      {qualityTabs.map(q => {
+                        const label = q === 'all' ? 'All' : q === 'Unknown' ? 'Unknown' : q;
+                        const count = q === 'all' ? allStreams.length : qualityCounts[q] || 0;
+                        const isActive = qualityFilter === q;
+                        return (
+                          <button key={q} onClick={() => setQualityFilter(q)}
+                            className={clsx('px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider whitespace-nowrap transition-colors', isActive ? 'text-white' : 'text-white/40 hover:text-white/70')}
+                            style={isActive ? { backgroundColor: 'var(--accent)', color: '#fff' } : {}}>
+                            {label} <span className="font-normal opacity-60">{count}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <div className="flex-1 overflow-y-auto">
+                    {streamGroups.length === 0 && !streamsLoading && streamError && <div className="px-4 py-6 text-center"><AlertCircle size={20} className="text-white/30 mx-auto mb-2" /><p className="text-xs text-white/40">{streamError}</p></div>}
+                    {streamGroups.length === 0 && !streamsLoading && !streamError && isSeries && !selectedVideo && <div className="px-4 py-6 text-center text-xs text-white/30">Select an episode to load streams</div>}
+                    {filteredGroups.map((group) => {
+                      let si = 0;
+                      return (
+                        <div key={group.addonUrl}>
+                          <div className="sticky top-0 bg-[#111115]/95 backdrop-blur-sm px-3 py-2 border-b border-white/[0.05] z-10">
+                            <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: 'var(--accent)' }}>{group.addonName}</span>
+                            <span className="text-[10px] text-white/25 ml-1.5">({group.streams.length})</span>
+                          </div>
+                          {group.streams.map((stream) => {
+                            const idx = si++;
+                            return <StreamRow key={idx} stream={stream} onPlay={() => handlePlay(stream, group.addonUrl, idx)} active={activeStreamKey === `${group.addonUrl}:${idx}`} />;
+                          })}
+                        </div>
+                      );
+                    })}
                   </div>
-                  {group.streams.slice(0, 20).map((stream: Stream, si: number) => (
-                    <StreamRow key={si} stream={stream} onPlay={() => handlePlay(stream, group.addonUrl, si)} active={activeStreamKey === `${group.addonUrl}:${si}`} />
-                  ))}
-                  {group.streams.length > 20 && <p className="text-[10px] text-white/25 text-center py-1.5">+{group.streams.length - 20} more</p>}
-                </div>
-              ))}
-            </div>
+                </>
+              );
+            })()}
           </div>
         )}
       </div>
