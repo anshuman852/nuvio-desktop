@@ -757,8 +757,7 @@ function LinguePage() {
           <Globe size={18} /> {t('language')}
         </p>
         <p className="text-xs text-white/40">
-          Modifica la lingua dell'interfaccia. I metadati TMDB verranno mostrati nella lingua selezionata.
-          L'applicazione si riavvierà automaticamente per applicare le modifiche.
+          {t('language_change_hint')}
         </p>
         
         <div className="space-y-2">
@@ -787,7 +786,7 @@ function LinguePage() {
         
         <div className="mt-4 p-3 rounded-xl bg-yellow-500/10 border border-yellow-500/20">
           <p className="text-xs text-yellow-400/80 text-center">
-            ⚠️ Dopo aver cambiato lingua, l'applicazione si riavvierà per applicare tutte le modifiche all'interfaccia.
+            {t('language_change_warning')}
           </p>
         </div>
       </div>

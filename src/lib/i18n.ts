@@ -43,7 +43,8 @@ export type TranslationKey =
   | 'episodes' | 'in_library' | 'add_to_library' | 'remove_from_library' | 'syncing'
   | 'error_loading' | 'try_again' | 'no_streams' | 'available_streams' | 'plugin_providers'
   | 'no_providers' | 'test_provider' | 'testing' | 'installing' | 'install_repository'
-  | 'reload_streams' | 'trakt' | 'simkl' | 'mal' | 'collections' | 'browse_collections';
+  | 'reload_streams' | 'trakt' | 'simkl' | 'mal' | 'collections' | 'browse_collections'
+  | 'language_change_hint' | 'language_change_warning';
 
 const translations: Record<string, Record<TranslationKey, string>> = {
   en: {
@@ -74,7 +75,7 @@ const translations: Record<string, Record<TranslationKey, string>> = {
     manage_profiles: 'Manage profiles', done: 'Done', add: 'Add',
     edit_profile: 'Edit profile', choose_avatar: 'Choose Avatar', new_profile: 'New profile',
     profile_name: 'Profile name', create: 'Create', qr_login: 'Sign in with QR',
-    qr_login_title: 'Sign in with QR',     qr_scan_hint: 'Scan with the Nuvio mobile app or go to nuvioapp.space',
+    qr_login_title: 'Sign in with QR', qr_scan_hint: 'Scan with the Nuvio mobile app or go to nuvioapp.space',
     qr_enter_code: 'Or enter this code at nuvioapp.space:', qr_waiting: 'Waiting for authorisation...',
     qr_error: 'Code expired or error.', retry: 'Retry', enter_pin: 'Enter PIN',
     pin_incorrect: 'Incorrect PIN', filters_adult_content: 'Filters adult content',
@@ -118,6 +119,8 @@ const translations: Record<string, Record<TranslationKey, string>> = {
     testing: 'Testing...', installing: 'Installing...', install_repository: 'Install repository',
     reload_streams: 'Reload streams', trakt: 'Trakt', simkl: 'Simkl', mal: 'MAL',
     collections: 'Collections', browse_collections: 'Browse collections',
+    language_change_hint: 'Change the interface language. TMDB metadata will be shown in the selected language. The app will restart automatically to apply changes.',
+    language_change_warning: '⚠️ After changing the language, the app will restart to apply all interface changes.',
   },
   it: {
     home: 'Home', discover: 'Scopri', library: 'Libreria', addons: 'Addon', settings: 'Impostazioni', plugins: 'Plugin',
@@ -191,6 +194,8 @@ const translations: Record<string, Record<TranslationKey, string>> = {
     testing: 'Test in corso...', installing: 'Installazione...', install_repository: 'Installa repository',
     reload_streams: 'Ricarica stream', trakt: 'Trakt', simkl: 'Simkl', mal: 'MAL',
     collections: 'Collezioni', browse_collections: 'Sfoglia collezioni',
+    language_change_hint: 'Cambia la lingua dell\'interfaccia. I metadati TMDB verranno mostrati nella lingua selezionata. L\'applicazione si riavvierà automaticamente per applicare le modifiche.',
+    language_change_warning: '⚠️ Dopo aver cambiato lingua, l\'applicazione si riavvierà per applicare tutte le modifiche all\'interfaccia.',
   },
   // ... (aggiungi qui le altre lingue: es, fr, de, pt, ja, ko, zh, ru)
   // Per brevità, mantieni le altre lingue che hai già nel tuo file
