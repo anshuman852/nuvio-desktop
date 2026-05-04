@@ -143,9 +143,9 @@ function SearchBar() {
     <form onSubmit={e => { e.preventDefault(); if (query.trim()) navigate(`/search?q=${encodeURIComponent(query.trim())}`); }}
       className="flex-1 max-w-sm">
       <div className={clsx('relative transition-all duration-200', focused ? 'scale-[1.01]' : '')}>
-        <SearchIcon size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
+        <SearchIcon size={15} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--accent)' }} />
         <input 
-          type="search" 
+          type="text" 
           value={query} 
           onChange={e => setQuery(e.target.value)}
           onFocus={() => setFocused(true)} 
@@ -157,12 +157,14 @@ function SearchBar() {
               ? 'bg-[#2a2a35] border border-white/20' 
               : 'bg-[#1e1e26] border border-white/[0.08] hover:bg-[#252530]'
           )} 
+          style={focused ? { borderColor: 'var(--accent)' } : {}}
         />
         {query && (
           <button 
             type="button" 
             onClick={() => setQuery('')} 
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white"
+            className="absolute right-3 top-1/2 -translate-y-1/2 opacity-40 hover:opacity-100 transition-opacity"
+            style={{ color: 'var(--accent)' }}
           >
             <X size={13} />
           </button>
@@ -219,6 +221,13 @@ export default function App() {
     return !localStorage.getItem('language_selected');
   });
 
+  // Prevent default browser context menu globally.
+  // Components with custom context menus call e.stopPropagation()
+  // so this handler won't run for them.
+  const handleGlobalContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+  };
+
   if (showLanguageSetup) {
     return (
       <BrowserRouter>
@@ -230,9 +239,11 @@ export default function App() {
 
   return (
     <BrowserRouter>
-      <AccentApplier />
-      <TokenRestorer />
-      {profileSelected ? <Layout /> : <ProfileSelectPage />}
+      <div onContextMenu={handleGlobalContextMenu}>
+        <AccentApplier />
+        <TokenRestorer />
+        {profileSelected ? <Layout /> : <ProfileSelectPage />}
+      </div>
     </BrowserRouter>
   );
 }
