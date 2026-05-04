@@ -6,6 +6,7 @@ import { STREAMING_SERVICES, StreamingService, discoverByProvider, tmdbToMeta, h
 import { ArrowLeft, Film, Tv, Search, Loader2, AlertCircle, X, Star } from 'lucide-react';
 import clsx from 'clsx';
 import { useT } from '../lib/i18n';
+import { showContextMenu, copyText } from '../lib/contextMenu';
 
 // ─── Hook: carica backdrop immagini per il servizio ───────────────────────────
 function useServiceBackdrops(service: StreamingService, skip = false) {
@@ -29,14 +30,16 @@ function useServiceBackdrops(service: StreamingService, skip = false) {
 }
 
 // ─── Service card — supporta lightLogo per Apple TV+ ───────────────────────────
-function ServiceCard({ s }: { s: StreamingService }) {
+function ServiceCard({ s, onContextMenu }: { s: StreamingService; onContextMenu?: (e: React.MouseEvent, s: StreamingService) => void }) {
+  const navigate = useNavigate();
   const [logoErr, setLogoErr] = useState(false);
   const backdrops = useServiceBackdrops(s);
   const bg = (s as any).logoBg ?? s.color;
   const isLightLogo = (s as any).lightLogo === true;
 
   return (
-    <Link to={`/streaming/${s.id}`}
+    <div onClick={() => navigate(`/streaming/${s.id}`)}
+      onContextMenu={e => onContextMenu?.(e, s)}
       className="group relative overflow-hidden rounded-2xl cursor-pointer block transition-all duration-200 hover:scale-[1.03] hover:shadow-2xl"
       style={{ aspectRatio: '16/9' }}>
 
@@ -90,15 +93,18 @@ function ServiceCard({ s }: { s: StreamingService }) {
         style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.85) 0%, transparent 100%)' }}>
         <p className="text-sm font-bold text-white drop-shadow">{s.name}</p>
       </div>
-    </Link>
+    </div>
   );
 }
 
 // ─── Content card ─────────────────────────────────────────────────────────────
-function ContentCard({ item }: { item: ReturnType<typeof tmdbToMeta> }) {
+function ContentCard({ item, onContextMenu }: { item: ReturnType<typeof tmdbToMeta>; onContextMenu?: (e: React.MouseEvent, ctxItem: ReturnType<typeof tmdbToMeta>) => void }) {
+  const navigate = useNavigate();
   const [err, setErr] = useState(false);
   return (
-    <Link to={`/detail/${item.type}/${encodeURIComponent(item.id)}`} className="group">
+    <div onClick={() => navigate(`/detail/${item.type}/${encodeURIComponent(item.id)}`)}
+      onContextMenu={e => onContextMenu?.(e, item)}
+      className="group cursor-pointer">
       <div className="relative aspect-[2/3] rounded-xl overflow-hidden bg-white/5 border border-white/[0.06] group-hover:border-[color:var(--accent)] group-hover:scale-[1.04] transition-all duration-200">
         {item.poster && !err
           ? <img src={item.poster} alt={item.name} className="w-full h-full object-cover" onError={() => setErr(true)} />
@@ -111,7 +117,7 @@ function ContentCard({ item }: { item: ReturnType<typeof tmdbToMeta> }) {
       </div>
       <p className="mt-1.5 text-xs text-white/70 group-hover:text-white truncate">{item.name}</p>
       {item.releaseInfo && <p className="text-xs text-white/30">{item.releaseInfo}</p>}
-    </Link>
+    </div>
   );
 }
 
@@ -204,7 +210,14 @@ function ServiceDetail({ service }: { service: StreamingService }) {
         ) : (
           <>
             <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-7 gap-3">
-              {filtered.map(item => <ContentCard key={item.id} item={item} />)}
+              {filtered.map(item => <ContentCard key={item.id} item={item} onContextMenu={(e, ctxItem) => {
+                e.preventDefault();
+                showContextMenu([
+                  { id: 'play', text: t('ctx_play'), accelerator: 'Enter', action: () => navigate(`/detail/${ctxItem.type}/${encodeURIComponent(ctxItem.id)}`) },
+                  '---' as const,
+                  { id: 'copy-url', text: t('ctx_copy_url'), accelerator: 'CmdOrCtrl+C', action: () => copyText(`${window.location.origin}/detail/${ctxItem.type}/${encodeURIComponent(ctxItem.id)}`) },
+                ]);
+              }} />)}
             </div>
             {page < totalPages && !search && (
               <div className="flex justify-center mt-6">
@@ -224,6 +237,7 @@ function ServiceDetail({ service }: { service: StreamingService }) {
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export default function Streaming() {
   const { t } = useT();
+  const navigate = useNavigate();
   const { serviceId } = useParams<{ serviceId?: string }>();
   const { settings } = useStore();
 
@@ -244,7 +258,14 @@ export default function Streaming() {
         </div>
       )}
       <div className="grid grid-cols-4 gap-3">
-        {visible.map(s => <ServiceCard key={s.id} s={s} />)}
+        {visible.map(s => <ServiceCard key={s.id} s={s} onContextMenu={(e, s) => {
+          e.preventDefault();
+          showContextMenu([
+            { id: 'play', text: t('ctx_play'), accelerator: 'Enter', action: () => navigate(`/streaming/${s.id}`) },
+            '---' as const,
+            { id: 'copy-url', text: t('ctx_copy_url'), accelerator: 'CmdOrCtrl+C', action: () => copyText(`${window.location.origin}/streaming/${s.id}`) },
+          ]);
+        }} />)}
       </div>
     </div>
   );

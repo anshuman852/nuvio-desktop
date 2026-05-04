@@ -10,6 +10,7 @@ import { STREAMING_SERVICES, getDiscoverMovies } from '../api/tmdb';
 import { Play, Plus, ChevronLeft, ChevronRight, Info, ChevronRight as MoreIcon } from 'lucide-react';
 import clsx from 'clsx';
 import { useT } from '../lib/i18n';
+import { showContextMenu } from '../lib/contextMenu';
 
 function HeroSection({ item }: { item: MetaItem }) {
   const { t } = useT();
@@ -108,7 +109,6 @@ function PosterCard({ item, onRemove, showWatched }: { item: any; onRemove?: (id
   const { t } = useT();
   const [imgErr, setImgErr] = useState(false);
   const [removed, setRemoved] = useState(false);
-  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
   const [tmdbPoster, setTmdbPoster] = useState<string|null>(null);
   const { settings, nuvioUser, removeWatch, posterOrientation, setPosterOrientation } = useStore();
   const navigate = useNavigate();
@@ -118,13 +118,6 @@ function PosterCard({ item, onRemove, showWatched }: { item: any; onRemove?: (id
   const isHorizontal = savedOrientation ? savedOrientation === 'horizontal' : (settings.horizontalPosters || false);
   const aspectClass = isHorizontal ? 'aspect-video' : 'aspect-[2/3]';
   const posterSrc = item.poster || tmdbPoster;
-  
-  useEffect(() => {
-    if (!ctxMenu) return;
-    const handler = () => setCtxMenu(null);
-    window.addEventListener('mousedown', handler);
-    return () => window.removeEventListener('mousedown', handler);
-  }, [ctxMenu]);
   
   useEffect(() => {
     if (item.poster || !item.id || !settings.tmdbApiKey) return;
@@ -140,43 +133,34 @@ function PosterCard({ item, onRemove, showWatched }: { item: any; onRemove?: (id
   if (removed) return null;
   
   function doRemove() {
-    setCtxMenu(null); setRemoved(true); onRemove?.(item.id); removeWatch(item.id);
+    setRemoved(true); onRemove?.(item.id); removeWatch(item.id);
     if (nuvioUser?.id) removeCW(nuvioUser.id, item.id).catch(() => {});
   }
   
   function doMarkWatched() {
-    setCtxMenu(null); setRemoved(true); onRemove?.(item.id); removeWatch(item.id);
+    setRemoved(true); onRemove?.(item.id); removeWatch(item.id);
     if (nuvioUser?.id) {
       markWatched(nuvioUser.id, item.id, item.type, item.season, item.episode).catch(() => {});
       removeCW(nuvioUser.id, item.id).catch(() => {});
     }
   }
   
-  function toggleOrientation(e: React.MouseEvent) {
-    e.stopPropagation();
-    setPosterOrientation(item.id, isHorizontal ? 'vertical' : 'horizontal');
+  function handleContextMenu(e: React.MouseEvent) {
+    e.preventDefault();
+    showContextMenu([
+      { id: 'info', text: t('ctx_info'), accelerator: 'Enter', action: () => navigate(`/detail/${item.type}/${encodeURIComponent(item.id)}`) },
+      '---' as const,
+      { id: 'watched', text: t('ctx_mark_watched'), action: () => doMarkWatched() },
+      { id: 'orientation', text: isHorizontal ? t('ctx_switch_vertical') : t('ctx_switch_horizontal'), action: () => setPosterOrientation(item.id, isHorizontal ? 'vertical' : 'horizontal') },
+      ...(onRemove ? ['---' as const, { id: 'remove', text: t('ctx_remove'), action: () => doRemove() }] : []),
+    ]);
   }
   
   return (
     <div className="flex-shrink-0 group relative">
-      {ctxMenu && (
-        <div className="fixed z-[9999] bg-[#1e1e26] border border-white/10 rounded-xl shadow-2xl py-1.5 min-w-[180px]"
-          style={{ left: ctxMenu.x, top: ctxMenu.y }} onMouseDown={e => e.stopPropagation()}>
-          {onRemove && <button onMouseDown={e => { e.stopPropagation(); doRemove(); }}
-            className="w-full text-left px-4 py-2.5 text-sm text-red-400 hover:bg-white/5 flex items-center gap-2">✕ {t('remove_from_cw')}</button>}
-          <button onMouseDown={e => { e.stopPropagation(); setCtxMenu(null); navigate(`/detail/${item.type}/${encodeURIComponent(item.id)}`); }}
-            className="w-full text-left px-4 py-2.5 text-sm text-white/70 hover:bg-white/5 flex items-center gap-2">ℹ {t('info_btn')}</button>
-          <button onMouseDown={e => { e.stopPropagation(); doMarkWatched(); }}
-            className="w-full text-left px-4 py-2.5 text-sm text-green-400 hover:bg-white/5 flex items-center gap-2">✓ {t('mark_as_watched')}</button>
-          <button onMouseDown={e => { e.stopPropagation(); toggleOrientation(e as any); setCtxMenu(null); }}
-            className="w-full text-left px-4 py-2.5 text-sm text-blue-400 hover:bg-white/5 flex items-center gap-2">
-            {isHorizontal ? '📱 Passa a verticale' : '🖥️ Passa a orizzontale'}
-          </button>
-        </div>
-      )}
       <div className="cursor-pointer"
-        onClick={() => { if (!ctxMenu) navigate(`/detail/${item.type}/${encodeURIComponent(item.id)}`); }}
-        onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setCtxMenu({ x: e.clientX, y: e.clientY }); }}>
+        onClick={() => navigate(`/detail/${item.type}/${encodeURIComponent(item.id)}`)}
+        onContextMenu={handleContextMenu}>
         <div className={`relative ${aspectClass} w-[150px] rounded-xl overflow-hidden bg-white/5 transition-all duration-200 group-hover:scale-[1.04] shadow-lg ${isWatched ? 'border-2 border-green-500' : 'border border-white/[0.06] group-hover:border-white/20'}`}>
           {posterSrc && !imgErr
             ? <img src={posterSrc} alt={item.name} className="w-full h-full object-cover" onError={() => setImgErr(true)} />

@@ -11,8 +11,7 @@
       />
       <title>Nuvio Desktop</title>
       <style>
-        * { -webkit-user-select: none; user-select: none; }
-        input, textarea { -webkit-user-select: text; user-select: text; }
+        /* user-select is handled in index.css */
         body { margin: 0; background: #0a0a0f; overflow: hidden; }
         
         /* 🔥 Rimuove eventuali warning Tauri */
@@ -56,12 +55,7 @@
             });
           }
           
-          // Disabilita right-click su elementi senza data-context-menu
-          document.addEventListener('contextmenu', function(e) {
-            if (!e.target.closest('[data-context-menu]')) {
-              e.preventDefault();
-            }
-          });
+          // Context menu is handled by React components
           
           console.log('[Index] Environment check - Protocol:', window.location.protocol);
           console.log('[Index] Is Tauri:', window.location.protocol === 'tauri:' || navigator.userAgent.includes('Tauri'));
