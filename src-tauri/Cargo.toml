@@ -1,6 +1,6 @@
 [package]
 name = "nuvio-desktop"
-version = "2.3.0"
+version = "2.3.1"
 description = "Nuvio Desktop"
 authors = []
 edition = "2021"
