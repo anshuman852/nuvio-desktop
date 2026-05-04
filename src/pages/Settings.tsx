@@ -126,11 +126,11 @@ function AccountPage() {
           return;
         }
       }
-      throw new Error('Risposta non valida');
+      throw new Error('Invalid response');
     } catch (err) {
       console.error('QR generation error:', err);
       setQrCode(NUVIO_API_URL);
-      setQrStatus('Apri il link sul telefono');
+      setQrStatus(t('open_link_on_phone'));
     }
   };
 
@@ -149,7 +149,7 @@ function AccountPage() {
           if (pollIntervalRef.current) {
             clearInterval(pollIntervalRef.current);
           }
-          setQrStatus('✅ Accesso riuscito! Caricamento dati...');
+          setQrStatus(t('login_success'));
           
           const userResponse = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
             headers: {
@@ -180,7 +180,7 @@ function AccountPage() {
           if (pollIntervalRef.current) {
             clearInterval(pollIntervalRef.current);
           }
-          setQrStatus('QR scaduto. Generane uno nuovo.');
+          setQrStatus(t('qr_expired'));
           setQrPolling(false);
         }
       } catch (err) {
@@ -224,7 +224,7 @@ async function syncAll() {
     try {
       const cloudAddons = await getNuvioAddons(nuvioUser.id, nuvioUser.token);
       if (cloudAddons.length > 0) {
-        // 1. Deduplica cloudAddons (Supabase può avere lo stesso addon più volte)
+        // 1. Deduplicate cloudAddons (Supabase may have the same addon multiple times)
         const seenIds = new Set<string>();
         const seenUrls = new Set<string>();
         const uniqueCloud = cloudAddons.filter((a: any) => {
@@ -236,7 +236,7 @@ async function syncAll() {
           return true;
         });
 
-        // 2. Filtra i locali che non sono già nel cloud
+        // 2. Filter local ones that are not already in the cloud
         const localOnly = addons.filter((a: any) => {
           const normUrl = (a.url ?? '').replace(/\/+$/, '').replace(/\/manifest\.json$/, '').toLowerCase();
           const id = (a.id ?? '').toLowerCase();
@@ -247,9 +247,9 @@ async function syncAll() {
       }
       const s = await getAccountStats(nuvioUser.id, nuvioUser.token);
       setStats(s);
-      setSyncMsg('✓ Sync completato');
+      setSyncMsg(t('sync_done'));
       setTimeout(() => setSyncMsg(null), 3000);
-    } catch (e: any) { setSyncMsg(`Errore: ${e.message}`); }
+    } catch (e: any) { setSyncMsg(`${t('error_prefix')} ${e.message}`); }
     finally { setSyncing(false); }
   }
 
@@ -270,9 +270,9 @@ async function syncAll() {
           <div className="grid grid-cols-4 border-t border-white/[0.06]">
             {[
               { label: t('movies'), value: stats.totalMovies, icon: '🎬' },
-              { label: 'Episodi', value: stats.totalEpisodes, icon: '📺' },
-              { label: 'In libreria', value: stats.librarySize, icon: '📚' },
-              { label: 'Ore viste', value: stats.watchTimeHours, icon: '⏱️' },
+              { label: t('episodes'), value: stats.totalEpisodes, icon: '📺' },
+              { label: t('in_library_stat'), value: stats.librarySize, icon: '📚' },
+              { label: t('hours_watched'), value: stats.watchTimeHours, icon: '⏱️' },
             ].map(s => (
               <div key={s.label} className="flex flex-col items-center py-4 border-r border-white/[0.06] last:border-r-0">
                 <span className="text-lg">{s.icon}</span>
@@ -301,7 +301,7 @@ async function syncAll() {
   return (
     <div className="rounded-2xl bg-[#1e1e24] border border-white/[0.06] p-5 space-y-3">
       <p className="text-base font-semibold text-white">{t('login')}</p>
-      <p className="text-xs text-white/40">Sincronizza CW, libreria e addon con il tuo account Nuvio.</p>
+      <p className="text-xs text-white/40">{t('sync_description')}</p>
       
       <div className="flex gap-3">
         <div className="flex-1">
@@ -317,7 +317,7 @@ async function syncAll() {
             }
           }}
           className="px-4 py-3 rounded-2xl bg-white/5 border border-white/[0.08] text-white/60 hover:text-white transition-colors"
-          title="Accedi con QR Code"
+          title={t('qr_login')}
         >
           <QrCode size={20} />
         </button>
@@ -330,7 +330,7 @@ async function syncAll() {
               <div className="bg-white p-3 rounded-xl">
                 <img 
                   src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrCode)}`}
-                  alt="QR Code per login Nuvio"
+                  alt={t('qr_login_title')}
                   className="w-48 h-48"
                 />
               </div>
@@ -338,18 +338,18 @@ async function syncAll() {
                 {qrCode.length > 50 ? qrCode.slice(0, 50) + '...' : qrCode}
               </p>
               {qrStatus && (
-                <p className={`text-xs ${qrStatus.includes('Errore') || qrStatus.includes('scaduto') ? 'text-red-400' : 'text-green-400'} text-center`}>
+                <p className={`text-xs ${qrStatus?.includes('Error') || qrStatus?.includes('expired') || qrStatus?.includes(t('error_prefix').replace(':', '')) ? 'text-red-400' : 'text-green-400'} text-center`}>
                   {qrStatus}
                 </p>
               )}
               {qrPolling && (
                 <p className="text-xs text-white/40 animate-pulse">
-                  In attesa della scansione...
+                  {t('qr_waiting_scan')}
                 </p>
               )}
               <p className="text-xs text-white/40 text-center">
-                Scansiona con l'app Nuvio mobile<br/>
-                o apri <button onClick={() => openExternal(qrCode)} className="underline text-[color:var(--accent)]">web.nuvioapp.space</button>
+                {t('qr_scan_hint')}<br/>
+                <button onClick={() => openExternal(qrCode)} className="underline text-[color:var(--accent)]">web.nuvioapp.space</button>
               </p>
               <button 
                 onClick={resetQR}
@@ -362,7 +362,7 @@ async function syncAll() {
           {!qrCode && (
             <div className="text-center">
               <div className="w-12 h-12 border-2 border-white/20 border-t-white rounded-full animate-spin mx-auto mb-2" />
-              <p className="text-xs text-white/40">Generazione QR Code...</p>
+              <p className="text-xs text-white/40">{t('qr_generating')}</p>
             </div>
           )}
         </div>
@@ -393,13 +393,13 @@ function ProfilesPage() {
               <div className="w-12 h-12 rounded-full overflow-hidden flex-shrink-0"><AvatarImg url={p.avatarUrl} label={p.name} size={48} /></div>
               <div className="flex-1">
                 <p className="font-semibold text-white">{p.name}</p>
-                <p className="text-xs text-white/40">{p.isKids ? '🧸 ' + t('kids_profile') : t('profile')}{p.pin ? ' · 🔒 PIN' : ''}{p.id === activeProfileId ? ' · Attivo' : ''}</p>
+                <p className="text-xs text-white/40">{p.isKids ? '🧸 ' + t('kids_profile') : t('profile')}{p.pin ? ' · 🔒 PIN' : ''}{p.id === activeProfileId ? ` · ${t('active_badge')}` : ''}</p>
               </div>
               <ChevronRight size={16} className="text-white/20" />
             </button>
           ))}
           {profiles.length < 5 && (
-            <button onClick={() => addProfile({ name: `Profilo ${profiles.length + 1}`, avatar: 'default', color: '#7c3aed', isKids: false })}
+            <button onClick={() => addProfile({ name: t('default_profile_name').replace('{n}', String(profiles.length + 1)), avatar: 'default', color: '#7c3aed', isKids: false })}
               className="w-full flex items-center gap-3 px-5 py-4 rounded-2xl border-2 border-dashed border-white/10 hover:border-white/25 transition-colors text-white/40 hover:text-white/60 text-sm">
               + {t('add_profile')}
             </button>
@@ -426,7 +426,7 @@ function ProfilesPage() {
             <Toggle value={ep.isKids} onChange={v => updateProfile(ep.id, { isKids: v })} />
           </Row>
           {ep.id !== 'default' && ep.id !== activeProfileId && (
-            <button onClick={() => { if (confirm(`Eliminare il profilo "${ep.name}"?`)) { removeProfile(ep.id); setEditId(null); } }}
+            <button onClick={() => { if (confirm(t('confirm_delete_profile').replace('{name}', ep.name))) { removeProfile(ep.id); setEditId(null); } }}
               className="w-full py-3 rounded-2xl text-red-400 bg-red-500/10 border border-red-500/20 text-sm font-medium">
               🗑️ {t('delete')}
             </button>
@@ -454,7 +454,7 @@ function AspettoPage() {
           <input type="color" value={settings.accentColor ?? '#7c3aed'} onChange={e => updateSettings({ accentColor: e.target.value })}
             className="w-10 h-10 rounded-full cursor-pointer border-0 bg-transparent p-0" />
         </div>
-        <p className="text-xs text-white/30">Il colore viene applicato immediatamente.</p>
+        <p className="text-xs text-white/30">{t('color_applied_immediately')}</p>
       </div>
     </div>
   );
@@ -475,10 +475,10 @@ function LayoutPage() {
   
   return (
     <div className="space-y-3">
-      <T k="showHero" title={t('show_hero_section')} desc="Visualizza il carosello hero nella parte superiore" />
-      <T k="reduceSidebar" title={t('reduce_sidebar')} desc="Comprimi la sidebar di default" />
-      <T k="horizontalPosters" title={t('horizontal_posters')} desc="Passa tra schede verticali e orizzontali" />
-      <T k="hideUnavailable" title={t('hide_unavailable')} desc="Nascondi film e serie non ancora pubblici" />
+      <T k="showHero" title={t('show_hero_section')} desc={t('show_hero_desc')} />
+      <T k="reduceSidebar" title={t('reduce_sidebar')} desc={t('reduce_sidebar_desc')} />
+      <T k="horizontalPosters" title={t('horizontal_posters')} desc={t('horizontal_posters_desc')} />
+      <T k="hideUnavailable" title={t('hide_unavailable')} desc={t('hide_unavailable_desc')} />
     </div>
   );
 }
@@ -530,7 +530,7 @@ function StreamingServicesPage() {
       };
       reader.readAsDataURL(tempImageFile);
     } catch (err) {
-      console.error('Errore caricamento immagine:', err);
+      console.error('Error loading image:', err);
     }
   };
   
@@ -573,10 +573,7 @@ function StreamingServicesPage() {
         <p className="text-base font-semibold text-white flex items-center gap-2">
           <Tv size={18} /> {t('streaming_services')}
         </p>
-        <p className="text-xs text-white/40">
-          Seleziona quali servizi streaming mostrare nella Home e personalizza le loro immagini.
-          Puoi caricare immagini JPG, PNG o GIF dal tuo computer o inserire un URL diretto.
-        </p>
+        <p className="text-xs text-white/40">{t('streaming_services_desc')}</p>
         
         <div className="space-y-3">
           {STREAMING_SERVICES.map(service => {
@@ -608,7 +605,7 @@ function StreamingServicesPage() {
                       setTempImageFile(null);
                     }}
                     className="p-1.5 rounded-lg hover:bg-white/10 text-white/40 hover:text-white transition-colors"
-                    title="Cambia immagine"
+                    title={t('change_image')}
                   >
                     🖼️
                   </button>
@@ -619,7 +616,7 @@ function StreamingServicesPage() {
                   <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
                     <div className="bg-[#1a1a1f] border border-white/10 rounded-2xl w-full max-w-md p-6 space-y-4">
                       <div className="flex items-center justify-between">
-                        <h3 className="text-base font-bold text-white">Modifica immagine: {service.name}</h3>
+                        <h3 className="text-base font-bold text-white">{t('edit_image')} {service.name}</h3>
                         <button onClick={() => setEditingService(null)} className="text-white/40 hover:text-white"><X size={18} /></button>
                       </div>
                       
@@ -638,7 +635,7 @@ function StreamingServicesPage() {
                       </div>
                       
                       <div>
-                        <label className="text-xs text-white/40 mb-1.5 block">Carica dal computer</label>
+                        <label className="text-xs text-white/40 mb-1.5 block">{t('upload_from_computer')}</label>
                         <div className="flex gap-2">
                           <input
                             ref={fileInputRef}
@@ -656,7 +653,7 @@ function StreamingServicesPage() {
                             onClick={() => fileInputRef.current?.click()}
                             className="flex-1 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-xl text-sm text-white transition-colors"
                           >
-                            📁 Scegli file
+                            📁 {t('choose_file')}
                           </button>
                           {tempImageFile && (
                             <button
@@ -664,14 +661,14 @@ function StreamingServicesPage() {
                               className="px-4 py-2 text-white rounded-xl text-sm"
                               style={{ backgroundColor: 'var(--accent)' }}
                             >
-                              Carica
+                              {t('upload_btn')}
                             </button>
                           )}
                         </div>
                       </div>
                       
                       <div>
-                        <label className="text-xs text-white/40 mb-1.5 block">URL immagine (jpg, png, gif)</label>
+                        <label className="text-xs text-white/40 mb-1.5 block">{t('image_url_label')}</label>
                         <div className="flex gap-2">
                           <input
                             type="text"
@@ -680,7 +677,7 @@ function StreamingServicesPage() {
                               setTempImageUrl(e.target.value);
                               setTempImageFile(null);
                             }}
-                            placeholder="https://esempio.com/immagine.png"
+                            placeholder={t('image_url_placeholder')}
                             className={ic}
                           />
                           {tempImageUrl && (
@@ -689,7 +686,7 @@ function StreamingServicesPage() {
                               className="px-4 py-2 text-white rounded-xl text-sm"
                               style={{ backgroundColor: 'var(--accent)' }}
                             >
-                              Applica
+                              {t('apply_btn')}
                             </button>
                           )}
                         </div>
@@ -700,7 +697,7 @@ function StreamingServicesPage() {
                           onClick={() => removeCustomImage(service.id)}
                           className="flex-1 px-4 py-2 text-red-400 bg-red-500/10 rounded-xl text-sm hover:bg-red-500/20 transition-colors"
                         >
-                          Ripristina default
+                          {t('restore_default')}
                         </button>
                         <button
                           onClick={() => setEditingService(null)}
@@ -710,9 +707,7 @@ function StreamingServicesPage() {
                         </button>
                       </div>
                       
-                      <p className="text-xs text-white/30 text-center">
-                        Supporta JPG, PNG, GIF, WEBP. Puoi caricare file dal tuo computer o usare URL diretto.
-                      </p>
+                      <p className="text-xs text-white/30 text-center">{t('image_support_desc')}</p>
                     </div>
                   </div>
                 )}
@@ -810,8 +805,8 @@ function IntegrazioniPage() {
 
   return (
     <div className="space-y-3">
-      <Accordion title="TMDB" subtitle="Arricchimento metadati" defaultOpen>
-        <p className="text-xs text-white/40">API Key v3 da <button onClick={() => openExternal('https://www.themoviedb.org/settings/api')} className="underline" style={{ color: 'var(--accent)' }}>themoviedb.org/settings/api</button></p>
+      <Accordion title="TMDB" subtitle={t('tmdb_subtitle')} defaultOpen>
+        <p className="text-xs text-white/40">{t('tmdb_api_key_hint')} <button onClick={() => openExternal('https://www.themoviedb.org/settings/api')} className="underline" style={{ color: 'var(--accent)' }}>themoviedb.org/settings/api</button></p>
         <div className="flex gap-2">
           <div className="relative flex-1">
             <input type={showKey ? 'text' : 'password'} value={settings.tmdbApiKey ?? ''}
@@ -823,13 +818,13 @@ function IntegrazioniPage() {
           </div>
           <button onClick={testTMDB} disabled={!settings.tmdbApiKey || tmdbStatus === 'testing'}
             className="px-4 py-3 bg-white/5 hover:bg-white/10 rounded-2xl text-sm text-white disabled:opacity-50 border border-white/[0.08]">
-            {tmdbStatus === 'testing' ? <RefreshCw size={14} className="animate-spin" /> : 'Verifica'}
+            {tmdbStatus === 'testing' ? <RefreshCw size={14} className="animate-spin" /> : t('verify_btn')}
           </button>
         </div>
-        {tmdbStatus === 'ok' && <p className="text-xs text-green-400 flex items-center gap-1"><CheckCircle2 size={12} />Valida</p>}
-        {tmdbStatus === 'err' && <p className="text-xs text-red-400 flex items-center gap-1"><AlertCircle size={12} />Non valida</p>}
+        {tmdbStatus === 'ok' && <p className="text-xs text-green-400 flex items-center gap-1"><CheckCircle2 size={12} />{t('valid')}</p>}
+        {tmdbStatus === 'err' && <p className="text-xs text-red-400 flex items-center gap-1"><AlertCircle size={12} />{t('invalid_key')}</p>}
         <div>
-          <label className="text-xs text-white/40 mb-1.5 block">Lingua</label>
+          <label className="text-xs text-white/40 mb-1.5 block">{t('language')}</label>
           <select value={settings.tmdbLanguage ?? 'en-US'} onChange={e => updateSettings({ tmdbLanguage: e.target.value })} className={ic + ' cursor-pointer'}>
             <option value="en-US">English</option>
             <option value="it-IT">Italiano</option>
@@ -858,19 +853,19 @@ function RiproducibilePage() {
   
   return (
     <div className="space-y-3">
-      <T k="autoplay" title={t('autoplay_next')} desc="Avvia automaticamente il prossimo episodio" />
-      <T k="skipIntro" title={t('skip_intro')} desc="Salta automaticamente intro e riassunti" />
-      <Row title={t('preferred_quality')} subtitle="Qualità default degli stream">
+      <T k="autoplay" title={t('autoplay_next')} desc={t('autoplay_desc')} />
+      <T k="skipIntro" title={t('skip_intro')} desc={t('skip_intro_desc')} />
+      <Row title={t('preferred_quality')} subtitle={t('preferred_quality_desc')}>
         <select value={s.preferredQuality ?? 'auto'} onChange={e => updateSettings({ preferredQuality: e.target.value } as any)}
           className="bg-white/10 text-white text-sm px-3 py-1.5 rounded-xl border border-white/10 focus:outline-none cursor-pointer">
           <option value="auto">Auto</option><option value="4k">4K</option><option value="1080">1080p</option>
           <option value="720">720p</option><option value="480">480p</option>
         </select>
       </Row>
-      <T k="subtitlesEnabled" title={t('enable_subtitles')} desc="Attiva i sottotitoli di default" />
+      <T k="subtitlesEnabled" title={t('enable_subtitles')} desc={t('subtitles_desc')} />
       <div className="rounded-2xl bg-[#1e1e24] border border-white/[0.06] p-5 space-y-3">
         <p className="text-sm font-semibold text-white">{t('external_player')}</p>
-        <p className="text-xs text-white/40">Lascia vuoto per usare il player interno.</p>
+        <p className="text-xs text-white/40">{t('external_player_empty_hint')}</p>
         <input value={s.customPlayerPath ?? ''} onChange={e => updateSettings({ customPlayerPath: e.target.value } as any)}
           placeholder="C:\Program Files\VLC\vlc.exe" className={ic + ' font-mono'} />
       </div>
@@ -986,15 +981,15 @@ export default function Settings() {
     trakt: 'Trakt' 
   };
   const SUBTITLES: Record<string, string> = { 
-    account: 'Gestisci il tuo account Nuvio e il sync dal cloud.', 
-    profiles: 'Crea e modifica i profili utente.', 
-    aspetto: 'Personalizza colori e tema.', 
-    layout: 'Struttura della home e stili.',
-    streaming: 'Seleziona i servizi streaming da mostrare in Home e personalizza le loro immagini con JPG, PNG o GIF.',
-    lingue: 'Cambia la lingua dell\'applicazione e dei metadati TMDB.',
-    integrazioni: 'Impostazioni TMDB e MDBList.', 
-    riproduzione: 'Player, sottotitoli e riproduzione.', 
-    trakt: 'Collega Trakt e Simkl.' 
+    account: t('settings_account_desc'), 
+    profiles: t('settings_profiles_desc'), 
+    aspetto: t('settings_appearance_desc'), 
+    layout: t('settings_layout_desc'),
+    streaming: t('settings_streaming_desc'),
+    lingue: t('settings_language_desc'),
+    integrazioni: t('settings_integrations_desc'), 
+    riproduzione: t('settings_playback_desc'), 
+    trakt: t('settings_trakt_desc') 
   };
 
   return (
@@ -1020,11 +1015,11 @@ export default function Settings() {
         {sub === null ? (
           <div>
             <h1 className="text-3xl font-bold text-white mb-1">{t('settings')}</h1>
-            <p className="text-sm text-white/40 mb-6">Seleziona una voce dal menu.</p>
+            <p className="text-sm text-white/40 mb-6">{t('select_setting')}</p>
             {activeProfile && (
               <div className="flex items-center gap-3 p-4 rounded-2xl bg-[#1e1e24] border border-white/[0.06] w-fit">
                 <div className="w-12 h-12 rounded-full overflow-hidden"><AvatarImg url={activeProfile.avatarUrl} label={activeProfile.name} size={48} /></div>
-                <div><p className="font-semibold text-white">{activeProfile.name}</p><p className="text-xs text-white/40">{t('profile')} attivo</p></div>
+                <div><p className="font-semibold text-white">{activeProfile.name}</p><p className="text-xs text-white/40">{t('profile')} {t('active')}</p></div>
               </div>
             )}
           </div>
