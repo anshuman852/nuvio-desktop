@@ -55,7 +55,7 @@ export default function SearchPage() {
           
           const resultItem = {
             id: item.id,
-            type: isMovie ? 'movie' : 'tv',
+            type: isMovie ? 'movie' : 'series',
             title: title,
             poster: item.poster_path,
             year: (item.release_date || item.first_air_date || '').slice(0, 4),

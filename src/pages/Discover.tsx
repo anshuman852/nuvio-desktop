@@ -147,7 +147,7 @@ export default function Discover() {
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
         {items.map(item => {
           // Determina il tipo corretto per il routing
-          const itemType = item.title ? 'movie' : 'tv';
+          const itemType = item.title ? 'movie' : 'series';
           // Usa tmdb:${id} per il routing (come nel Search)
           const detailId = `tmdb:${item.id}`;
           return (
