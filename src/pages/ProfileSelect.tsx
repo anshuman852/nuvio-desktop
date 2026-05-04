@@ -368,7 +368,7 @@ export default function ProfileSelect() {
           }));
           setAvatarCatalog([...supabaseItems, ...DICEBEAR_FALLBACK]);
         }
-        // else mantieni DICEBEAR_FALLBACK già impostato
+        // else keep DICEBEAR_FALLBACK already set
       })
       .catch(() => { /* mantieni DICEBEAR_FALLBACK */ })
       .finally(() => setCatalogLoading(false));

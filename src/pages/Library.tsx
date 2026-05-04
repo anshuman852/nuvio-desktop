@@ -2,14 +2,16 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { useStore } from '../lib/store';
+import { useT } from '../lib/i18n';
 import {
   getTraktWatchedMovies, getTraktWatchedShows, getTraktWatchlist,
   getTraktRatings, markTraktWatched, removeTraktWatched, toggleTraktWatchlist,
+  rateTraktItem,
 } from '../api/trakt';
 import { getSimklHistory } from '../api/simkl';
 import { getMALAnimeList } from '../api/mal';
 import { getAllWatchedItems, markNuvioWatched, removeNuvioWatched, callRpc } from '../api/nuvio';
-import { hasTMDBKey, tmdbImg } from '../api/tmdb';
+import { hasTMDBKey, tmdbImg, getDetails } from '../api/tmdb';
 import {
   Film, Tv, BookOpen, List, Search, X, Filter, Loader2,
   Eye, EyeOff, Star, CheckCircle2, Circle, Heart, HeartOff,
@@ -63,7 +65,7 @@ function StarRating({ value, onChange }: { value: number; onChange: (n: number) 
 
 // ─── Item Card ────────────────────────────────────────────────────────────────
 
-// Carica poster da TMDB tramite IMDb ID
+// Load poster from TMDB via IMDb ID
 function TMDBPoster({ imdbId, name, type }: { imdbId: string; name: string; type: string }) {
   const { settings } = useStore();
   const [poster, setPoster] = useState<string | null>(null);
@@ -100,6 +102,7 @@ function ItemCard({ item, onToggleWatched, onToggleWatchlist, onRate }: {
   onToggleWatchlist: (item: LibItem) => void;
   onRate: (item: LibItem, rating: number) => void;
 }) {
+  const { t } = useT();
   const [imgErr, setImgErr] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [pending, setPending] = useState(false);
@@ -141,7 +144,7 @@ function ItemCard({ item, onToggleWatched, onToggleWatchlist, onRate }: {
           {item.watched && (
             <div className="absolute bottom-1.5 right-1.5 bg-black/70 backdrop-blur-sm px-1.5 py-0.5 rounded-full flex items-center gap-1">
               <CheckCircle2 size={10} style={{color:'var(--accent)'}} className="fill-[color:var(--accent)]" />
-              <span className="text-xs font-medium" style={{color:'var(--accent)'}}>Visto</span>
+              <span className="text-xs font-medium" style={{color:'var(--accent)'}}>{t('watched')}</span>
             </div>
           )}
 
@@ -159,12 +162,12 @@ function ItemCard({ item, onToggleWatched, onToggleWatchlist, onRate }: {
                 item.watched ? 'bg-white/20 hover:bg-white/30 text-white' : 'text-white hover:opacity-90')}
               style={!item.watched ? { backgroundColor: 'var(--accent)' } : {}}>
               {pending ? <Loader2 size={12} className="animate-spin" /> : item.watched ? <EyeOff size={12} /> : <Eye size={12} />}
-              {item.watched ? 'Da vedere' : 'Visto'}
+              {item.watched ? t('mark_as_unwatched') : t('mark_as_watched')}
             </button>
             <button onClick={toggleWL}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white/10 hover:bg-white/20 text-white w-full justify-center">
               {item.inWatchlist ? <HeartOff size={12} /> : <Heart size={12} />}
-              {item.inWatchlist ? 'Rimuovi' : 'Watchlist'}
+              {item.inWatchlist ? t('remove_from_watchlist') : 'Watchlist'}
             </button>
           </div>
         </div>
@@ -186,6 +189,7 @@ function ItemCard({ item, onToggleWatched, onToggleWatchlist, onRate }: {
 // ─── Library page ─────────────────────────────────────────────────────────────
 
 export default function Library() {
+  const { t } = useT();
   const { traktAuth, simklAuth, malAuth, nuvioUser } = useStore();
   const [tab, setTab] = useState<Tab>('film');
   const [loading, setLoading] = useState(false);
@@ -349,7 +353,7 @@ export default function Library() {
           });
         }
       } catch (e: any) {
-        setError(`Errore Trakt: ${e.message}`);
+        setError(`Trakt error: ${e.message}`);
       }
     }
 
@@ -357,7 +361,6 @@ export default function Library() {
     if (nuvioUser?.token && nuvioUser.id) {
       try {
         // 1. Library items (tutti i contenuti salvati)
-        const { getContinueWatching } = await import('../api/nuvio');
         const libItems = await callRpc('sync_pull_library', {}, nuvioUser.token).catch(() => []);
         if (Array.isArray(libItems) && libItems.length >= 0) {
           for (const i of libItems) {
@@ -436,7 +439,7 @@ export default function Library() {
     setData({ film, serie, anime, watchlist });
     setLoading(false);
 
-    // Fetch poster mancanti da TMDB in background
+    // Fetch missing posters from TMDB in background
     const apiKey = useStore.getState().settings.tmdbApiKey;
     if (!apiKey) return;
 
@@ -465,19 +468,18 @@ export default function Library() {
       await new Promise(r => setTimeout(r, 100));
     }
 
-    // Fetch poster mancanti da TMDB in background
+    // Fetch missing posters from TMDB in background
     if (hasTMDBKey()) {
       const fetchPoster = async (item: LibItem) => {
         if (item.poster || !item.imdbId) return;
         try {
-          const { getDetails, tmdbImg: tImg } = await import('../api/tmdb');
           // Cerca per IMDb ID tramite find endpoint
-          const res = await fetch(`https://api.themoviedb.org/3/find/${item.imdbId}?api_key=${(await import('../lib/store')).useStore.getState().settings.tmdbApiKey}&external_source=imdb_id`);
+          const res = await fetch(`https://api.themoviedb.org/3/find/${item.imdbId}?api_key=${useStore.getState().settings.tmdbApiKey}&external_source=imdb_id`);
           if (!res.ok) return;
           const d = await res.json();
           const result = (d.movie_results ?? d.tv_results ?? [])[0];
           if (result?.poster_path) {
-            const poster = tImg(result.poster_path, 'w342');
+            const poster = tmdbImg(result.poster_path, 'w342');
             setData(prev => ({
               film: prev.film.map(x => x.id === item.id ? { ...x, poster } : x),
               serie: prev.serie.map(x => x.id === item.id ? { ...x, poster } : x),
@@ -488,7 +490,7 @@ export default function Library() {
         } catch { /* non critico */ }
       };
 
-      // Fetch i primi 30 senza poster (batch limitato per non sovraccaricare)
+      // Fetch first 30 without poster (limited batch to avoid overloading)
       const withoutPoster = [...film, ...serie].filter(i => !i.poster && i.imdbId).slice(0, 30);
       // Batch di 5 alla volta
       for (let i = 0; i < withoutPoster.length; i += 5) {
@@ -561,9 +563,7 @@ export default function Library() {
     });
     if (traktAuth?.token && (item.traktId || item.imdbId)) {
       try {
-        await import('../api/trakt').then(m =>
-          m.rateTraktItem(traktAuth!.token, item.type === 'movie' ? 'movie' : 'show', { trakt: item.traktId, imdb: item.imdbId }, rating)
-        );
+        await rateTraktItem(traktAuth!.token, item.type === 'movie' ? 'movie' : 'show', { trakt: item.traktId, imdb: item.imdbId }, rating);
       } catch { /* non critico */ }
     }
   }
@@ -586,7 +586,7 @@ export default function Library() {
 
   const TABS = [
     { id: 'film' as Tab,      label: 'Film',      icon: Film,     count: data.film.length },
-    { id: 'serie' as Tab,     label: 'Serie TV',  icon: Tv,       count: data.serie.length },
+    { id: 'serie' as Tab,     label: t('series_tv'),  icon: Tv,       count: data.serie.length },
     { id: 'anime' as Tab,     label: 'Anime',     icon: BookOpen, count: data.anime.length },
     { id: 'watchlist' as Tab, label: 'Watchlist', icon: List,     count: data.watchlist.length },
   ];
@@ -624,15 +624,15 @@ export default function Library() {
         {noAuth ? (
           <div className="flex flex-col items-center justify-center h-64 gap-4 text-center">
             <div className="text-5xl">📚</div>
-            <h2 className="text-lg font-semibold text-white">Nessun account collegato</h2>
-            <p className="text-white/50 text-sm max-w-sm">Collega Trakt, Simkl, MAL o Nuvio nelle impostazioni per importare la tua libreria.</p>
+            <h2 className="text-lg font-semibold text-white">{t('no_account_linked')}</h2>
+            <p className="text-white/50 text-sm max-w-sm">{t('link_account_hint')}</p>
             <Link to="/settings" className="px-5 py-2.5 rounded-xl text-white text-sm font-medium" style={{ backgroundColor: 'var(--accent)' }}>
-              Impostazioni
+              {t('settings')}
             </Link>
           </div>
         ) : loading ? (
           <div className="flex items-center justify-center h-40 gap-3 text-white/40">
-            <Loader2 size={20} className="animate-spin" />Importazione libreria...
+            <Loader2 size={20} className="animate-spin" />{t('importing_library')}
           </div>
         ) : (
           <>
@@ -658,14 +658,14 @@ export default function Library() {
               <div className="relative flex-1 min-w-[200px]">
                 <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" />
                 <input value={search} onChange={e => setSearch(e.target.value)}
-                  placeholder="Cerca..."
+                  placeholder={t('library_placeholder_search')}
                   className="w-full pl-8 pr-8 py-2 rounded-lg bg-white/5 border border-white/10 focus:border-[color:var(--accent)] focus:outline-none text-sm text-white placeholder:text-white/30" />
                 {search && <button onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-white/30 hover:text-white"><X size={13} /></button>}
               </div>
 
               <select value={sort} onChange={e => setSort(e.target.value as any)}
                 className="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-white focus:outline-none cursor-pointer">
-                <option value="recent">Recenti</option>
+                <option value="recent">{t('recent_sort')}</option>
                 <option value="alpha">A-Z</option>
                 <option value="rating">Voto</option>
               </select>

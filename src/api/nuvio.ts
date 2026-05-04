@@ -1,5 +1,7 @@
 /// <reference types="vite/client" />
 
+import { installAddon } from './stremio';
+
 const SUPABASE_URL  = import.meta.env.VITE_SUPABASE_URL      ?? '';
 const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY ?? '';
 
@@ -316,7 +318,6 @@ export async function getNuvioAddons(userId: string, userToken?: string): Promis
   );
   const rows = await res.json();
   if (!Array.isArray(rows) || rows.length === 0) return [];
-  const { installAddon } = await import('./stremio');
   const results = await Promise.allSettled(rows.map((r: any) => installAddon(r.url)));
   return results
     .filter(r => r.status === 'fulfilled')
@@ -386,10 +387,10 @@ export async function getAvatarCatalog(): Promise<SupabaseAvatar[]> {
   return [];
 }
 
-// Alias per compatibilità
+// Alias for compatibility
 export async function markNuvioWatched(userId: string, contentId: string, contentType = 'movie') { return markWatched(userId, contentId, contentType); }
 export async function removeNuvioWatched(userId: string, contentId: string, _contentType = 'movie') { return unmarkWatched(userId, contentId); }
 
 export async function traktScrobble(_token: string, _action: string, _item: any, _progress?: number): Promise<void> {
-  // Stub - la vera implementazione è in api/trakt.ts
+  // Stub - the real implementation is in api/trakt.ts
 }

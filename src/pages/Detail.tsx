@@ -5,10 +5,12 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useStore } from '../lib/store';
 import { getAllWatchedItems, markWatched, unmarkWatched } from '../api/nuvio';
 import { fetchMeta, fetchAllStreams, openExternal, launchPlayer } from '../api/stremio';
-import { getDetails, tmdbImg, hasTMDBKey, STREAMING_SERVICES, getPerson } from '../api/tmdb';
+import { getDetails, getSeasonDetails, tmdbImg, hasTMDBKey, STREAMING_SERVICES, getPerson } from '../api/tmdb';
 import { MetaItem, Stream, StreamGroup, Video } from '../lib/types';
 import VideoPlayer from '../components/VideoPlayer';
 import { invoke } from '@tauri-apps/api/core';
+import { showContextMenu, copyText } from '../lib/contextMenu';
+import { useT } from '../lib/i18n';
 import {
   Play, ArrowLeft, Star, ChevronLeft, ChevronRight,
   Loader2, AlertCircle, Bookmark, Users, RefreshCw,
@@ -31,7 +33,7 @@ function StreamRow({ stream, onPlay, active }: { stream: Stream; onPlay: () => v
   const tags = Array.from(new Set(
     (raw.match(/\b(HDR10\+?|HDR|DV|Dolby Vision|HEVC|x265|x264|WEBDL|WEB-DL|BluRay|SDR|AVC)\b/gi) ?? [])
       .map((t: string) => t.toUpperCase().replace('DOLBY VISION','DV').replace('WEB-DL','WEBDL'))
-  )).slice(0, 3) as string[];
+  )).slice(0, 4) as string[];
   const sizeMb = stream.behaviorHints?.videoSize ?? 0;
   const sizeStr = sizeMb > 0 ? (sizeMb >= 1e9 ? `${(sizeMb / 1e9).toFixed(2)} GB` : `${Math.round(sizeMb / 1e6)} MB`) : '';
   const seedMatch = raw.match(/👤\s*(\d+)/u) ?? raw.match(/(\d+)\s*seed/i);
@@ -44,35 +46,91 @@ function StreamRow({ stream, onPlay, active }: { stream: Stream; onPlay: () => v
   const sourceLine = filename.length > 3 ? filename
     : (stream.description ?? stream.title ?? '').split('\n').find((l: string) => l.length > 3)?.trim() ?? '';
   const addonLabel = stream.name ?? '';
-  const qColors: Record<string, string> = { '4K': '#a78bfa', '2160P': '#a78bfa', '1080P': '#34d399', '720P': '#60a5fa', '480P': '#f59e0b' };
-  const qColor = qColors[quality] ?? '#9ca3af';
+
+  // Parse description into structured lines
+  const descLines = (stream.description ?? '').split('\n').map(l => l.trim()).filter(Boolean);
+  const firstLine = descLines[0] ?? '';
+  const detailLines = descLines.slice(1).reduce<{ label: string; value: string }[]>((acc, line) => {
+    const sep = line.match(/^(\w+)\s*:\s*(.+)/);
+    if (sep) acc.push({ label: sep[1], value: sep[2] });
+    return acc;
+  }, []);
+  const hasSizeDetail = detailLines.find(d => d.label.toLowerCase() === 'size');
+  const hasLangDetail = detailLines.find(d => d.label.toLowerCase() === 'language');
+  const hasAddonDetail = detailLines.find(d => d.label.toLowerCase() === 'addon');
+
   return (
-    <button type="button" onClick={onPlay}
+    <button
+      type="button"
+      onClick={onPlay}
       className={clsx(
-        'w-full text-left flex items-start gap-3 px-3 py-2.5 border-b transition-colors cursor-pointer',
-        active ? 'bg-[color:var(--accent-bg)] border-b-[color:var(--accent)]/30'
-          : 'border-b-white/[0.05] hover:bg-white/[0.05]'
-      )}>
-      <div className="flex-shrink-0 min-w-[90px] max-w-[90px]">
-        {addonLabel && <p className="text-xs font-bold text-white/80 leading-tight line-clamp-2">{addonLabel}</p>}
-        <div className="flex flex-col gap-0.5 mt-0.5">
-          {quality && <span className="text-[10px] font-black" style={{ color: qColor }}>{quality}</span>}
-          {tags.slice(0, 2).map((t: string) => <span key={t} className="text-[10px] font-semibold text-white/50">{t}</span>)}
-          {hasMagnet && <span className="text-[10px] text-amber-400 font-bold">P2P</span>}
-        </div>
-      </div>
-      <div className="flex-1 min-w-0">
-        {sourceLine && <p className="text-xs text-white/70 leading-tight line-clamp-2 mb-1">{sourceLine}</p>}
-        <div className="flex items-center gap-2 flex-wrap">
-          {langs && <span className="text-xs">{langs}</span>}
-          {seeds && <span className="flex items-center gap-1 text-[11px] text-white/50"><span className="text-green-400/80">👤</span>{seeds}</span>}
-          {sizeStr && <span className="text-[11px] font-semibold text-white/60">{sizeStr}</span>}
-        </div>
-      </div>
+        'w-full text-left rounded-xl border p-3 transition-all cursor-pointer group relative overflow-hidden mb-2',
+        active
+          ? 'bg-gradient-to-br from-[color:var(--accent)]/15 to-[color:var(--accent)]/5 border-[color:var(--accent)]/50 shadow-[0_0_20px_rgba(124,58,237,0.2)]'
+          : 'bg-[#13131a] border-white/[0.06] hover:border-[color:var(--accent)]/30 hover:bg-[#1a1a22] hover:shadow-xl hover:shadow-black/30'
+      )}
+    >
+      {/* Active play indicator */}
       {active && (
-        <div className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center mt-0.5" style={{ backgroundColor: 'var(--accent)' }}>
-          <Play size={8} className="fill-white text-white ml-0.5" />
+        <div className="absolute top-3 right-3 w-6 h-6 rounded-full bg-[color:var(--accent)] flex items-center justify-center shadow-lg shadow-[color:var(--accent)]/30 z-10">
+          <Play size={10} className="fill-white text-white ml-0.5" />
         </div>
+      )}
+
+      {/* Top row: Quality badge + codec tags */}
+      <div className={clsx('flex items-center gap-1.5 flex-wrap', active && 'pr-7')}>
+        {quality && (
+          <span
+            className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wide text-white"
+            style={{ backgroundColor: 'var(--accent)' }}
+          >
+            {quality}
+          </span>
+        )}
+        {tags.map((t: string) => (
+          <span
+            key={t}
+            className="px-1 py-0.5 rounded text-[9px] font-semibold bg-[color:var(--accent)]/8 text-[color:var(--accent)]/70 border border-[color:var(--accent)]/12"
+          >
+            {t}
+          </span>
+        ))}
+        {hasMagnet && (
+          <span className="px-1 py-0.5 rounded text-[9px] font-bold bg-[color:var(--accent)]/15 text-[color:var(--accent)]/80 border border-[color:var(--accent)]/20">
+            P2P
+          </span>
+        )}
+      </div>
+
+      {/* File / source name */}
+      <p className="text-[13px] font-semibold text-white/85 mt-2 leading-snug line-clamp-2 group-hover:text-white transition-colors">
+        {sourceLine || firstLine || addonLabel}
+      </p>
+
+      {/* Meta row: size, language, seeds */}
+      <div className="flex items-center gap-2.5 mt-2 flex-wrap">
+        {hasSizeDetail ? (
+          <span className="text-[11px] text-white/40 font-medium">{hasSizeDetail.value}</span>
+        ) : (
+          sizeStr && <span className="text-[11px] text-white/40 font-medium">{sizeStr}</span>
+        )}
+        {langs && <span className="text-[11px] leading-none">{langs}</span>}
+        {hasLangDetail && (
+          <span className="text-[11px] text-white/30">{hasLangDetail.value}</span>
+        )}
+        {seeds && (
+          <span className="flex items-center gap-0.5 text-[11px] text-white/40">
+            <span className="text-green-400/60 text-[10px]">👤</span>
+            {seeds}
+          </span>
+        )}
+      </div>
+
+      {/* Addon source */}
+      {hasAddonDetail && (
+        <p className="text-[10px] text-white/20 mt-1.5 font-medium tracking-wide">
+          via {hasAddonDetail.value}
+        </p>
       )}
     </button>
   );
@@ -82,6 +140,7 @@ export default function Detail() {
   const { type, id } = useParams<{ type: string; id: string }>();
   const navigate = useNavigate();
   const { addons, settings, nuvioUser, upsertWatch } = useStore();
+  const { t } = useT();
   const decodedId = decodeURIComponent(id ?? '');
   const [meta, setMeta] = useState<MetaItem | null>(null);
   const [tmdb, setTmdb] = useState<any>(null);
@@ -97,7 +156,7 @@ export default function Detail() {
   const [activeStreamKey, setActiveStreamKey] = useState<string | null>(null);
   const [selectedAddon, setSelectedAddon] = useState<string | null>(null);
   const [qualityFilter, setQualityFilter] = useState<string>('all');
-  const [epCtxMenu, setEpCtxMenu] = useState<{ x: number; y: number; ep: Video } | null>(null);
+  const [sortDir, setSortDir] = useState<'asc' | 'desc' | null>(null);
   const [playerStream, setPlayerStream] = useState<Stream | null>(null);
   const [streamReferer, setStreamReferer] = useState<string | undefined>(undefined);
   const [activeSeason, setActiveSeason] = useState<number>(1);
@@ -111,13 +170,6 @@ export default function Detail() {
   useEffect(() => {
     tmdbRef.current = tmdb;
   }, [tmdb]);
-
-  useEffect(() => {
-    if (!epCtxMenu) return;
-    const close = () => setEpCtxMenu(null);
-    window.addEventListener('mousedown', close);
-    return () => window.removeEventListener('mousedown', close);
-  }, [epCtxMenu]);
 
   const isSeries = meta?.type === 'series' || type === 'series';
 
@@ -166,7 +218,6 @@ export default function Detail() {
               `https://api.themoviedb.org/3/find/${imdbId}?api_key=${settings.tmdbApiKey}&external_source=imdb_id`
             ).then(r => r.json()).catch(() => null);
             const arr = type === 'series' ? (fr?.tv_results ?? []) : (fr?.movie_results ?? []);
-            tmdbId = arr[0]?.id ?? null;
           }
 
           if (tmdbId) {
@@ -269,15 +320,47 @@ export default function Detail() {
     })();
   }, [type, decodedId]);
 
-  // ── loadStreams con cache + integrazione plugin ────────────────────────────
+  // ── Fetch season details when activeSeason changes ──────────────────────────
+  useEffect(() => {
+    if (!tmdb || !isSeries || !meta?.videos) return;
+    const tvId = tmdb.id;
+    if (!tvId) return;
+
+    const seasonVideos = meta.videos.filter(v => (v.season ?? 0) === activeSeason);
+    // Skip if we already have enriched data for this season (e.g. title is not just "Episode N")
+    const alreadyEnriched = seasonVideos.length > 0 && seasonVideos.some(v => v.thumbnail || (v.title && !v.title.startsWith('Episode ')));
+    if (alreadyEnriched) return;
+
+    getSeasonDetails(tvId, activeSeason).then(seasonData => {
+      if (!seasonData?.episodes) return;
+      setMeta(prev => {
+        if (!prev?.videos) return prev;
+        const updatedVideos = prev.videos.map(v => {
+          if ((v.season ?? 0) !== activeSeason) return v;
+          const epData = seasonData.episodes.find((e: any) => e.episode_number === v.episode);
+          if (!epData) return v;
+          return {
+            ...v,
+            title: epData.name ?? v.title,
+            released: epData.air_date ?? v.released,
+            thumbnail: epData.still_path ? `https://image.tmdb.org/t/p/w300${epData.still_path}` : v.thumbnail,
+            overview: epData.overview ?? v.overview,
+          };
+        });
+        return { ...prev, videos: updatedVideos };
+      });
+    }).catch(() => {});
+  }, [activeSeason, tmdb?.id, isSeries, meta]);
+
+  // ── loadStreams with cache + plugin integration ────────────────────────────
   const loadStreams = useCallback(async (videoId: string, force = false) => {
     if (!force && hasStreamsLoadedRef.current && streamGroupsRef.current.length > 0) {
-      console.log('[Detail] Ripristino stream dalla cache:', streamGroupsRef.current.length);
+      console.log('[Detail] Restoring streams from cache:', streamGroupsRef.current.length);
       setStreamGroups(streamGroupsRef.current);
       return;
     }
 
-    console.log('[Detail] loadStreams chiamato per:', videoId, force ? '(forzato)' : '');
+    console.log('[Detail] loadStreams called for:', videoId, force ? '(forced)' : '');
     setStreamsLoading(true);
     setStreamGroups([]);
     setStreamError(null);
@@ -287,15 +370,15 @@ export default function Detail() {
     try {
       const allGroups: StreamGroup[] = [];
 
-      // 1. Stream dagli addon Stremio
+      // 1. Streams from Stremio addons
       await fetchAllStreams(addons, type!, videoId, (group) => {
         const exists = allGroups.find(g => g.addonUrl === group.addonUrl);
         if (!exists) allGroups.push(group);
         setStreamGroups([...allGroups]);
         streamGroupsRef.current = [...allGroups];
-      });
+      }, force);
 
-      // 2. Stream dal plugin system (scrapers JavaScript)
+      // 2. Streams from plugin system (JavaScript scrapers)
       const parts = videoId.split(':');
       const hasEpisode = parts.length >= 3
         && !isNaN(Number(parts[parts.length - 1]))
@@ -303,7 +386,7 @@ export default function Detail() {
       const epSeason  = hasEpisode ? Number(parts[parts.length - 2]) : undefined;
       const epEpisode = hasEpisode ? Number(parts[parts.length - 1]) : undefined;
 
-      // FIX: gli scraper si aspettano l'IMDB ID (tt...), non il TMDB numerico
+      // FIX: scrapers expect IMDB ID (tt...), not TMDB numeric
       const imdbIdForPlugin = videoId.startsWith('tt')
         ? videoId.split(':')[0]                                          // "tt1234:1:2" → "tt1234"
         : (tmdbRef.current?.external_ids?.imdb_id ?? videoId.replace(/:\d+:\d+$/, ''));
@@ -315,7 +398,11 @@ export default function Detail() {
         episode: epEpisode,
       });
 
+      const isInTauri = typeof invoke === 'function';
+
       try {
+        if (!isInTauri) throw new Error('Not in Tauri environment');
+
         const pluginsEnabled = await invoke<boolean>('plugin_is_enabled');
 
         if (pluginsEnabled) {
@@ -360,18 +447,18 @@ export default function Detail() {
 
             setStreamGroups([...allGroups]);
             streamGroupsRef.current = [...allGroups];
-            console.log(`[Detail] Plugin streams aggiunti: ${converted.length}`);
+            console.log(`[Detail] Plugin streams added: ${converted.length}`);
           }
         }
       } catch (pluginErr) {
-        console.warn('[Detail] Plugin streams non disponibili:', pluginErr);
+        console.warn('[Detail] Plugin streams unavailable:', pluginErr);
       }
 
-      console.log('[Detail] streamGroups dopo fetch:', streamGroupsRef.current.length);
+      console.log('[Detail] streamGroups after fetch:', streamGroupsRef.current.length);
       hasStreamsLoadedRef.current = true;
     } catch (e: any) {
       console.error('[Detail] loadStreams error:', e);
-      setStreamError(e.message ?? 'Errore');
+      setStreamError(e.message ?? 'Error');
     } finally {
       setStreamsLoading(false);
     }
@@ -755,8 +842,33 @@ export default function Detail() {
             {seasons.length <= 1 && <div className="px-4 py-2.5 border-b border-white/[0.08] flex-shrink-0"><p className="text-xs text-white/40">{episodesForSeason.length} episodes</p></div>}
             <div className="flex-1 overflow-y-auto">
               {episodesForSeason.map((ep, i) => (
-                <button key={ep.id} type="button" onClick={() => handleEpisodeSelect(ep)} data-context-menu="true"
-                  onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setEpCtxMenu({ x: e.clientX, y: e.clientY, ep }); }}
+                <button key={ep.id} type="button" onClick={() => handleEpisodeSelect(ep)}
+                  onContextMenu={e => {
+                    e.preventDefault();
+                    showContextMenu([
+                      { id: 'play', text: t('ctx_play'), accelerator: 'Enter', action: () => handleEpisodeSelect(ep) },
+                      '---' as const,
+                      { id: 'watched', text: t('ctx_mark_watched'), action: async () => {
+                        if (nuvioUser?.id) await markWatched(nuvioUser.id, ep.id.split(':')[0], 'series', ep.season, ep.episode).catch(() => {});
+                        setWatchedEpIds(prev => new Set([...prev, ep.id]));
+                      }},
+                      { id: 'watched-up', text: t('ctx_mark_up_to'), action: async () => {
+                        const epIdx = episodesForSeason.findIndex(e2 => e2.id === ep.id);
+                        if (epIdx >= 0 && nuvioUser?.id) {
+                          const contentId = ep.id.split(':')[0];
+                          for (let i = 0; i <= epIdx; i++) { const e2 = episodesForSeason[i]; await markWatched(nuvioUser.id, contentId, 'series', e2.season, e2.episode).catch(() => {}); }
+                          const newIds = new Set(watchedEpIds);
+                          episodesForSeason.slice(0, epIdx + 1).forEach(e2 => newIds.add(e2.id));
+                          setWatchedEpIds(newIds);
+                        }
+                      }},
+                      '---' as const,
+                      { id: 'unwatched', text: t('ctx_mark_unwatched'), action: async () => {
+                        if (nuvioUser?.id) await unmarkWatched(nuvioUser.id, ep.id.split(':')[0], 'series').catch(() => {});
+                        setWatchedEpIds(prev => { const s = new Set(prev); s.delete(ep.id); return s; });
+                      }},
+                    ]);
+                  }}
                   className="w-full flex items-center gap-3 px-4 py-3 border-b border-white/[0.05] hover:bg-white/[0.05] transition-colors cursor-pointer text-left">
                   {(() => {
                     const epVideoId = `${decodedId}:${ep.season}:${ep.episode}`;
@@ -773,24 +885,6 @@ export default function Detail() {
                 </button>
               ))}
             </div>
-          </div>
-        )}
-        {epCtxMenu && (
-          <div className="fixed z-[9999] bg-[#1e1e26] border border-white/10 rounded-xl shadow-2xl py-1.5 min-w-[200px]" style={{ left: epCtxMenu.x, top: epCtxMenu.y }} onMouseDown={e => e.stopPropagation()}>
-            <button onMouseDown={e => { e.stopPropagation(); handleEpisodeSelect(epCtxMenu.ep); setEpCtxMenu(null); }} className="w-full text-left px-4 py-2.5 text-sm text-white/80 hover:bg-white/5 flex items-center gap-2">▶ Play</button>
-            <button onMouseDown={async e => { e.stopPropagation(); setEpCtxMenu(null); if (nuvioUser?.id) await markWatched(nuvioUser.id, epCtxMenu.ep.id.split(':')[0], 'series', epCtxMenu.ep.season, epCtxMenu.ep.episode).catch(() => {}); setWatchedEpIds(prev => new Set([...prev, epCtxMenu.ep.id])); }} className="w-full text-left px-4 py-2.5 text-sm text-green-400 hover:bg-white/5 flex items-center gap-2">✓ Mark as watched</button>
-            <button onMouseDown={async e => {
-              e.stopPropagation(); setEpCtxMenu(null);
-              const epIdx = episodesForSeason.findIndex(e => e.id === epCtxMenu.ep.id);
-              if (epIdx >= 0 && nuvioUser?.id) {
-                const contentId = epCtxMenu.ep.id.split(':')[0];
-                for (let i = 0; i <= epIdx; i++) { const e = episodesForSeason[i]; await markWatched(nuvioUser.id, contentId, 'series', e.season, e.episode).catch(() => {}); }
-                const newIds = new Set(watchedEpIds);
-                episodesForSeason.slice(0, epIdx + 1).forEach(e => newIds.add(e.id));
-                setWatchedEpIds(newIds);
-              }
-            }} className="w-full text-left px-4 py-2.5 text-sm text-blue-400 hover:bg-white/5 flex items-center gap-2">✓✓ Mark up to here</button>
-            <button onMouseDown={async e => { e.stopPropagation(); setEpCtxMenu(null); if (nuvioUser?.id) await unmarkWatched(nuvioUser.id, epCtxMenu.ep.id.split(':')[0], 'series').catch(() => {}); setWatchedEpIds(prev => { const s = new Set(prev); s.delete(epCtxMenu.ep.id); return s; }); }} className="w-full text-left px-4 py-2.5 text-sm text-red-400 hover:bg-white/5 flex items-center gap-2">✕ Mark as unwatched</button>
           </div>
         )}
         {(!showEpisodePanel || selectedVideo) && (
@@ -820,13 +914,23 @@ export default function Detail() {
             {streamsLoading && <div className="h-0.5 bg-white/5 flex-shrink-0"><div className="h-full animate-pulse" style={{ backgroundColor: 'var(--accent)', width: '60%' }} /></div>}
             {(() => {
               const allStreams = (selectedAddon ? streamGroups.filter(g => g.addonUrl === selectedAddon) : streamGroups).flatMap(g => g.streams.map(s => ({ stream: s, addonUrl: g.addonUrl, addonName: g.addonName })));
-              const qualityCounts = allStreams.reduce<Record<string, number>>((acc, { stream }) => {
+              const sortedStreams = [...allStreams];
+              
+              // Sort by size when sortDir is active
+              if (sortDir) {
+                sortedStreams.sort((a, b) => {
+                  const sizeA = a.stream.behaviorHints?.videoSize ?? 0;
+                  const sizeB = b.stream.behaviorHints?.videoSize ?? 0;
+                  return sortDir === 'desc' ? sizeB - sizeA : sizeA - sizeB;
+                });
+              }
+              const qualityCounts = sortedStreams.reduce<Record<string, number>>((acc, { stream }) => {
                 const q = getStreamQuality(stream) || 'Unknown';
                 acc[q] = (acc[q] || 0) + 1;
                 return acc;
               }, {});
               const qualityTabs = ['all', ...Object.keys(qualityCounts).sort((a, b) => (QUALITY_ORDER[a] ?? 99) - (QUALITY_ORDER[b] ?? 99))];
-              const filteredStreams = qualityFilter === 'all' ? allStreams : allStreams.filter(({ stream }) => (getStreamQuality(stream) || 'Unknown') === qualityFilter);
+              const filteredStreams = qualityFilter === 'all' ? sortedStreams : sortedStreams.filter(({ stream }) => (getStreamQuality(stream) || 'Unknown') === qualityFilter);
               const filteredGroups = filteredStreams.reduce<StreamGroup[]>((acc, { stream, addonUrl, addonName }) => {
                 let g = acc.find(x => x.addonUrl === addonUrl);
                 if (!g) { g = { addonName, addonUrl, streams: [] }; acc.push(g); }
@@ -835,17 +939,25 @@ export default function Detail() {
               }, []);
               return (
                 <>
-                  {allStreams.length > 0 && (
+                  {sortedStreams.length > 0 && (
                     <div className="flex gap-1 px-2 py-1.5 border-b border-white/[0.06] overflow-x-auto flex-shrink-0 scrollbar-none">
                       {qualityTabs.map(q => {
                         const label = q === 'all' ? 'All' : q === 'Unknown' ? 'Unknown' : q;
-                        const count = q === 'all' ? allStreams.length : qualityCounts[q] || 0;
+                        const count = q === 'all' ? sortedStreams.length : qualityCounts[q] || 0;
                         const isActive = qualityFilter === q;
                         return (
-                          <button key={q} onClick={() => setQualityFilter(q)}
+                          <button key={q} onClick={() => {
+                            if (q !== qualityFilter) {
+                              setQualityFilter(q);
+                              setSortDir('desc');
+                            } else {
+                              setSortDir(prev => prev === 'desc' ? 'asc' : prev === 'asc' ? null : 'desc');
+                            }
+                          }}
                             className={clsx('px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider whitespace-nowrap transition-colors', isActive ? 'text-white' : 'text-white/40 hover:text-white/70')}
                             style={isActive ? { backgroundColor: 'var(--accent)', color: '#fff' } : {}}>
                             {label} <span className="font-normal opacity-60">{count}</span>
+                            {isActive && sortDir && <span className="ml-0.5 font-normal">{sortDir === 'desc' ? '↓' : '↑'}</span>}
                           </button>
                         );
                       })}
@@ -854,6 +966,7 @@ export default function Detail() {
                   <div className="flex-1 overflow-y-auto">
                     {streamGroups.length === 0 && !streamsLoading && streamError && <div className="px-4 py-6 text-center"><AlertCircle size={20} className="text-white/30 mx-auto mb-2" /><p className="text-xs text-white/40">{streamError}</p></div>}
                     {streamGroups.length === 0 && !streamsLoading && !streamError && isSeries && !selectedVideo && <div className="px-4 py-6 text-center text-xs text-white/30">Select an episode to load streams</div>}
+                    {streamGroups.length === 0 && !streamsLoading && !streamError && !(isSeries && !selectedVideo) && <div className="px-4 py-6 text-center text-xs text-white/30">No streams available. Try reloading or check your addons.</div>}
                     {filteredGroups.map((group) => {
                       let si = 0;
                       return (
@@ -864,7 +977,18 @@ export default function Detail() {
                           </div>
                           {group.streams.map((stream) => {
                             const idx = si++;
-                            return <StreamRow key={idx} stream={stream} onPlay={() => handlePlay(stream, group.addonUrl, idx)} active={activeStreamKey === `${group.addonUrl}:${idx}`} />;
+                            return (
+                              <div key={idx} onContextMenu={e => {
+                                e.preventDefault();
+                                const streamUrl = stream.url ?? (stream.infoHash ? `magnet:?xt=urn:btih:${stream.infoHash}${stream.fileIdx !== undefined ? `&so=${stream.fileIdx}` : ''}` : '');
+                                showContextMenu([
+                                  { id: 'play', text: t('ctx_play'), accelerator: 'Enter', action: () => handlePlay(stream, group.addonUrl, idx) },
+                                  ...(streamUrl ? ['---' as const, { id: 'copy-url', text: t('ctx_copy_url'), accelerator: 'CmdOrCtrl+C', action: () => copyText(streamUrl) }] : []),
+                                ]);
+                              }}>
+                                <StreamRow stream={stream} onPlay={() => handlePlay(stream, group.addonUrl, idx)} active={activeStreamKey === `${group.addonUrl}:${idx}`} />
+                              </div>
+                            );
                           })}
                         </div>
                       );

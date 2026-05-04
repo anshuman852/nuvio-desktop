@@ -77,33 +77,51 @@ export async function fetchStreams(addonUrl: string, type: string, id: string): 
   } catch { return []; }
 }
 
-// Cache stream per 5 minuti
+// Stream cache for 5 minutes
 const _streamCache = new Map<string, { data: StreamGroup[]; ts: number }>();
 
-export async function fetchAllStreams(addons: Addon[], type: string, id: string, onGroup?: (g: StreamGroup) => void): Promise<StreamGroup[]> {
+export async function fetchAllStreams(addons: Addon[], type: string, id: string, onGroup?: (g: StreamGroup) => void, force = false): Promise<StreamGroup[]> {
   const cacheKey = `${type}:${id}`;
-  const cached = _streamCache.get(cacheKey);
-  if (cached && Date.now() - cached.ts < 300_000) return cached.data;
+  if (!force) {
+    const cached = _streamCache.get(cacheKey);
+    if (cached && Date.now() - cached.ts < 300_000) {
+      console.log(`[Streams] Cache hit for ${cacheKey}: ${cached.data.length} groups`);
+      return cached.data;
+    }
+  }
 
+  console.log(`[Streams] fetchAllStreams addons total: ${addons.length}, type: ${type}, id: ${id}`);
   const eligible = addons.filter(a => Array.isArray(a.resources) && a.resources.some((r: any) => r === 'stream' || (typeof r === 'string' && r.startsWith('stream')) || (r?.name === 'stream')));
+  console.log(`[Streams] Eligible addons (have stream resource): ${eligible.length}/${addons.length}`);
+  console.log(`[Streams] Eligible addon names:`, eligible.map(a => ({ name: a.name, url: a.url?.slice(0, 60) })));
+
   const groups: StreamGroup[] = [];
 
-  // Fetch in parallelo con timeout 10s per addon
-  await Promise.allSettled(
+  // Fetch in parallel with 10s timeout per addon
+  const results = await Promise.allSettled(
     eligible.map(async addon => {
       try {
         const streams = await Promise.race([
           fetchStreams(addon.url, type, id),
           new Promise<never>((_, rej) => setTimeout(() => rej(new Error('timeout')), 10000)),
         ]);
+        console.log(`[Streams] ${addon.name}: ${streams.length} streams`);
         if (streams.length > 0) {
           const group: StreamGroup = { addonName: addon.name, addonUrl: addon.url, streams };
           groups.push(group);
-          onGroup?.(group); // callback progressivo
+          onGroup?.(group);
         }
-      } catch { /* timeout o errore addon */ }
+      } catch (err: any) {
+        console.warn(`[Streams] ${addon.name} failed:`, err?.message ?? err);
+      }
     })
   );
+
+  const succeeded = results.filter(r => r.status === 'fulfilled').length;
+  console.log(`[Streams] Done: ${groups.length} groups from ${succeeded}/${eligible.length} addons`);
+  if (groups.length === 0) {
+    console.log(`[Streams] No streams found for ${cacheKey}. Addons available:`, addons.map(a => ({ name: a.name, hasStream: !!a.resources?.some((r: any) => r === 'stream') })));
+  }
 
   _streamCache.set(cacheKey, { data: groups, ts: Date.now() });
   return groups;

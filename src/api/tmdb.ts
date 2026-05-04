@@ -266,6 +266,10 @@ export async function getDetails(type: 'movie' | 'tv', id: number): Promise<any>
   return get(`/${type}/${id}`, { append_to_response: 'credits,videos,external_ids,watch/providers,similar,recommendations' });
 }
 
+export async function getSeasonDetails(tvId: number, seasonNumber: number): Promise<any> {
+  return get(`/tv/${tvId}/season/${seasonNumber}`);
+}
+
 export async function searchTMDB(query: string): Promise<any[]> {
   const data = await get('/search/multi', { query, include_adult: 'false' });
   // Filtra anche per serie TV (media_type === 'tv')

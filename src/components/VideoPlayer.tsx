@@ -7,6 +7,7 @@ import {
   ArrowLeft, Play, Pause, SkipBack, SkipForward, X, ChevronRight,
   Volume2, VolumeX, Maximize, Settings, ChevronLeft, Check, List
 } from 'lucide-react';
+import { useT } from '../lib/i18n';
 
 interface CastMember { name: string; character?: string; photo?: string; }
 interface EpisodeRef { id: string; title: string; thumbnail?: string; streamUrl?: string; }
@@ -58,6 +59,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
     onClose, onNext, onPrev, onPlayNextEpisode, onQualitySelect, onEpisodeSelect, initialProgress = 0,
   } = props;
 
+  const { t } = useT();
   const { nuvioUser, upsertWatch } = useStore();
   const vidRef    = useRef<HTMLVideoElement>(null);
   const hlsRef    = useRef<any>(null);
@@ -159,7 +161,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
     const onPlay_   = () => { setPlaying(true); setBuffering(false); setShowCastPanel(false); setHasPlayedOnce(true); };
     const onPause_  = () => {
       setPlaying(false);
-      // Mostra cast solo se ha già riprodotto almeno un secondo (evita flash al caricamento)
+      // Show cast only if already played at least one second (avoids flash on load)
       if (cast.length > 0 && hasPlayedOnce) setShowCastPanel(true);
     };
     const onWait    = () => setBuffering(true);
@@ -177,7 +179,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
       }
     };
     const onDur = () => setDuration(v.duration);
-    const onErr = () => { setError(v.error?.message ?? 'Errore caricamento stream'); setBuffering(false); };
+    const onErr = () => { setError(v.error?.message ?? t('error_loading')); setBuffering(false); };
     v.addEventListener('canplay', canPlay);    v.addEventListener('play', onPlay_);
     v.addEventListener('pause', onPause_);    v.addEventListener('waiting', onWait);
     v.addEventListener('playing', onPlaying); v.addEventListener('timeupdate', onTime);
@@ -301,7 +303,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
       style={{ width: 272 }} onClick={e => e.stopPropagation()}>
       {settingsPanel === 'main' && (
         <div className="py-1">
-          <div className="px-4 py-2.5 text-xs font-bold text-white/40 uppercase tracking-widest border-b border-white/5">Impostazioni</div>
+          <div className="px-4 py-2.5 text-xs font-bold text-white/40 uppercase tracking-widest border-b border-white/5">{t('settings')}</div>
           {availableQualities.length > 0 && (
             <button onClick={() => setSettingsPanel('quality')}
               className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 text-white text-sm">
@@ -318,7 +320,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
             className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 text-white text-sm">
             <span className="flex items-center gap-2.5">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-white/50"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M7 15h4M15 15h2M7 10h2M13 10h4"/></svg>
-              Sottotitoli
+              {t('subtitles')}
             </span>
             <span className="text-white/40 text-xs flex items-center gap-1">
               {activeSub ? (subtitleTracks.find(s => s.lang === activeSub)?.label ?? activeSub) : 'Off'}<ChevronRight size={13} />
@@ -384,13 +386,13 @@ export default function VideoPlayer(props: VideoPlayerProps) {
       {settingsPanel === 'subtitles' && (
         <div className="py-1">
           <button onClick={() => setSettingsPanel('main')} className="w-full flex items-center gap-2 px-4 py-3 hover:bg-white/5 text-white/60 text-sm border-b border-white/5">
-            <ChevronLeft size={14} />Sottotitoli
+            <ChevronLeft size={14} />{t('subtitles')}
           </button>
           <button onClick={() => { setActiveSub(null); setSettingsPanel(null); }}
             className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 text-white text-sm">
-            Disattivati {!activeSub && <Check size={14} className="text-[color:var(--accent)]" />}
+            {t('disabled_label')} {!activeSub && <Check size={14} className="text-[color:var(--accent)]" />}
           </button>
-          {subtitleTracks.length === 0 && <div className="px-4 py-3 text-white/30 text-xs">Nessun sottotitolo per questo stream.</div>}
+          {subtitleTracks.length === 0 && <div className="px-4 py-3 text-white/30 text-xs">{t('no_subtitles')}</div>}
           {subtitleTracks.map(s => (
             <button key={s.lang} onClick={() => { setActiveSub(s.lang); setSettingsPanel(null); }}
               className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 text-white text-sm">
@@ -488,7 +490,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
               style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}>
               {episodeSeasons.map(s => (
                 <option key={s} value={s} style={{ backgroundColor: '#1a1a22', color: 'white' }}>
-                  {s === 0 ? 'Specials' : `Stagione ${s}`}
+                  {s === 0 ? t('specials') : `${t('season')} ${s}`}
                 </option>
               ))}
             </select>
@@ -559,14 +561,14 @@ export default function VideoPlayer(props: VideoPlayerProps) {
         {poster && <img src={poster} alt={title} className="h-32 rounded-2xl shadow-2xl border border-white/10" />}
         {title && <p className="text-white font-bold text-lg">{title}</p>}
         <div className="bg-red-500/10 border border-red-500/20 rounded-2xl px-5 py-4 w-full text-left space-y-2">
-          <p className="text-red-400 font-semibold text-sm">Stream non disponibile</p>
+          <p className="text-red-400 font-semibold text-sm">{t('stream_unavailable')}</p>
           <p className="text-white/50 text-xs">{error}</p>
         </div>
         <div className="flex gap-2">
           <button onClick={() => { setError(null); setBuffering(true); const v = vidRef.current; if (v) { v.load(); v.play().catch(() => {}); } }}
-            className="flex items-center gap-2 py-2.5 px-5 text-sm text-white bg-white/10 hover:bg-white/20 rounded-xl">Riprova</button>
+            className="flex items-center gap-2 py-2.5 px-5 text-sm text-white bg-white/10 hover:bg-white/20 rounded-xl">{t('retry')}</button>
           <button onClick={handleClose} className="flex items-center gap-2 py-2.5 px-5 text-sm text-white bg-white/10 hover:bg-white/20 rounded-xl">
-            <ArrowLeft size={14} />Cambia stream
+            <ArrowLeft size={14} />{t('change_stream')}
           </button>
         </div>
       </div>
@@ -597,7 +599,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
           {bgImg && <img src={bgImg} alt="" className="absolute inset-0 w-full h-full object-cover opacity-20 blur-xl" />}
           <div className="relative flex flex-col items-center gap-3">
             <div className="w-12 h-12 border-2 border-white/20 border-t-white rounded-full animate-spin" />
-            <p className="text-white/60 text-sm">Caricamento...</p>
+            <p className="text-white/60 text-sm">{t('loading')}</p>
           </div>
         </div>
       )}
@@ -661,14 +663,14 @@ export default function VideoPlayer(props: VideoPlayerProps) {
               </div>
             ) : (
               <div className="w-full h-12 bg-white/5 flex items-center px-4">
-                <p className="text-[10px] text-white/40 uppercase tracking-widest">Prossimo episodio</p>
+                <p className="text-[10px] text-white/40 uppercase tracking-widest">{t('next_episode')}</p>
               </div>
             )}
             <div className="p-3 flex items-center gap-3">
               <div className="flex-1 min-w-0">
                 <p className="text-white text-sm font-semibold truncate">{nextEpisode.title}</p>
                 <p className="text-white/40 text-xs mt-0.5">
-                  {secsLeft > 0 ? `Avvio automatico tra ${secsLeft}s` : 'Caricamento...'}
+                  {secsLeft > 0 ? t('starting_in').replace('{s}', String(secsLeft)) : t('loading')}
                 </p>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
