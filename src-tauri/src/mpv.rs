@@ -16,10 +16,6 @@ impl MpvManager {
         }
     }
 
-    fn find_mpv_path(&self) -> Result<PathBuf, String> {
-        Self::find_mpv()
-    }
-
     fn find_mpv() -> Result<PathBuf, String> {
         eprintln!("[mpv] Cerca mpv.exe...");
         

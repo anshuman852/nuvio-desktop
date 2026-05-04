@@ -6,7 +6,8 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "tauri:build": "tauri build && node -e \"const fs=require('fs'),p=require('path');const out=p.join('out');fs.mkdirSync(out,{recursive:true});['nsis','msi'].forEach(b=>{const d=p.join('src-tauri','target','release','bundle',b);if(fs.existsSync(d)){fs.readdirSync(d).forEach(f=>{if(f.endsWith('.exe')||f.endsWith('.msi')){fs.copyFileSync(p.join(d,f),p.join(out,f));console.log('Copied',f,'to out/')}})}})\""
   },
   "dependencies": {
     "@rollup/rollup-win32-x64-msvc": "^4.60.2",
