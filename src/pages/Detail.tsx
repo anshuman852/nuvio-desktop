@@ -166,6 +166,7 @@ export default function Detail() {
   const streamGroupsRef = useRef<StreamGroup[]>([]);
   const hasStreamsLoadedRef = useRef(false);
   const tmdbRef = useRef<any>(null);
+  const fetchedSeasonsRef = useRef<Set<number>>(new Set());
 
   useEffect(() => {
     tmdbRef.current = tmdb;
@@ -190,6 +191,7 @@ export default function Detail() {
     streamGroupsRef.current = [];
     hasStreamsLoadedRef.current = false;
     tmdbRef.current = null;
+    fetchedSeasonsRef.current = new Set();
 
     (async () => {
       let found: MetaItem | null = null;
@@ -218,6 +220,7 @@ export default function Detail() {
               `https://api.themoviedb.org/3/find/${imdbId}?api_key=${settings.tmdbApiKey}&external_source=imdb_id`
             ).then(r => r.json()).catch(() => null);
             const arr = type === 'series' ? (fr?.tv_results ?? []) : (fr?.movie_results ?? []);
+            if (arr.length > 0) tmdbId = arr[0].id;
           }
 
           if (tmdbId) {
@@ -254,7 +257,7 @@ export default function Detail() {
             id: c.id,
             name: c.name,
             role: c.character ?? '',
-            photo: c.profile_path ? `https://image.tmdb.org/t/p/w185${c.profile_path}` : undefined,
+photo: c.profile_path ? `https://image.tmdb.org/t/p/h632${c.profile_path}` : undefined,
           }));
         setCast(fullCast); localCast = fullCast;
 
@@ -262,12 +265,12 @@ export default function Detail() {
           ['Director', 'Screenplay', 'Writer', 'Creator', 'Producer'].includes(c.job)
         ).slice(0, 8).map((c: any) => ({
           id: c.id, name: c.name, role: c.job,
-          photo: c.profile_path ? `https://image.tmdb.org/t/p/w185${c.profile_path}` : undefined,
+          photo: c.profile_path ? `https://image.tmdb.org/t/p/h632${c.profile_path}` : undefined,
         })));
 
         if (!found || isTmdbId) {
           const imdbFromTmdb = tmdbData.external_ids?.imdb_id;
-          const episodes: Video[] = [];
+          let episodes: Video[] = [];
           if (tmdbData.seasons?.length) {
             for (const season of tmdbData.seasons) {
               if (!season.season_number) continue;
@@ -313,6 +316,31 @@ export default function Detail() {
         const seasons = [...new Set((found.videos ?? []).map(v => v.season ?? 0))].filter(Boolean).sort((a, b) => a - b);
         if (seasons.length > 0) setActiveSeason(seasons[0]);
         setMeta(found);
+
+        // Eagerly fetch the first season's episode details
+        if (tmdbData?.id && seasons.length > 0) {
+          const firstSeason = seasons[0];
+          fetchedSeasonsRef.current.add(firstSeason);
+          getSeasonDetails(tmdbData.id, firstSeason).then(seasonData => {
+            if (!seasonData?.episodes) return;
+            setMeta(prev => {
+              if (!prev?.videos) return prev;
+              const updatedVideos = prev.videos.map(v => {
+                if ((v.season ?? 0) !== firstSeason) return v;
+                const epData = seasonData.episodes.find((e: any) => e.episode_number === v.episode);
+                if (!epData) return v;
+                return {
+                  ...v,
+                  title: epData.name ?? v.title,
+                  released: epData.air_date ?? v.released,
+                  thumbnail: epData.still_path ? `https://image.tmdb.org/t/p/w300${epData.still_path}` : v.thumbnail,
+                  overview: epData.overview ?? v.overview,
+                };
+              });
+              return { ...prev, videos: updatedVideos };
+            });
+          }).catch(() => {});
+        }
       }
 
       setMetaLoading(false);
@@ -326,10 +354,9 @@ export default function Detail() {
     const tvId = tmdb.id;
     if (!tvId) return;
 
-    const seasonVideos = meta.videos.filter(v => (v.season ?? 0) === activeSeason);
-    // Skip if we already have enriched data for this season (e.g. title is not just "Episode N")
-    const alreadyEnriched = seasonVideos.length > 0 && seasonVideos.some(v => v.thumbnail || (v.title && !v.title.startsWith('Episode ')));
-    if (alreadyEnriched) return;
+    // Skip if this season was already fetched
+    if (fetchedSeasonsRef.current.has(activeSeason)) return;
+    fetchedSeasonsRef.current.add(activeSeason);
 
     getSeasonDetails(tvId, activeSeason).then(seasonData => {
       if (!seasonData?.episodes) return;
@@ -350,7 +377,7 @@ export default function Detail() {
         return { ...prev, videos: updatedVideos };
       });
     }).catch(() => {});
-  }, [activeSeason, tmdb?.id, isSeries, meta]);
+  }, [activeSeason, tmdb?.id, isSeries]);
 
   // ── loadStreams with cache + plugin integration ────────────────────────────
   const loadStreams = useCallback(async (videoId: string, force = false) => {
@@ -736,29 +763,29 @@ export default function Detail() {
               </p>
               <div className="flex gap-4 overflow-x-auto scrollbar-hide pb-1">
                 {displayCast.slice(0, 12).map((p: any) => (
-                  <Link key={p.id} to={`/person/${p.id}`} className="flex-shrink-0 w-16 text-center group">
-                    <div className="w-16 h-16 rounded-full overflow-hidden bg-white/10 border border-white/10 mx-auto group-hover:border-[color:var(--accent)] transition-colors">
+                  <Link key={p.id} to={`/person/${p.id}`} className="flex-shrink-0 w-20 text-center group">
+                    <div className="w-20 h-20 rounded-full overflow-hidden bg-white/10 border border-white/10 mx-auto group-hover:border-[color:var(--accent)] transition-colors">
                       {p.photo ? (
-                        <img src={p.photo} alt={p.name} className="w-full h-full object-cover object-top"
+                        <img src={p.photo} alt={p.name} className="w-full h-full object-cover object-center"
                           onError={(e) => {
                             (e.target as HTMLImageElement).style.display = 'none';
                             const parent = (e.target as HTMLImageElement).parentElement;
                             if (parent) {
                               const div = document.createElement('div');
-                              div.className = 'w-full h-full flex items-center justify-center text-white/40 text-sm font-bold bg-white/5';
+                              div.className = 'w-full h-full flex items-center justify-center text-white/40 text-base font-bold bg-white/5';
                               div.textContent = p.name.charAt(0).toUpperCase();
                               parent.appendChild(div);
                             }
                           }}
                         />
                       ) : (
-                        <div className="w-full h-full flex items-center justify-center text-white/40 text-sm font-bold bg-white/5">
+                        <div className="w-full h-full flex items-center justify-center text-white/40 text-base font-bold bg-white/5">
                           {p.name.charAt(0).toUpperCase()}
                         </div>
                       )}
                     </div>
-                    <p className="text-[10px] text-white/60 mt-1.5 leading-tight line-clamp-2 group-hover:text-white transition-colors font-medium">{p.name}</p>
-                    {p.role && <p className="text-[9px] text-white/30 line-clamp-1 mt-0.5">{p.role}</p>}
+                    <p className="text-[11px] text-white/60 mt-1.5 leading-tight line-clamp-2 group-hover:text-white transition-colors font-medium">{p.name}</p>
+                    {p.role && <p className="text-[10px] text-white/30 line-clamp-1 mt-0.5">{p.role}</p>}
                   </Link>
                 ))}
               </div>
