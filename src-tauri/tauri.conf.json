@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "nuvio-desktop",
-  "version": "2.3.1",
+  "version": "2.3.3",
   "identifier": "com.nuvio.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -21,9 +21,10 @@
         "center": true,
         "resizable": true,
         "fullscreen": false,
-        "decorations": true,
-        "transparent": false,
-        "visible": true,
+        "decorations": false,
+        "transparent": true,
+        "shadow": false,
+        "visible": false,
         "focus": true,
         "devtools": true,
         "additionalBrowserArgs": "--autoplay-policy=no-user-gesture-required --allow-running-insecure-content"
@@ -47,7 +48,10 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": ["resources/*"],
+    "resources": [
+      "resources/*",
+      "lib/**/*"
+    ],
     "copyright": "",
     "category": "Video",
     "shortDescription": "Nuvio Desktop App",

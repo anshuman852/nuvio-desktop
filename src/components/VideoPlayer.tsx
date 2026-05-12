@@ -1,5 +1,6 @@
 /// <reference types="vite/client" />
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { invoke } from '@tauri-apps/api/core';
 import { useStore } from '../lib/store';
 import { upsertCW } from '../api/nuvio';
@@ -8,6 +9,9 @@ import {
   Volume2, VolumeX, Maximize, Settings, ChevronLeft, Check, List
 } from 'lucide-react';
 import { useT } from '../lib/i18n';
+import { useDiscordRPC } from '../hooks/useDiscordRPC';
+import { useNativeMpv } from '../hooks/useNativeMpv';
+import { usePluginMpv } from '../hooks/usePluginMpv';
 
 interface CastMember { name: string; character?: string; photo?: string; }
 interface EpisodeRef { id: string; title: string; thumbnail?: string; streamUrl?: string; }
@@ -46,11 +50,6 @@ function fmtTime(s: number) {
 type SettingsPanel = null | 'main' | 'quality' | 'subtitles' | 'audio' | 'speed' | 'display' | 'next_ep';
 type AspectRatio = 'contain' | 'cover' | 'fill' | '16/9' | '4/3' | '2.35/1';
 
-const ASPECT_LABELS: Record<AspectRatio, string> = {
-  'contain': 'Adatta (default)', 'cover': 'Riempi schermo', 'fill': 'Allunga',
-  '16/9': '16:9 forzato', '4/3': '4:3', '2.35/1': 'Cinemascope 2.35:1',
-};
-
 export default function VideoPlayer(props: VideoPlayerProps) {
   const {
     url, title, subtitle, contentId, contentType, poster, backdrop, cast = [],
@@ -60,7 +59,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
   } = props;
 
   const { t } = useT();
-  const { nuvioUser, upsertWatch } = useStore();
+  const { nuvioUser, upsertWatch, settings } = useStore();
   const vidRef    = useRef<HTMLVideoElement>(null);
   const hlsRef    = useRef<any>(null);
   const cwTimer   = useRef<ReturnType<typeof setInterval>>();
@@ -90,13 +89,47 @@ export default function VideoPlayer(props: VideoPlayerProps) {
   const [hideDelay,       setHideDelay]       = useState(2000);
   const [showEpisodeList, setShowEpisodeList] = useState(false);
 
+  const discordRPC = useDiscordRPC();
+  const nativeMpv = useNativeMpv();
+  const pluginMpv = usePluginMpv();
+
   const bgImg = backdrop || poster;
 
-  const usesMpv = url.startsWith('magnet:')
-    || url.includes('127.0.0.1:11470')
-    || url.includes('localhost:11470')
-    || url.includes('127.0.0.1:11473');
+  const playerMode = (settings as any).playerMode ?? 'auto';
+  const usesMpv = playerMode === 'mpv'
+    ? true  // force MPV
+    : playerMode === 'html5'
+      ? false  // force HTML5
+      : (url.startsWith('magnet:')
+        || url.includes('127.0.0.1:11470')
+        || url.includes('localhost:11470')
+        || url.includes('127.0.0.1:11473'));  // auto-detect
+  console.log(`[player] Mode: ${playerMode}, Player: ${usesMpv ? 'MPV' : 'HTML5'}, URL: ${url.substring(0, 80)}`);
   // Nota: .m3u8 rimosso da usesMpv — viene gestito da HLS.js tramite proxy
+
+  const [showPlayerIndicator, setShowPlayerIndicator] = useState(true);
+
+  useEffect(() => {
+    setShowPlayerIndicator(true);
+    // Keep indicator visible in MPV mode for debug status
+    if (!usesMpv) {
+      const timer = setTimeout(() => setShowPlayerIndicator(false), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [url, usesMpv]);
+
+  // When MPV is active, hide the React app and make the body transparent so
+  // WebView2 reveals libmpv's child HWND behind it. The VideoPlayer is
+  // portaled into document.body below so it survives #root being hidden.
+  // Re-force the WebView2 transparent background each time MPV mode activates:
+  // certain window state transitions (maximize, fullscreen, restore) on
+  // Windows reset the WebView2 DefaultBackgroundColor back to opaque.
+  useEffect(() => {
+    if (!usesMpv) return;
+    document.body.classList.add('mpv-active');
+    invoke('force_transparent_webview').catch(e => console.log('[player] force_transparent_webview:', e));
+    return () => { document.body.classList.remove('mpv-active'); };
+  }, [usesMpv]);
 
   const syncCW = useCallback((t: number, d: number) => {
     if (!contentId || d < 5) return;
@@ -116,14 +149,33 @@ export default function VideoPlayer(props: VideoPlayerProps) {
     return () => clearInterval(cwTimer.current);
   }, [syncCW]);
 
-  // MPV
+  // MPV via native libmpv FFI — wait for init to finish before loading,
+  // otherwise the first loadUrl IPC arrives while AppState.native_mpv is
+  // still None and the command returns "MPV not initialized" silently.
   useEffect(() => {
     if (!usesMpv) return;
-    setBuffering(false);
-    invoke('launch_mpv', { url, title: title ?? null, referrer: referer ?? null })
-      .catch(e => setError(String(e)));
-    return () => { invoke('mpv_stop').catch(() => {}); };
-  }, [url, usesMpv, referer]);
+    if (!nativeMpv.ready) {
+      console.log('[player] Waiting for MPV init before loading URL...');
+      return;
+    }
+    setBuffering(true);
+    nativeMpv.loadUrl(url);
+
+    const sub = season && episode ? `S${season} · E${episode}` : subtitle ?? '';
+    const type = contentType ?? (season ? 'series' : 'movie');
+    discordRPC.startPlaying(title ?? url, sub, type);
+
+    return () => {
+      nativeMpv.stop();
+      discordRPC.stopPlaying();
+    };
+  }, [url, usesMpv, nativeMpv.ready]);
+
+  // Clear buffering when MPV file loads
+  useEffect(() => {
+    if (!usesMpv) return;
+    if (nativeMpv.playing) setBuffering(false);
+  }, [usesMpv, nativeMpv.playing]);
 
   // HTML5
   useEffect(() => {
@@ -152,16 +204,22 @@ export default function VideoPlayer(props: VideoPlayerProps) {
       const tracks: {id: number; label: string}[] = [];
       if ((v as any).audioTracks) {
         for (let i = 0; i < (v as any).audioTracks.length; i++) {
-          const t = (v as any).audioTracks[i];
-          tracks.push({ id: i, label: t.label || t.language || `Traccia ${i + 1}` });
+          const tr = (v as any).audioTracks[i];
+          tracks.push({ id: i, label: tr.label || tr.language || `${t('player_track')} ${i + 1}` });
         }
       }
       if (tracks.length > 0) setAudioTracks(tracks);
     };
-    const onPlay_   = () => { setPlaying(true); setBuffering(false); setShowCastPanel(false); setHasPlayedOnce(true); };
+    const onPlay_   = () => {
+      setPlaying(true); setBuffering(false); setShowCastPanel(false); setHasPlayedOnce(true);
+      const sub = season && episode ? `S${season} · E${episode}` : subtitle ?? '';
+      const type = contentType ?? (season ? 'series' : 'movie');
+      if (!hasPlayedOnce) discordRPC.startPlaying(title ?? url, sub, type);
+      else discordRPC.resumePlaying();
+    };
     const onPause_  = () => {
       setPlaying(false);
-      // Show cast only if already played at least one second (avoids flash on load)
+      discordRPC.pausePlaying();
       if (cast.length > 0 && hasPlayedOnce) setShowCastPanel(true);
     };
     const onWait    = () => setBuffering(true);
@@ -239,19 +297,51 @@ export default function VideoPlayer(props: VideoPlayerProps) {
   useEffect(() => { resetHide(); return () => clearTimeout(hideTimer.current); }, [hideDelay]);
   useEffect(() => { if (settingsPanel || showEpisodeList) setShowControls(true); }, [settingsPanel, showEpisodeList]);
 
-  function handleClose() { invoke('mpv_stop').catch(() => {}); onClose(); }
+  function handleClose() {
+    discordRPC.stopPlaying();
+    if (usesMpv) nativeMpv.stop();
+    else invoke('mpv_stop').catch(() => {});
+    onClose();
+  }
   function togglePlay() {
+    if (usesMpv) {
+      nativeMpv.togglePause();
+      return;
+    }
     const v = vidRef.current;
     if (!v) return;
     if (v.paused) { v.play(); setShowCastPanel(false); } else { v.pause(); }
   }
-  function seek(pct: number) { const v = vidRef.current; if (v && duration > 0) v.currentTime = pct * duration; }
+  function seek(pct: number) {
+    if (usesMpv) {
+      nativeMpv.seek(pct * nativeMpv.duration);
+      return;
+    }
+    const v = vidRef.current; if (v && duration > 0) v.currentTime = pct * duration;
+  }
   function seekRelative(secs: number) {
+    if (usesMpv) {
+      nativeMpv.seek(Math.max(0, nativeMpv.timePos + secs));
+      return;
+    }
     const v = vidRef.current;
     if (v) v.currentTime = Math.max(0, Math.min(v.duration, v.currentTime + secs));
   }
   function setVol(val: number) { const v = vidRef.current; if (v) { v.volume = val; setVolume(val); setMuted(val === 0); } }
   function toggleMute() { const v = vidRef.current; if (!v) return; v.muted = !v.muted; setMuted(v.muted); }
+  async function toggleFullscreen() {
+    if (usesMpv) {
+      // In MPV mode there is no <video> element to fullscreen — toggle the
+      // Tauri window itself so the mpv child HWND grows with it.
+      try {
+        const { getCurrentWindow } = await import('@tauri-apps/api/window');
+        const w = getCurrentWindow();
+        await w.setFullscreen(!(await w.isFullscreen()));
+      } catch (e) { console.log('[player] fullscreen toggle failed', e); }
+      return;
+    }
+    vidRef.current?.requestFullscreen?.();
+  }
 
   function handlePlayNextEpisode(e: React.MouseEvent) {
     e.stopPropagation();
@@ -274,7 +364,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
         case 'ArrowUp':    e.preventDefault(); setVol(Math.min(1, volume + 0.1)); break;
         case 'ArrowDown':  e.preventDefault(); setVol(Math.max(0, volume - 0.1)); break;
         case 'm': toggleMute(); break;
-        case 'f': vidRef.current?.requestFullscreen?.(); break;
+        case 'f': toggleFullscreen(); break;
         case 'Escape': handleClose(); break;
       }
     };
@@ -285,9 +375,25 @@ export default function VideoPlayer(props: VideoPlayerProps) {
   const progress = duration > 0 ? currentTime / duration : 0;
   const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
   const NEXT_EP_THRESHOLDS = [15, 30, 45, 60, 90];
-  const HIDE_DELAYS = [{ label: '1 secondo', ms: 1000 }, { label: '2 secondi', ms: 2000 }, { label: '3 secondi', ms: 3000 }, { label: '5 secondi', ms: 5000 }];
+  const HIDE_DELAYS = [
+    { label: t('player_hide_1s'), ms: 1000 },
+    { label: t('player_hide_2s'), ms: 2000 },
+    { label: t('player_hide_3s'), ms: 3000 },
+    { label: t('player_hide_5s'), ms: 5000 },
+  ];
   const ASPECTS: AspectRatio[] = ['contain', 'cover', 'fill', '16/9', '4/3', '2.35/1'];
   const secsLeft = Math.max(0, Math.ceil(duration - currentTime - 5));
+
+  function aspectLabel(a: AspectRatio): string {
+    switch (a) {
+      case 'contain': return t('player_aspect_fit');
+      case 'cover': return t('player_aspect_fill');
+      case 'fill': return t('player_aspect_stretch');
+      case '16/9': return t('player_aspect_169');
+      case '4/3': return '4:3';
+      case '2.35/1': return t('player_aspect_cinemascope');
+    }
+  }
 
   // Episodi raggruppati per stagione
   const episodesBySeason = allEpisodes.reduce((acc, ep) => {
@@ -309,7 +415,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
               className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 text-white text-sm">
               <span className="flex items-center gap-2.5">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-white/50"><path d="M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.42 0l6.58-6.58c.94-.94.94-2.48 0-3.42L12 2Z"/><path d="M7 7h.01"/></svg>
-                Qualità
+                {t('player_quality')}
               </span>
               <span className="text-white/40 text-xs flex items-center gap-1">
                 {availableQualities.find(q => q.url === activeQuality)?.label ?? 'Auto'}<ChevronRight size={13} />
@@ -331,10 +437,10 @@ export default function VideoPlayer(props: VideoPlayerProps) {
               className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 text-white text-sm">
               <span className="flex items-center gap-2.5">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-white/50"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
-                Traccia audio
+                {t('player_audio_track')}
               </span>
               <span className="text-white/40 text-xs flex items-center gap-1">
-                {audioTracks[activeAudio]?.label ?? `Traccia ${activeAudio + 1}`}<ChevronRight size={13} />
+                {audioTracks[activeAudio]?.label ?? `${t('player_track')} ${activeAudio + 1}`}<ChevronRight size={13} />
               </span>
             </button>
           )}
@@ -342,30 +448,30 @@ export default function VideoPlayer(props: VideoPlayerProps) {
             className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 text-white text-sm">
             <span className="flex items-center gap-2.5">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-white/50"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-              Velocità
+              {t('player_speed')}
             </span>
             <span className="text-white/40 text-xs flex items-center gap-1">
-              {playbackSpeed === 1 ? 'Normale' : `${playbackSpeed}x`}<ChevronRight size={13} />
+              {playbackSpeed === 1 ? t('player_normal') : `${playbackSpeed}x`}<ChevronRight size={13} />
             </span>
           </button>
           <button onClick={() => setSettingsPanel('display')}
             className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 text-white text-sm">
             <span className="flex items-center gap-2.5">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-white/50"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
-              Formato video
+              {t('player_display')}
             </span>
             <span className="text-white/40 text-xs flex items-center gap-1">
-              {ASPECT_LABELS[aspectRatio].split(' ')[0]}<ChevronRight size={13} />
+              {(aspectRatio === 'contain' ? t('player_aspect_fit') : aspectRatio === 'cover' ? t('player_aspect_fill') : aspectRatio === 'fill' ? t('player_aspect_stretch') : aspectRatio === '16/9' ? t('player_aspect_169') : aspectRatio === '4/3' ? '4:3' : t('player_aspect_cinemascope')).split(' ')[0]}<ChevronRight size={13} />
             </span>
           </button>
           <button onClick={() => setSettingsPanel('next_ep')}
             className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 text-white text-sm">
             <span className="flex items-center gap-2.5">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-white/50"><polygon points="5 3 19 12 5 21 5 3"/><line x1="19" y1="3" x2="19" y2="21"/></svg>
-              Prossimo ep.
+              {t('player_next_ep')}
             </span>
             <span className="text-white/40 text-xs flex items-center gap-1">
-              {nextEpThreshold === 9999 ? 'Mai' : `${nextEpThreshold}s`}<ChevronRight size={13} />
+              {nextEpThreshold === 9999 ? t('player_never') : `${nextEpThreshold}s`}<ChevronRight size={13} />
             </span>
           </button>
         </div>
@@ -373,7 +479,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
       {settingsPanel === 'quality' && (
         <div className="py-1">
           <button onClick={() => setSettingsPanel('main')} className="w-full flex items-center gap-2 px-4 py-3 hover:bg-white/5 text-white/60 text-sm border-b border-white/5">
-            <ChevronLeft size={14} />Qualità
+            <ChevronLeft size={14} />{t('player_quality')}
           </button>
           {availableQualities.map(q => (
             <button key={q.url} onClick={() => { setActiveQuality(q.url); onQualitySelect?.(q.url); setSettingsPanel(null); }}
@@ -404,7 +510,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
       {settingsPanel === 'audio' && (
         <div className="py-1">
           <button onClick={() => setSettingsPanel('main')} className="w-full flex items-center gap-2 px-4 py-3 hover:bg-white/5 text-white/60 text-sm border-b border-white/5">
-            <ChevronLeft size={14} />Traccia audio
+            <ChevronLeft size={14} />{t('player_audio_track')}
           </button>
           {audioTracks.map(t => (
             <button key={t.id} onClick={() => { setActiveAudio(t.id); setSettingsPanel(null); }}
@@ -417,12 +523,12 @@ export default function VideoPlayer(props: VideoPlayerProps) {
       {settingsPanel === 'speed' && (
         <div className="py-1">
           <button onClick={() => setSettingsPanel('main')} className="w-full flex items-center gap-2 px-4 py-3 hover:bg-white/5 text-white/60 text-sm border-b border-white/5">
-            <ChevronLeft size={14} />Velocità
+            <ChevronLeft size={14} />{t('player_speed')}
           </button>
           {SPEEDS.map(s => (
             <button key={s} onClick={() => { setPlaybackSpeed(s); setSettingsPanel(null); }}
               className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 text-white text-sm">
-              {s === 1 ? 'Normale' : `${s}x`} {playbackSpeed === s && <Check size={14} className="text-[color:var(--accent)]" />}
+              {s === 1 ? t('player_normal') : `${s}x`} {playbackSpeed === s && <Check size={14} className="text-[color:var(--accent)]" />}
             </button>
           ))}
         </div>
@@ -430,16 +536,16 @@ export default function VideoPlayer(props: VideoPlayerProps) {
       {settingsPanel === 'display' && (
         <div className="py-1">
           <button onClick={() => setSettingsPanel('main')} className="w-full flex items-center gap-2 px-4 py-3 hover:bg-white/5 text-white/60 text-sm border-b border-white/5">
-            <ChevronLeft size={14} />Formato video
+            <ChevronLeft size={14} />{t('player_display')}
           </button>
           {ASPECTS.map(a => (
             <button key={a} onClick={() => { setAspectRatio(a); setSettingsPanel(null); }}
               className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 text-white text-sm">
-              {ASPECT_LABELS[a]} {aspectRatio === a && <Check size={14} className="text-[color:var(--accent)]" />}
+              {aspectLabel(a)} {aspectRatio === a && <Check size={14} className="text-[color:var(--accent)]" />}
             </button>
           ))}
           <div className="border-t border-white/5 mt-1 pt-1">
-            <div className="px-4 py-2 text-xs text-white/40 uppercase tracking-widest">Nascondi overlay dopo</div>
+            <div className="px-4 py-2 text-xs text-white/40 uppercase tracking-widest">{t('player_hide_overlay')}</div>
             {HIDE_DELAYS.map(d => (
               <button key={d.ms} onClick={() => { setHideDelay(d.ms); setSettingsPanel(null); }}
                 className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 text-white text-sm">
@@ -454,16 +560,16 @@ export default function VideoPlayer(props: VideoPlayerProps) {
           <button onClick={() => setSettingsPanel('main')} className="w-full flex items-center gap-2 px-4 py-3 hover:bg-white/5 text-white/60 text-sm border-b border-white/5">
             <ChevronLeft size={14} />Popup prossimo episodio
           </button>
-          <div className="px-4 py-2 text-xs text-white/40">Mostra il popup X secondi prima della fine</div>
-          {NEXT_EP_THRESHOLDS.map(t => (
-            <button key={t} onClick={() => { setNextEpThreshold(t); setSettingsPanel(null); }}
+          <div className="px-4 py-2 text-xs text-white/40">{t('player_next_ep_hint')}</div>
+          {NEXT_EP_THRESHOLDS.map(th => (
+            <button key={th} onClick={() => { setNextEpThreshold(th); setSettingsPanel(null); }}
               className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 text-white text-sm">
-              {t} secondi prima {nextEpThreshold === t && <Check size={14} className="text-[color:var(--accent)]" />}
+              {th} {t('player_seconds_before')} {nextEpThreshold === th && <Check size={14} className="text-[color:var(--accent)]" />}
             </button>
           ))}
           <button onClick={() => { setNextEpThreshold(9999); setSettingsPanel(null); }}
             className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 text-white text-sm">
-            Mai {nextEpThreshold === 9999 && <Check size={14} className="text-[color:var(--accent)]" />}
+            {t('player_never')} {nextEpThreshold === 9999 && <Check size={14} className="text-[color:var(--accent)]" />}
           </button>
         </div>
       )}
@@ -478,7 +584,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
       <div className="absolute top-0 right-0 bottom-0 z-30 w-80 bg-black/95 border-l border-white/10 flex flex-col"
         onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 flex-shrink-0">
-          <p className="text-sm font-bold text-white">Episodi</p>
+          <p className="text-sm font-bold text-white">{t('episodes')}</p>
           <button onClick={() => setShowEpisodeList(false)} className="p-1.5 text-white/40 hover:text-white">
             <X size={16} />
           </button>
@@ -509,7 +615,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
                   <p className={`text-xs font-medium truncate ${isCurrent ? 'text-white' : 'text-white/70'}`}>
                     {ep.season && ep.episode ? `${ep.season}×${String(ep.episode).padStart(2,'0')} ` : ''}{ep.title}
                   </p>
-                  {isCurrent && <p className="text-[10px] mt-0.5" style={{ color: 'var(--accent)' }}>▶ In riproduzione</p>}
+                  {isCurrent && <p className="text-[10px] mt-0.5" style={{ color: 'var(--accent)' }}>{t('player_now_playing')}</p>}
                 </div>
               </button>
             );
@@ -519,39 +625,8 @@ export default function VideoPlayer(props: VideoPlayerProps) {
     );
   };
 
-  // ── MPV screen ─────────────────────────────────────────────────────────────
-  if (usesMpv) return (
-    <div className="fixed inset-0 bg-black z-[100] flex items-center justify-center"
-      onMouseMove={resetHide} onClick={() => setSettingsPanel(null)}>
-      {bgImg && <>
-        <img src={bgImg} alt="" className="absolute inset-0 w-full h-full object-cover opacity-10 blur-2xl scale-110" />
-        <div className="absolute inset-0 bg-black/80" />
-      </>}
-      <div className="relative z-10 flex flex-col items-center gap-5 text-center max-w-sm px-6">
-        {poster && <img src={poster} alt={title} className="h-28 rounded-xl shadow-2xl" />}
-        {title && <p className="text-white font-bold text-lg">{title}</p>}
-        {subtitle && <p className="text-white/50 text-sm">{subtitle}</p>}
-        {error ? (
-          <div className="bg-red-500/10 border border-red-500/20 rounded-2xl px-5 py-4 w-full text-left space-y-2">
-            <p className="text-red-400 font-semibold text-sm">Impossibile avviare mpv</p>
-            <p className="text-white/50 text-xs">{error}</p>
-            <p className="text-white/30 text-xs">Verifica che mpv.exe sia nella cartella dell'app.</p>
-          </div>
-        ) : (
-          <div className="bg-white/5 border border-white/10 rounded-2xl px-6 py-4 flex flex-col items-center gap-2">
-            <div className="w-8 h-8 border-2 border-white/20 border-t-white rounded-full animate-spin" />
-            <p className="text-white/70 text-sm">Riproduzione in corso...</p>
-          </div>
-        )}
-        <button onClick={handleClose} className="text-white/40 hover:text-white text-sm flex items-center gap-1.5">
-          <ArrowLeft size={14} />Indietro
-        </button>
-      </div>
-    </div>
-  );
-
   // ── Error screen ───────────────────────────────────────────────────────────
-  if (error) return (
+  if (error) return createPortal((
     <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black">
       {bgImg && <>
         <img src={bgImg} alt="" className="absolute inset-0 w-full h-full object-cover opacity-15 blur-2xl scale-110" />
@@ -573,17 +648,23 @@ export default function VideoPlayer(props: VideoPlayerProps) {
         </div>
       </div>
     </div>
-  );
+  ), document.body);
 
   // ── Main HTML5 player ──────────────────────────────────────────────────────
-  return (
-    <div className="fixed inset-0 z-[100] bg-black select-none"
+  return createPortal((
+    <div className={`fixed inset-0 z-[100] select-none ${usesMpv ? '' : 'bg-black'}`}
       onMouseMove={resetHide}
       onClick={() => {
         if (settingsPanel) { setSettingsPanel(null); return; }
         if (showEpisodeList) { setShowEpisodeList(false); return; }
         togglePlay(); resetHide();
       }}>
+      {showPlayerIndicator && (
+        <div className="absolute top-6 left-1/2 -translate-x-1/2 z-30 px-4 py-2 rounded-full bg-white/15 backdrop-blur-md border border-white/10 text-sm text-white/80">
+          {usesMpv ? 'Native MPV' : 'Playing via Browser'}
+        </div>
+      )}
+      {!usesMpv && (
       <video ref={vidRef} className="absolute inset-0 w-full h-full"
         style={{ objectFit: aspectRatio === 'cover' ? 'cover' : aspectRatio === 'fill' ? 'fill' : 'contain' }}
         playsInline>
@@ -592,6 +673,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
             default={s.lang === activeSub} />
         ))}
       </video>
+      )}
 
       {/* Buffering */}
       {buffering && (
@@ -609,7 +691,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
         <div className="absolute inset-0 z-10 flex items-end pointer-events-none"
           style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.3) 40%, transparent 70%)' }}>
           <div className="w-full px-6 pb-28">
-            <p className="text-xs font-bold text-white/40 uppercase tracking-widest mb-3">Cast</p>
+            <p className="text-xs font-bold text-white/40 uppercase tracking-widest mb-3">{t('cast')}</p>
             <div className="flex gap-4 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
               {cast.slice(0, 12).map((p, i) => (
                 <div key={i} className="flex-shrink-0 flex flex-col items-center gap-1.5 w-16">
@@ -643,7 +725,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
         {allEpisodes.length > 0 && onEpisodeSelect && (
           <button onClick={e => { e.stopPropagation(); setShowEpisodeList(v => !v); setSettingsPanel(null); }}
             className={`p-2 rounded-full transition-colors ${showEpisodeList ? 'bg-white/20 text-white' : 'bg-white/10 hover:bg-white/20 text-white/70'}`}
-            title="Lista episodi">
+            title={t('player_episode_list')}>
             <List size={18} />
           </button>
         )}
@@ -658,7 +740,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
                 <img src={nextEpisode.thumbnail} alt={nextEpisode.title} className="w-full h-full object-cover" />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
                 <div className="absolute top-2 left-3">
-                  <span className="text-[10px] text-white/60 uppercase tracking-widest font-bold bg-black/40 px-2 py-0.5 rounded">Prossimo episodio</span>
+                  <span className="text-[10px] text-white/60 uppercase tracking-widest font-bold bg-black/40 px-2 py-0.5 rounded">{t('next_episode')}</span>
                 </div>
               </div>
             ) : (
@@ -678,7 +760,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
                   <button onClick={handlePlayNextEpisode}
                     className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm text-white font-semibold"
                     style={{ backgroundColor: 'var(--accent,#7c3aed)' }}>
-                    <Play size={12} className="fill-white" />Guarda
+                    <Play size={12} className="fill-white" />{t('watch_label')}
                   </button>
                 )}
                 <button onClick={e => { e.stopPropagation(); setShowNextCard(false); }}
@@ -703,8 +785,8 @@ export default function VideoPlayer(props: VideoPlayerProps) {
         <div className="bg-gradient-to-t from-black/95 via-black/70 to-transparent px-5 pt-10 pb-5">
           <div className="mb-3 group cursor-pointer"
             onClick={e => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); seek((e.clientX - r.left) / r.width); }}>
-            <div className="h-1 group-hover:h-2 transition-all rounded-full bg-white/20 relative">
-              <div className="h-full rounded-full bg-white transition-all" style={{ width: `${progress * 100}%` }} />
+              <div className="h-1 group-hover:h-2 transition-all rounded-full bg-white/20 relative">
+              <div className="h-full rounded-full bg-white transition-all" style={{ width: `${(usesMpv && nativeMpv.duration > 0 ? (nativeMpv.timePos / nativeMpv.duration) * 100 : progress * 100)}%` }} />
               <div className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-white shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"
                 style={{ left: `calc(${progress * 100}% - 6px)` }} />
             </div>
@@ -715,7 +797,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
                 <SkipBack size={18} />
               </button>
             )}
-            <button onClick={() => seekRelative(-10)} className="p-2 text-white/60 hover:text-white" title="-10s">
+            <button onClick={() => seekRelative(-10)} className="p-2 text-white/60 hover:text-white" title={t('seek_back_10s')}>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M12.5 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zm0 16a7 7 0 1 1 0-14 7 7 0 0 1 0 14z" opacity=".3"/>
                 <path d="M12.5 3a9 9 0 0 0-9 9h2a7 7 0 0 1 7-7V3z"/>
@@ -724,9 +806,9 @@ export default function VideoPlayer(props: VideoPlayerProps) {
               </svg>
             </button>
             <button onClick={togglePlay} className="p-2.5 rounded-full bg-white text-black hover:bg-white/90">
-              {playing ? <Pause size={18} /> : <Play size={18} className="fill-black ml-0.5" />}
+              {(usesMpv ? (nativeMpv.playing && !nativeMpv.paused) : playing) ? <Pause size={18} /> : <Play size={18} className="fill-black ml-0.5" />}
             </button>
-            <button onClick={() => seekRelative(10)} className="p-2 text-white/60 hover:text-white" title="+10s">
+            <button onClick={() => seekRelative(10)} className="p-2 text-white/60 hover:text-white" title={t('seek_forward_10s')}>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M11.5 3a9 9 0 1 1 0 18 9 9 0 0 1 0-18zm0 16a7 7 0 1 0 0-14 7 7 0 0 0 0 14z" opacity=".3"/>
                 <path d="M11.5 3a9 9 0 0 1 9 9h-2a7 7 0 0 0-7-7V3z"/>
@@ -740,7 +822,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
               </button>
             )}
             <span className="text-white/70 text-sm font-mono tabular-nums ml-1">
-              {fmtTime(currentTime)} / {fmtTime(duration)}
+              {fmtTime(usesMpv ? nativeMpv.timePos : currentTime)} / {fmtTime(usesMpv ? nativeMpv.duration : duration)}
             </span>
             <div className="flex-1" />
             <button onClick={toggleMute} className="p-2 text-white/60 hover:text-white">
@@ -752,7 +834,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
               className={`p-2 transition-colors ${settingsPanel ? 'text-white' : 'text-white/60 hover:text-white'}`}>
               <Settings size={16} />
             </button>
-            <button onClick={() => vidRef.current?.requestFullscreen?.()} className="p-2 text-white/60 hover:text-white">
+            <button onClick={() => toggleFullscreen()} className="p-2 text-white/60 hover:text-white">
               <Maximize size={16} />
             </button>
             <button onClick={handleClose} className="p-2 text-white/60 hover:text-white">
@@ -762,5 +844,5 @@ export default function VideoPlayer(props: VideoPlayerProps) {
         </div>
       </div>
     </div>
-  );
+  ), document.body);
 }

@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Default capabilities for Nuvio Desktop",
-  "windows": ["main"],
+  "windows": ["main", "nuvio-player"],
   "permissions": [
     "core:default",
     "core:window:default",

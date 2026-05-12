@@ -1,7 +1,8 @@
 /// <reference types="vite/client" />
 import { BrowserRouter, Routes, Route, NavLink, useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
-import { Home, Search as SearchIcon, Library, Package, Settings, X, Tv, Compass, Plug } from 'lucide-react';
+import { invoke } from '@tauri-apps/api/core';
+import { Home, Search as SearchIcon, Library, Package, Settings, X, Tv, Compass, Plug, FlaskConical, Minus, Square, Copy, Maximize } from 'lucide-react';
 import clsx from 'clsx';
 import { useStore } from './lib/store';
 import { setAuthToken, getProfilesFromCloud } from './api/nuvio';
@@ -20,6 +21,83 @@ import DiscoverPage from './pages/Discover';
 import LanguageSetup from './pages/LanguageSetup';
 import CatalogPage from './pages/CatalogPage';
 import PluginsPage from './pages/PluginsPage';
+import TestingPage from './pages/Testing';
+import DiscordRPCProvider from './components/DiscordRPCProvider';
+
+function FullscreenHandler() {
+  useEffect(() => {
+    const handler = async (e: KeyboardEvent) => {
+      if (e.key === 'F11') {
+        e.preventDefault();
+        const { getCurrentWindow } = await import('@tauri-apps/api/window');
+        const w = getCurrentWindow();
+        if (await w.isFullscreen()) {
+          await w.setFullscreen(false);
+        } else {
+          await w.setFullscreen(true);
+        }
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+  return null;
+}
+
+function ResizeBorders() {
+  const [maxed, setMaxed] = useState(false);
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    (async () => {
+      const { getCurrentWindow } = await import('@tauri-apps/api/window');
+      const w = getCurrentWindow();
+      setMaxed(await w.isMaximized());
+      unlisten = await w.onResized(() => { w.isMaximized().then(setMaxed); });
+    })();
+    return () => { unlisten?.(); };
+  }, []);
+  if (maxed) return null;
+  // Invisible resize borders for frameless window — 6px edges + 14px corners
+  const EDGE = 6;
+  const CORNER = 14;
+  const cls = (cursor: string) =>
+    `fixed bg-transparent z-[9999] ${cursor}`;
+  const DIR_MAP: Record<string, string> = {
+    n: 'North', s: 'South', e: 'East', w: 'West',
+    ne: 'NorthEast', nw: 'NorthWest', se: 'SouthEast', sw: 'SouthWest',
+  };
+  const startResize = async (dir: string) => {
+    try {
+      const { getCurrentWindow } = await import('@tauri-apps/api/window');
+      await getCurrentWindow().startResizeDragging(DIR_MAP[dir] as any);
+    } catch {}
+  };
+  return (
+    <>
+      {/* Top edge */}
+      <div className={cls('cursor-n-resize')} style={{ top: 0, left: CORNER, right: CORNER, height: EDGE }}
+        onMouseDown={() => startResize('n')} />
+      {/* Bottom edge */}
+      <div className={cls('cursor-s-resize')} style={{ bottom: 0, left: CORNER, right: CORNER, height: EDGE }}
+        onMouseDown={() => startResize('s')} />
+      {/* Left edge */}
+      <div className={cls('cursor-w-resize')} style={{ top: CORNER, bottom: CORNER, left: 0, width: EDGE }}
+        onMouseDown={() => startResize('w')} />
+      {/* Right edge */}
+      <div className={cls('cursor-e-resize')} style={{ top: CORNER, bottom: CORNER, right: 0, width: EDGE }}
+        onMouseDown={() => startResize('e')} />
+      {/* Corners */}
+      <div className={cls('cursor-nw-resize')} style={{ top: 0, left: 0, width: CORNER, height: CORNER }}
+        onMouseDown={() => startResize('nw')} />
+      <div className={cls('cursor-ne-resize')} style={{ top: 0, right: 0, width: CORNER, height: CORNER }}
+        onMouseDown={() => startResize('ne')} />
+      <div className={cls('cursor-sw-resize')} style={{ bottom: 0, left: 0, width: CORNER, height: CORNER }}
+        onMouseDown={() => startResize('sw')} />
+      <div className={cls('cursor-se-resize')} style={{ bottom: 0, right: 0, width: CORNER, height: CORNER }}
+        onMouseDown={() => startResize('se')} />
+    </>
+  );
+}
 
 function TokenRestorer() {
   const { nuvioUser, profiles, activeProfileId, updateProfile } = useStore();
@@ -50,6 +128,55 @@ function TokenRestorer() {
   return null;
 }
 
+function WindowControls() {
+  const [maxed, setMaxed] = useState(false);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    (async () => {
+      const { getCurrentWindow } = await import('@tauri-apps/api/window');
+      const w = getCurrentWindow();
+      setMaxed(await w.isMaximized());
+      unlisten = await w.onResized(async () => { setMaxed(await w.isMaximized()); });
+    })().catch(() => {});
+    return () => { unlisten?.(); };
+  }, []);
+
+  const run = (fn: (w: any) => Promise<void>) => async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      const { getCurrentWindow } = await import('@tauri-apps/api/window');
+      await fn(getCurrentWindow());
+    } catch (err) {
+      console.log('[window-controls] action failed:', err);
+    }
+  };
+
+  // Children of a drag region need `data-tauri-drag-region="false"` to stay
+  // clickable instead of starting a drag on mousedown.
+  return (
+    <div className="flex items-center ml-auto" data-tauri-drag-region="false">
+      <button onClick={run(w => w.minimize())} title="Minimize"
+        className="w-11 h-10 flex items-center justify-center text-white/50 hover:text-white hover:bg-white/10">
+        <Minus size={16} />
+      </button>
+      <button onClick={run(async w => {
+          if (await w.isMaximized()) await w.unmaximize(); else await w.maximize();
+          // Maximize / restore on Windows can reset WebView2 transparency.
+          await invoke('force_transparent_webview').catch(() => {});
+        })}
+        title={maxed ? 'Restore' : 'Maximize'}
+        className="w-11 h-10 flex items-center justify-center text-white/50 hover:text-white hover:bg-white/10">
+        {maxed ? <Copy size={13} /> : <Square size={13} />}
+      </button>
+      <button onClick={run(w => w.close())} title="Close"
+        className="w-11 h-10 flex items-center justify-center text-white/60 hover:text-white hover:bg-red-600">
+        <X size={16} />
+      </button>
+    </div>
+  );
+}
+
 function AccentApplier() {
   const { settings } = useStore();
   useEffect(() => {
@@ -75,6 +202,7 @@ function Sidebar({ collapsed }: { collapsed: boolean }) {
     { to: '/addons', icon: Package, label: t('addons'), end: false },
     { to: '/plugins', icon: Plug, label: t('plugins'), end: false },
     { to: '/settings', icon: Settings, label: t('settings'), end: false },
+    // { to: '/testing', icon: FlaskConical, label: 'Testing', end: false },
   ];
 
   return (
@@ -183,9 +311,12 @@ function Layout() {
   
   return (
     <div className="flex h-screen bg-[#0f0f13] overflow-hidden">
+      <DiscordRPCProvider />
+      <FullscreenHandler />
+      <ResizeBorders />
       <Sidebar collapsed={manualCollapsed} />
       <div className="flex flex-col flex-1 min-w-0">
-        <header className="flex items-center gap-3 h-14 px-4 border-b border-white/[0.05] flex-shrink-0">
+        <header className="flex items-center gap-3 h-14 px-4 border-b border-white/[0.05] flex-shrink-0" data-tauri-drag-region>
           <button onClick={() => { setManualCollapsed(v => !v); }}
             className="p-1.5 rounded-lg hover:bg-white/10 text-white/30 hover:text-white transition-colors">
             <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -193,6 +324,7 @@ function Layout() {
             </svg>
           </button>
           <SearchBar />
+          <WindowControls />
         </header>
         <main className="flex-1 overflow-hidden">
           <Routes>
@@ -208,6 +340,8 @@ function Layout() {
             <Route path="/discover" element={<DiscoverPage />} />
             <Route path="/catalog/:addonId/:catalogType/:catalogId" element={<CatalogPage />} />
             <Route path="/plugins" element={<PluginsPage />} />
+            {/* <Route path="/testing" element={<TestingPage />} /> */}
+
           </Routes>
         </main>
       </div>
@@ -222,8 +356,6 @@ export default function App() {
   });
 
   // Prevent default browser context menu globally.
-  // Components with custom context menus call e.stopPropagation()
-  // so this handler won't run for them.
   const handleGlobalContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
   };
