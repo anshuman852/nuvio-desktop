@@ -12,7 +12,13 @@
       <title>Nuvio Desktop</title>
       <style>
         /* user-select is handled in index.css */
-        body { margin: 0; background: #0a0a0f; overflow: hidden; }
+        html, body { margin: 0; background: #0a0a0f; overflow: hidden; }
+        /* When MPV is rendering native video, the entire DOM chain must be
+           transparent so WebView2's transparent pixels reveal the libmpv
+           child HWND beneath. */
+        body.mpv-active,
+        body.mpv-active html { background: transparent !important; }
+        body.mpv-active #root { display: none !important; }
         
         /* 🔥 Rimuove eventuali warning Tauri */
         .tauri-warning, 

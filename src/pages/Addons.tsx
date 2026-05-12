@@ -7,7 +7,7 @@ import { useT } from '../lib/i18n';
 import {
   Plus, Trash2, ArrowUp, ArrowDown, ExternalLink, Loader2,
   AlertCircle, CheckCircle2, Search, Settings2, Globe,
-  X, RefreshCw, Package, Star, Tag,
+  X, RefreshCw, Package, Star, Tag, Clipboard,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -315,6 +315,7 @@ export default function Addons() {
   const [installing, setInstalling] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const [gearAddon, setGearAddon] = useState<Addon | null>(null);
   const [configureUrl, setConfigureUrl] = useState<string | null>(null);
   const [catalogTab, setCatalogTab] = useState<'installed' | 'catalog' | 'web'>('installed');
@@ -450,6 +451,15 @@ export default function Addons() {
                         <button onClick={() => setGearAddon(addon)} title={t('addon_options')}
                           className="p-1.5 rounded-lg hover:bg-white/10 text-white/40 hover:text-white transition-colors">
                           <ExternalLink size={14} />
+                        </button>
+                        <button onClick={() => {
+                          const manifestUrl = `${normalizeUrl(addon.url).replace(/\/manifest\.json$/, '')}/manifest.json`;
+                          navigator.clipboard.writeText(manifestUrl);
+                          setCopiedId(addon.id);
+                          setTimeout(() => setCopiedId(null), 1500);
+                        }} title={t('copy_manifest_url')}
+                          className="p-1.5 rounded-lg hover:bg-white/10 text-white/40 hover:text-white transition-colors relative">
+                          {copiedId === addon.id ? <CheckCircle2 size={14} className="text-green-400" /> : <Clipboard size={14} />}
                         </button>
                         <button onClick={() => reorderAddon(addon.id, 'up')} disabled={i === 0}
                           className="p-1.5 rounded-lg hover:bg-white/10 text-white/40 hover:text-white disabled:opacity-20 transition-colors">
