@@ -300,7 +300,6 @@ export default function VideoPlayer(props: VideoPlayerProps) {
   function handleClose() {
     discordRPC.stopPlaying();
     if (usesMpv) nativeMpv.stop();
-    else invoke('mpv_stop').catch(() => {});
     onClose();
   }
   function togglePlay() {

@@ -591,7 +591,6 @@ photo: c.profile_path ? `https://image.tmdb.org/t/p/h632${c.profile_path}` : und
     setSelectedVideo(nextEpisodeData);
     const idx2 = (meta?.videos ?? []).findIndex(v => v.id === nextEpisodeData.id);
     setPrevEpData(idx2 > 0 ? (meta?.videos ?? [])[idx2 - 1] : null);
-    await invoke('mpv_stop').catch(() => {});
     const tryPlay = (groups: StreamGroup[]) => {
       const currentAddonUrl = activeStreamKey?.split(':')[0] ?? '';
       const targetGroup = groups.find(g => g.addonUrl === currentAddonUrl) ?? groups[0];

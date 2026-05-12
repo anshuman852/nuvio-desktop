@@ -132,14 +132,9 @@ export async function fetchAllStreams(addons: Addon[], type: string, id: string,
 export async function launchPlayer(url: string, title?: string, playerPath?: string): Promise<void> {
   const custom = playerPath?.trim();
   if (custom && custom !== 'mpv') {
-    // Player esterno specificato dall'utente
+    // External player specified by user
     await invoke('launch_custom_player', { playerPath: custom, url, title: title ?? null });
-  } else {
-    // mpv di default (bundled)
-    await invoke('launch_mpv', { url, title: title ?? null });
   }
-}
-
-export async function mpvStop(): Promise<void> {
-  try { await invoke('mpv_stop'); } catch { /* ignore */ }
+  // If playerPath is 'mpv' or not set, the native MPV player is used via VideoPlayer component
+  // (no separate launch needed — it's embedded)
 }

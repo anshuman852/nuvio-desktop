@@ -1,19 +1,16 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod addon;
-mod mpv;
 mod mpv_native;
 mod proxy;
 mod plugin;
 mod discord_rpc;
 
 use std::sync::{Arc, Mutex};
-use std::path::PathBuf;
 use tauri::{State, Manager};
 use plugin::PluginRuntime;
 
 pub struct AppState {
-    pub mpv: Mutex<mpv::MpvManager>,
     pub native_mpv: Mutex<Option<Arc<mpv_native::MpvPlayer>>>,
     pub plugin_runtime: Arc<PluginRuntime>,
     pub discord: discord_rpc::DiscordRPC,
@@ -56,44 +53,7 @@ async fn get_proxy_url(url: String, referer: Option<String>, origin: Option<Stri
     Ok(proxy)
 }
 
-// ─── MPV EMBEDDED commands (Windows) ─────────────────────────────────────────
-
-#[tauri::command]
-async fn launch_mpv_embedded(
-    window: tauri::Window,
-    state: State<'_, AppState>,
-    url: String,
-    title: String,
-    referrer: Option<String>,
-) -> Result<(), String> {
-    eprintln!("[player] Launching MPV (embedded): {}", url);
-    let mut mpv = state.mpv.lock().map_err(|e| e.to_string())?;
-    
-    // Su Tauri v2, dobbiamo ottenere l'HWND e passarlo come isize
-    #[cfg(target_os = "windows")]
-    let hwnd = {
-        let hwnd_raw = window.hwnd().map_err(|e| format!("Errore HWND: {}", e))?;
-        // Converte HWND a isize
-        hwnd_raw.0 as isize
-    };
-    
-    #[cfg(not(target_os = "windows"))]
-    let hwnd = 0;
-    
-    eprintln!("[mpv] HWND per embedding: {}", hwnd);
-    
-    // Passa il wid per embedding
-    mpv.launch_embedded(&url, &title, referrer.as_deref(), hwnd)
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-async fn launch_mpv(state: State<'_, AppState>, url: String, title: Option<String>, referrer: Option<String>) -> Result<(), String> {
-    eprintln!("[player] Launching MPV (windowed): {}", url);
-    let mut mpv = state.mpv.lock().map_err(|e| e.to_string())?;
-    // Senza wid, apre finestra separata (fallback)
-    mpv.launch_with_referrer(&url, title.as_deref(), referrer.as_deref()).map_err(|e| e.to_string())
-}
+// ─── External player command ──────────────────────────────────────────────────
 
 #[tauri::command]
 async fn launch_custom_player(player_path: String, url: String, title: Option<String>) -> Result<(), String> {
@@ -103,84 +63,7 @@ async fn launch_custom_player(player_path: String, url: String, title: Option<St
         if player_path.to_lowercase().contains("vlc") { cmd.args(["--meta-title", t]); }
         else if player_path.to_lowercase().contains("mpc") { cmd.args(["/title", t]); }
     }
-    cmd.spawn().map_err(|e| format!("Impossibile avviare {}: {}", player_path, e))?;
-    Ok(())
-}
-
-#[tauri::command]
-async fn launch_mpv_stream(
-    state: State<'_, AppState>,
-    url: String,
-    title: Option<String>,
-    referrer: Option<String>,
-) -> Result<(), String> {
-    eprintln!("[player] Launching MPV (stream): {}", url);
-    let mut mpv = state.mpv.lock().map_err(|e| e.to_string())?;
-    mpv.launch_with_referrer(&url, title.as_deref(), referrer.as_deref()).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-async fn mpv_command(state: State<'_, AppState>, cmd: String, args: Vec<serde_json::Value>) -> Result<serde_json::Value, String> {
-    let mpv = state.mpv.lock().map_err(|e| e.to_string())?;
-    mpv.send_command(&cmd, &args).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-async fn mpv_stop(state: State<'_, AppState>) -> Result<(), String> {
-    let mut mpv = state.mpv.lock().map_err(|e| e.to_string())?;
-    mpv.stop();
-    Ok(())
-}
-
-#[tauri::command]
-async fn mpv_get_position(state: State<'_, AppState>) -> Result<f64, String> {
-    let mpv = state.mpv.lock().map_err(|e| e.to_string())?;
-    Ok(mpv.get_position())
-}
-
-#[tauri::command]
-async fn mpv_get_duration(state: State<'_, AppState>) -> Result<f64, String> {
-    let mpv = state.mpv.lock().map_err(|e| e.to_string())?;
-    Ok(mpv.get_duration())
-}
-
-#[tauri::command]
-async fn mpv_pause(state: State<'_, AppState>) -> Result<(), String> {
-    let mpv = state.mpv.lock().map_err(|e| e.to_string())?;
-    mpv.send_command("set", &[serde_json::json!("pause"), serde_json::json!("yes")])
-        .map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-#[tauri::command]
-async fn mpv_resume(state: State<'_, AppState>) -> Result<(), String> {
-    let mpv = state.mpv.lock().map_err(|e| e.to_string())?;
-    mpv.send_command("set", &[serde_json::json!("pause"), serde_json::json!("no")])
-        .map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-#[tauri::command]
-async fn mpv_seek(state: State<'_, AppState>, seconds: f64) -> Result<(), String> {
-    let mpv = state.mpv.lock().map_err(|e| e.to_string())?;
-    mpv.send_command("seek", &[serde_json::json!(seconds), serde_json::json!("absolute")])
-        .map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-#[tauri::command]
-async fn mpv_set_volume(state: State<'_, AppState>, volume: i64) -> Result<(), String> {
-    let mpv = state.mpv.lock().map_err(|e| e.to_string())?;
-    mpv.send_command("set", &[serde_json::json!("volume"), serde_json::json!(volume)])
-        .map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-#[tauri::command]
-async fn mpv_set_speed(state: State<'_, AppState>, speed: f64) -> Result<(), String> {
-    let mpv = state.mpv.lock().map_err(|e| e.to_string())?;
-    mpv.send_command("set", &[serde_json::json!("speed"), serde_json::json!(speed)])
-        .map_err(|e| e.to_string())?;
+    cmd.spawn().map_err(|e| format!("Cannot launch {}: {}", player_path, e))?;
     Ok(())
 }
 
@@ -306,12 +189,7 @@ async fn open_url(url: String) -> Result<(), String> {
     Ok(())
 }
 
-#[tauri::command]
-async fn stream_magnet(state: State<'_, AppState>, magnet: String, title: Option<String>) -> Result<String, String> {
-    let mut mpv = state.mpv.lock().map_err(|e| e.to_string())?;
-    mpv.launch_with_referrer(&magnet, title.as_deref(), None).map_err(|e| e.to_string())?;
-    Ok("mpv".to_string())
-}
+
 
 #[tauri::command]
 async fn resolve_stream_url(url: String) -> Result<String, String> {
@@ -534,53 +412,7 @@ async fn plugin_test_scraper(
     Ok(serde_json::json!({ "streams": streams, "logs": logs }))
 }
 
-// ─── MPV helper commands ─────────────────────────────────────────────────────
 
-#[tauri::command]
-async fn check_mpv_available() -> Result<bool, String> {
-    let result = std::process::Command::new("mpv")
-        .arg("--version")
-        .output();
-    
-    match result {
-        Ok(output) => Ok(output.status.success()),
-        Err(_) => Ok(false),
-    }
-}
-
-#[tauri::command]
-async fn get_mpv_path() -> Result<String, String> {
-    let exe_path = std::env::current_exe()
-        .map_err(|e| e.to_string())?;
-    let app_dir = exe_path.parent().ok_or("No parent dir")?;
-    
-    let possible_paths = vec![
-        app_dir.join("mpv.exe"),
-        app_dir.join("resources/mpv.exe"),
-        PathBuf::from("mpv.exe"),
-        PathBuf::from("resources/mpv.exe"),
-    ];
-    
-    for path in possible_paths {
-        if path.exists() {
-            return Ok(path.to_string_lossy().to_string());
-        }
-    }
-    
-    // Cerca nel PATH
-    if let Ok(output) = std::process::Command::new("where").arg("mpv").output() {
-        if output.status.success() {
-            if let Ok(path) = String::from_utf8(output.stdout) {
-                let first_line = path.lines().next().unwrap_or("").to_string();
-                if !first_line.is_empty() {
-                    return Ok(first_line);
-                }
-            }
-        }
-    }
-    
-    Err("mpv not found".to_string())
-}
 
 // ─── Entry point ──────────────────────────────────────────────────────────────
 
@@ -592,7 +424,6 @@ pub fn run() {
             let plugin_runtime = Arc::new(PluginRuntime::new(&app.handle()));
 
             app.manage(AppState {
-                mpv: Mutex::new(mpv::MpvManager::new()),
                 native_mpv: Mutex::new(None),
                 plugin_runtime,
                 discord: discord_rpc::DiscordRPC::new(),
@@ -633,21 +464,8 @@ pub fn run() {
             fetch_meta,
             fetch_streams,
             get_proxy_url,
-            launch_mpv_embedded,
-            launch_mpv,
             launch_custom_player,
-            launch_mpv_stream,
-            mpv_command,
-            mpv_stop,
-            mpv_get_position,
-            mpv_get_duration,
-            mpv_pause,
-            mpv_resume,
-            mpv_seek,
-            mpv_set_volume,
-            mpv_set_speed,
             open_url,
-            stream_magnet,
             resolve_stream_url,
             proxy_stream,
             proxy_stream_url,
@@ -662,8 +480,6 @@ pub fn run() {
             plugin_is_enabled,
             plugin_set_enabled,
             plugin_test_scraper,
-            check_mpv_available,
-            get_mpv_path,
             mpv_native_init,
             mpv_native_load_url,
             mpv_native_toggle_pause,
