@@ -833,6 +833,15 @@ function IntegrazioniPage() {
           </select>
         </div>
       </Accordion>
+
+      <Accordion title="Discord Rich Presence" subtitle="Show what you're watching on Discord">
+        <Row title="Enable Discord RPC" subtitle="Display your current activity on Discord profile">
+          <Toggle
+            value={!!s.discordEnabled}
+            onChange={v => updateSettings({ discordEnabled: v } as any)}
+          />
+        </Row>
+      </Accordion>
     </div>
   );
 }
@@ -863,6 +872,16 @@ function RiproducibilePage() {
         </select>
       </Row>
       <T k="subtitlesEnabled" title={t('enable_subtitles')} desc={t('subtitles_desc')} />
+      <Row title="Player mode" subtitle="Auto = uses MPV for magnet/proxy, HTML5 for normal URLs">
+        <select 
+          value={s.playerMode ?? 'auto'} 
+          onChange={e => updateSettings({ playerMode: e.target.value } as any)}
+          className="bg-white/10 text-white text-sm px-3 py-1.5 rounded-xl border border-white/10 focus:outline-none cursor-pointer">
+          <option value="auto">Auto (recommended)</option>
+          <option value="html5">HTML5 only</option>
+          <option value="mpv">MPV only</option>
+        </select>
+      </Row>
       <div className="rounded-2xl bg-[#1e1e24] border border-white/[0.06] p-5 space-y-3">
         <p className="text-sm font-semibold text-white">{t('external_player')}</p>
         <p className="text-xs text-white/40">{t('external_player_empty_hint')}</p>

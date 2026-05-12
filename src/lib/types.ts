@@ -167,6 +167,8 @@ export interface AppSettings {
   appLanguage: string;
   visibleServices: string[];
   streamingServices: StreamingServiceSetting[];
+  discordEnabled: boolean;
+  playerMode: 'auto' | 'html5' | 'mpv';
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -194,6 +196,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
     { id: 'crunchyroll', enabled: true },
     { id: 'raiplay', enabled: true },
   ],
+  discordEnabled: false,
+  playerMode: 'mpv',
 };
 
 export interface TMDBPerson {

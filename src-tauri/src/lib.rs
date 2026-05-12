@@ -2,8 +2,10 @@
 
 mod addon;
 mod mpv;
+mod mpv_native;
 mod proxy;
 mod plugin;
+mod discord_rpc;
 
 use std::sync::{Arc, Mutex};
 use std::path::PathBuf;
@@ -12,7 +14,9 @@ use plugin::PluginRuntime;
 
 pub struct AppState {
     pub mpv: Mutex<mpv::MpvManager>,
+    pub native_mpv: Mutex<Option<Arc<mpv_native::MpvPlayer>>>,
     pub plugin_runtime: Arc<PluginRuntime>,
+    pub discord: discord_rpc::DiscordRPC,
 }
 
 // ─── Addon / meta commands ────────────────────────────────────────────────────
@@ -62,6 +66,7 @@ async fn launch_mpv_embedded(
     title: String,
     referrer: Option<String>,
 ) -> Result<(), String> {
+    eprintln!("[player] Launching MPV (embedded): {}", url);
     let mut mpv = state.mpv.lock().map_err(|e| e.to_string())?;
     
     // Su Tauri v2, dobbiamo ottenere l'HWND e passarlo come isize
@@ -84,6 +89,7 @@ async fn launch_mpv_embedded(
 
 #[tauri::command]
 async fn launch_mpv(state: State<'_, AppState>, url: String, title: Option<String>, referrer: Option<String>) -> Result<(), String> {
+    eprintln!("[player] Launching MPV (windowed): {}", url);
     let mut mpv = state.mpv.lock().map_err(|e| e.to_string())?;
     // Senza wid, apre finestra separata (fallback)
     mpv.launch_with_referrer(&url, title.as_deref(), referrer.as_deref()).map_err(|e| e.to_string())
@@ -108,6 +114,7 @@ async fn launch_mpv_stream(
     title: Option<String>,
     referrer: Option<String>,
 ) -> Result<(), String> {
+    eprintln!("[player] Launching MPV (stream): {}", url);
     let mut mpv = state.mpv.lock().map_err(|e| e.to_string())?;
     mpv.launch_with_referrer(&url, title.as_deref(), referrer.as_deref()).map_err(|e| e.to_string())
 }
@@ -174,6 +181,100 @@ async fn mpv_set_speed(state: State<'_, AppState>, speed: f64) -> Result<(), Str
     let mpv = state.mpv.lock().map_err(|e| e.to_string())?;
     mpv.send_command("set", &[serde_json::json!("speed"), serde_json::json!(speed)])
         .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+// ─── MPV NATIVE commands (direct libmpv FFI) ──────────────────────────────────
+
+#[tauri::command]
+async fn mpv_native_init(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    // Guard against React StrictMode double-mount — return early if already
+    // initialized rather than creating a second MpvPlayer racing on the same HWND.
+    if state.native_mpv.lock().map_err(|e| e.to_string())?.is_some() {
+        eprintln!("[mpv-native] init skipped — already initialized");
+        return Ok(());
+    }
+
+    let window = app.get_webview_window("main")
+        .ok_or("main window not found")?;
+
+    // Get HWND
+    #[cfg(target_os = "windows")]
+    let hwnd_val: i64 = {
+        let hwnd = window.hwnd().map_err(|e| format!("HWND error: {}", e))?;
+        hwnd.0 as i64
+    };
+    #[cfg(not(target_os = "windows"))]
+    let hwnd_val: i64 = 0;
+
+    let mpv = mpv_native::MpvPlayer::new(hwnd_val)?;
+    
+    // Observe key properties
+    mpv.observe_property("time-pos", 1, mpv_native::MPV_FORMAT_DOUBLE)?;
+    mpv.observe_property("duration", 2, mpv_native::MPV_FORMAT_DOUBLE)?;
+    mpv.observe_property("pause", 3, mpv_native::MPV_FORMAT_FLAG)?;
+    
+    let mpv_arc = Arc::new(mpv);
+    
+    // Start event loop
+    mpv_native::start_event_loop(mpv_arc.clone(), app.clone());
+    
+    // Store
+    *state.native_mpv.lock().map_err(|e| e.to_string())? = Some(mpv_arc);
+    
+    eprintln!("[mpv-native] Initialized successfully");
+    Ok(())
+}
+
+#[tauri::command]
+async fn mpv_native_load_url(
+    state: State<'_, AppState>,
+    url: String,
+) -> Result<(), String> {
+    let guard = state.native_mpv.lock().map_err(|e| e.to_string())?;
+    let mpv = guard.as_ref().ok_or("MPV not initialized")?;
+    eprintln!("[mpv-native] Loading: {}", url.chars().take(100).collect::<String>());
+    mpv.load_url(&url)
+}
+
+#[tauri::command]
+async fn mpv_native_toggle_pause(state: State<'_, AppState>) -> Result<(), String> {
+    let guard = state.native_mpv.lock().map_err(|e| e.to_string())?;
+    let mpv = guard.as_ref().ok_or("MPV not initialized")?;
+    mpv.toggle_pause()
+}
+
+#[tauri::command]
+async fn mpv_native_seek(state: State<'_, AppState>, seconds: f64) -> Result<(), String> {
+    let guard = state.native_mpv.lock().map_err(|e| e.to_string())?;
+    let mpv = guard.as_ref().ok_or("MPV not initialized")?;
+    mpv.seek_absolute(seconds)
+}
+
+#[tauri::command]
+async fn mpv_native_set_volume(state: State<'_, AppState>, volume: f64) -> Result<(), String> {
+    let guard = state.native_mpv.lock().map_err(|e| e.to_string())?;
+    let mpv = guard.as_ref().ok_or("MPV not initialized")?;
+    mpv.set_volume(volume)
+}
+
+#[tauri::command]
+async fn mpv_native_stop(state: State<'_, AppState>) -> Result<(), String> {
+    let guard = state.native_mpv.lock().map_err(|e| e.to_string())?;
+    let mpv = guard.as_ref().ok_or("MPV not initialized")?;
+    mpv.stop()
+}
+
+#[tauri::command]
+async fn force_transparent_webview(app: tauri::AppHandle) -> Result<(), String> {
+    let window = app.get_webview_window("main").ok_or("main window not found")?;
+    window
+        .set_background_color(Some(tauri::window::Color(0, 0, 0, 0)))
+        .map_err(|e| format!("set_background_color failed: {}", e))?;
+    eprintln!("[setup] WebView2 background re-forced to transparent");
     Ok(())
 }
 
@@ -257,6 +358,71 @@ async fn proxy_stream(url: String, referer: Option<String>) -> Result<Vec<u8>, S
     let response = client.get(&url).headers(headers).send().await.map_err(|e| e.to_string())?;
     let bytes = response.bytes().await.map_err(|e| e.to_string())?;
     Ok(bytes.to_vec())
+}
+
+// ─── Discord Rich Presence commands ──────────────────────────────────────────
+
+#[tauri::command]
+fn discord_connect(
+    state: State<'_, AppState>,
+    client_id: String,
+) -> Result<(), String> {
+    eprintln!("[DiscordRPC] connect called with client_id={}", client_id);
+    match state.discord.connect(&client_id) {
+        Ok(()) => { eprintln!("[DiscordRPC] connect OK"); Ok(()) },
+        Err(e) => { eprintln!("[DiscordRPC] connect FAIL: {}", e); Err(e) },
+    }
+}
+
+#[tauri::command]
+fn discord_disconnect(state: State<'_, AppState>) -> Result<(), String> {
+    eprintln!("[DiscordRPC] disconnect called");
+    state.discord.disconnect();
+    Ok(())
+}
+
+#[tauri::command]
+fn discord_set_playing(
+    state: State<'_, AppState>,
+    details: String,
+    state_str: String,
+    large_text: String,
+    small_text: String,
+    start_timestamp: Option<i64>,
+) -> Result<(), String> {
+    eprintln!("[DiscordRPC] set_playing details={:?} state_str={:?}", details, state_str);
+    match state.discord.set_presence(&state_str, &details, &large_text, &small_text, start_timestamp, None) {
+        Ok(()) => { eprintln!("[DiscordRPC] set_playing OK"); Ok(()) },
+        Err(e) => { eprintln!("[DiscordRPC] set_playing FAIL: {}", e); Err(e) },
+    }
+}
+
+#[tauri::command]
+fn discord_set_browsing(state: State<'_, AppState>) -> Result<(), String> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+    eprintln!("[DiscordRPC] set_browsing");
+    state.discord.set_presence(
+        "Browsing catalog",
+        "Nuvio Desktop",
+        "Nuvio Desktop",
+        "Browsing",
+        Some(now),
+        Some("nuvio"),
+    )
+}
+
+#[tauri::command]
+fn discord_clear_presence(state: State<'_, AppState>) -> Result<(), String> {
+    eprintln!("[DiscordRPC] clear_presence called");
+    state.discord.clear_presence()
+}
+
+#[tauri::command]
+fn discord_is_connected(state: State<'_, AppState>) -> Result<bool, String> {
+    Ok(state.discord.is_connected())
 }
 
 // ─── Test IPC ────────────────────────────────────────────────────────────────
@@ -427,7 +593,9 @@ pub fn run() {
 
             app.manage(AppState {
                 mpv: Mutex::new(mpv::MpvManager::new()),
+                native_mpv: Mutex::new(None),
                 plugin_runtime,
+                discord: discord_rpc::DiscordRPC::new(),
             });
 
             let proxy = proxy::StreamProxy::new();
@@ -439,6 +607,23 @@ pub fn run() {
                     eprintln!("[proxy] Server avviato su http://127.0.0.1:11473/proxy");
                 }
             });
+
+            // Show window after setup (was hidden due to transparent+decorations:false).
+            // Also force the WebView2 default background to fully transparent —
+            // `transparent: true` in tauri.conf only sets the window's layered
+            // style; the WebView2 controller still paints an opaque surface that
+            // covers the embedded mpv HWND. set_background_color with alpha=0
+            // calls put_DefaultBackgroundColor under the hood on Windows.
+            if let Some(window) = app.get_webview_window("main") {
+                if let Err(e) = window.set_background_color(Some(tauri::window::Color(0, 0, 0, 0))) {
+                    eprintln!("[setup] Failed to set transparent webview bg: {}", e);
+                } else {
+                    eprintln!("[setup] WebView2 background set to transparent");
+                }
+                if let Err(e) = window.show() {
+                    eprintln!("[setup] Failed to show window: {}", e);
+                }
+            }
 
             Ok(())
         })
@@ -479,6 +664,19 @@ pub fn run() {
             plugin_test_scraper,
             check_mpv_available,
             get_mpv_path,
+            mpv_native_init,
+            mpv_native_load_url,
+            mpv_native_toggle_pause,
+            mpv_native_seek,
+            mpv_native_set_volume,
+            mpv_native_stop,
+            force_transparent_webview,
+            discord_connect,
+            discord_disconnect,
+            discord_set_playing,
+            discord_set_browsing,
+            discord_clear_presence,
+            discord_is_connected,
         ])
         .run(tauri::generate_context!())
         .expect("error while running nuvio-desktop");

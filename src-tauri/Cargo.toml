@@ -1,6 +1,6 @@
 [package]
 name = "nuvio-desktop"
-version = "2.3.1"
+version = "2.3.3"
 description = "Nuvio Desktop"
 authors = []
 edition = "2021"
@@ -40,6 +40,9 @@ bytes = "1"
 windows = "0.52"
 windows-sys = "0.48"
 libmpv = { git = "https://github.com/paradoxspiral/libmpv-rs", features = ["render"] }
+discord-rich-presence = "1"
+tauri-plugin-libmpv = "0.3.2"
+libloading = "0.9"
 
 
 [profile.release]
